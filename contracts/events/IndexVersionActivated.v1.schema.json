@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/events/IndexVersionActivated.v1.schema.json",
+  "allOf": [
+    {
+      "$ref": "./EventEnvelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "IndexVersionActivated"
+        },
+        "event_version": {
+          "const": 1
+        },
+        "aggregate_type": {
+          "const": "index_version"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "collection_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/collection_id"
+            },
+            "previous_index_version_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/index_version_id"
+            },
+            "active_index_version_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/index_version_id"
+            },
+            "activated_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "collection_id",
+            "previous_index_version_id",
+            "active_index_version_id",
+            "activated_by"
+          ]
+        }
+      }
+    }
+  ]
+}

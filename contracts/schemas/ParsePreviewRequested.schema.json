@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ParsePreviewRequested.schema.json",
+  "title": "ParsePreviewRequested",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_binary_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mime_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parser_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    }
+  },
+  "required": [
+    "request_id",
+    "tenant_id",
+    "collection_id",
+    "source_file_id",
+    "source_binary_ref",
+    "filename",
+    "mime_type",
+    "parser_profile_id",
+    "trace_id"
+  ]
+}

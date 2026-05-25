@@ -1,0 +1,39 @@
+{
+  "evidence_items": [
+    {
+      "evidence_id": "ev-001",
+      "doc_id": "doc-travel-policy-v3",
+      "collection_id": "col-finance-policy",
+      "canonical_source": "col-finance-policy/doc-travel-policy-v3/canonical.md",
+      "content": "Travel reimbursement requires: (1) completed T-01 form, (2) original receipts, (3) manager approval for expenses over $500.",
+      "score": 0.92,
+      "chunk_metadata": {
+        "page": 4,
+        "section": "Reimbursement Procedure"
+      }
+    },
+    {
+      "evidence_id": "ev-002",
+      "doc_id": "doc-hr-handbook-v2",
+      "collection_id": "col-hr-policy",
+      "canonical_source": "col-hr-policy/doc-hr-handbook-v2/canonical.md",
+      "content": "Employees must submit travel reimbursement requests within 30 days of trip completion.",
+      "score": 0.85,
+      "chunk_metadata": {
+        "page": 12,
+        "section": "Travel Policy"
+      }
+    }
+  ],
+  "assembled_context": "[col-finance-policy] doc-travel-policy-v3 p.4 Reimbursement Procedure:\nTravel reimbursement requires: (1) completed T-01 form, (2) original receipts, (3) manager approval for expenses over $500.\n\n[col-hr-policy] doc-hr-handbook-v2 p.12 Travel Policy:\nEmployees must submit travel reimbursement requests within 30 days of trip completion.",
+  "retrieval_metadata": {
+    "retrieval_time_ms": 42,
+    "collections_searched": ["col-finance-policy", "col-hr-policy"],
+    "index_versions_used": {
+      "col-finance-policy": "v1",
+      "col-hr-policy": "v1"
+    },
+    "total_evidence_count": 2,
+    "cache_hit": false
+  }
+}

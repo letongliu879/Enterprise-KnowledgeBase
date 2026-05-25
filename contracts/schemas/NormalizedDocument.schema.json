@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/NormalizedDocument.schema.json",
+  "title": "NormalizedDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "document_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "$ref": "./common.schema.json#/$defs/tenant_id"
+        },
+        "collection_id": {
+          "$ref": "./common.schema.json#/$defs/collection_id"
+        },
+        "final_doc_id": {
+          "$ref": "./common.schema.json#/$defs/final_doc_id"
+        },
+        "document_version": {
+          "$ref": "./common.schema.json#/$defs/document_version"
+        },
+        "publish_version": {
+          "$ref": "./common.schema.json#/$defs/publish_version"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "collection_id",
+        "final_doc_id",
+        "document_version",
+        "publish_version"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "doc_type": {
+      "type": "string",
+      "enum": [
+        "pdf",
+        "docx",
+        "xlsx",
+        "markdown",
+        "html",
+        "plain"
+      ]
+    },
+    "plain_text": {
+      "type": "string"
+    },
+    "markdown_text": {
+      "type": "string"
+    },
+    "structural_blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "type": "string"
+          },
+          "block_type": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bbox": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "section_path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source_span": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "block_id",
+          "block_type",
+          "text",
+          "page",
+          "bbox",
+          "section_path",
+          "order",
+          "source_span"
+        ]
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "figures": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "page_anchors": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "section_tree": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "section_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "section_id",
+          "title",
+          "path"
+        ]
+      }
+    },
+    "normalization_warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      }
+    }
+  },
+  "required": [
+    "document_identity",
+    "title",
+    "language",
+    "doc_type",
+    "plain_text",
+    "markdown_text",
+    "structural_blocks",
+    "tables",
+    "figures",
+    "page_anchors",
+    "section_tree",
+    "normalization_warnings"
+  ]
+}

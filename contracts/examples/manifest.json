@@ -1,0 +1,86 @@
+[
+  {
+    "example": "index_build_requested.publish.json",
+    "schema": "../schemas/IndexBuildRequested.schema.json"
+  },
+  {
+    "example": "parse_preview_requested.json",
+    "schema": "../schemas/ParsePreviewRequested.schema.json"
+  },
+  {
+    "example": "parse_snapshot.json",
+    "schema": "../schemas/ParseSnapshot.schema.json"
+  },
+  {
+    "example": "parse_snapshot_ready.json",
+    "schema": "../schemas/ParseSnapshotReady.schema.json"
+  },
+  {
+    "example": "normalized_document.min.json",
+    "schema": "../schemas/NormalizedDocument.schema.json"
+  },
+  {
+    "example": "chunk_record.text.json",
+    "schema": "../schemas/ChunkRecord.schema.json"
+  },
+  {
+    "example": "retrieve_request.multi_collection.json",
+    "schema": "../schemas/RetrieveRequest.schema.json"
+  },
+  {
+    "example": "collection_retrieval_plan.json",
+    "schema": "../schemas/CollectionRetrievalPlan.schema.json"
+  },
+  {
+    "example": "knowledge_context.min.json",
+    "schema": "../schemas/KnowledgeContext.schema.json"
+  },
+  {
+    "example": "retrieval_profile.json",
+    "schema": "../schemas/RetrievalProfile.schema.json"
+  },
+  {
+    "example": "index_version.json",
+    "schema": "../schemas/IndexVersion.schema.json"
+  },
+  {
+    "example": "admin_collection.json",
+    "schema": "../schemas/AdminCollection.schema.json"
+  },
+  {
+    "example": "run_trace.retrieval.json",
+    "schema": "../schemas/RunTrace.schema.json"
+  },
+  {
+    "example": "run_step.retrieval.json",
+    "schema": "../schemas/RunStep.schema.json"
+  },
+  {
+    "example": "trace_artifact.retrieval.json",
+    "schema": "../schemas/TraceArtifact.schema.json"
+  },
+  {
+    "example": "event.index_build_requested.v1.json",
+    "schema": "../events/IndexBuildRequested.v1.schema.json"
+  },
+  {
+    "example": "event.parse_preview_requested.v1.json",
+    "schema": "../events/ParsePreviewRequested.v1.schema.json"
+  },
+  {
+    "example": "event.parse_snapshot_ready.v1.json",
+    "schema": "../events/ParseSnapshotReady.v1.schema.json"
+  },
+  {
+    "example": "event.index_ready.v1.json",
+    "schema": "../events/IndexReady.v1.schema.json"
+  },
+  {
+    "example": "event.index_version_activated.v1.json",
+    "schema": "../events/IndexVersionActivated.v1.schema.json"
+  },
+  {
+    "example": "event.retrieval_executed.v1.json",
+    "schema": "../events/RetrievalExecuted.v1.schema.json"
+  }
+]

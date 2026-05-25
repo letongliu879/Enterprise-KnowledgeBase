@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/IndexBuildRequested.schema.json",
+  "title": "IndexBuildRequested",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "build_request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_type": {
+      "$ref": "./common.schema.json#/$defs/request_type"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "final_doc_id": {
+      "$ref": "./common.schema.json#/$defs/final_doc_id"
+    },
+    "document_version": {
+      "$ref": "./common.schema.json#/$defs/document_version"
+    },
+    "publish_version": {
+      "$ref": "./common.schema.json#/$defs/publish_version"
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "visibility": {
+      "$ref": "./common.schema.json#/$defs/visibility"
+    },
+    "source_binary_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parse_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "governance_overlay_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sanitized_asset_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_asset_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metadata_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "quality_report_ref": {
+      "type": "string"
+    },
+    "approval_decision_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confirmed_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "source_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "mime_type": {
+          "type": "string"
+        },
+        "source_system": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "filename",
+        "mime_type",
+        "source_system"
+      ]
+    },
+    "index_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "target_index_version_id": {
+      "$ref": "./common.schema.json#/$defs/index_version_id"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    }
+  },
+  "required": [
+    "build_request_id",
+    "request_type",
+    "tenant_id",
+    "collection_id",
+    "final_doc_id",
+    "document_version",
+    "publish_version",
+    "source_file_id",
+    "visibility",
+    "source_binary_ref",
+    "parse_snapshot_id",
+    "governance_overlay_ref",
+    "sanitized_asset_ref",
+    "canonical_asset_ref",
+    "metadata_ref",
+    "approval_decision_ref",
+    "source_metadata",
+    "index_profile_id",
+    "idempotency_key",
+    "trace_id"
+  ]
+}

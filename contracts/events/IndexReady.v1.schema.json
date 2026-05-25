@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/events/IndexReady.v1.schema.json",
+  "allOf": [
+    {
+      "$ref": "./EventEnvelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "IndexReady"
+        },
+        "event_version": {
+          "const": 1
+        },
+        "aggregate_type": {
+          "const": "document_index_revision"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "index_version_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/index_version_id"
+            },
+            "document_index_revision_id": {
+              "type": "string"
+            },
+            "final_doc_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/final_doc_id"
+            },
+            "collection_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/collection_id"
+            },
+            "chunk_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "opensearch_record_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "qdrant_point_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "index_version_id",
+            "document_index_revision_id",
+            "final_doc_id",
+            "collection_id",
+            "chunk_count",
+            "opensearch_record_count",
+            "qdrant_point_count",
+            "warnings"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/RetrievalProfile.schema.json",
+  "title": "RetrievalProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "profile_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "profile_hash": {
+      "type": "string"
+    },
+    "bm25_weight": {
+      "type": "number"
+    },
+    "vector_weight": {
+      "type": "number"
+    },
+    "candidate_top_k": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "similarity_threshold": {
+      "type": "number"
+    },
+    "rerank_enabled": {
+      "type": "boolean"
+    },
+    "rerank_model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fail_policy": {
+      "type": "string",
+      "enum": [
+        "fail_open",
+        "fail_closed"
+      ]
+    },
+    "expansion_policy": {
+      "type": "object"
+    },
+    "pack_budget": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_id",
+    "collection_id",
+    "profile_version",
+    "profile_hash",
+    "bm25_weight",
+    "vector_weight",
+    "candidate_top_k",
+    "similarity_threshold",
+    "rerank_enabled",
+    "rerank_model",
+    "fail_policy",
+    "expansion_policy",
+    "pack_budget",
+    "updated_at",
+    "updated_by"
+  ]
+}

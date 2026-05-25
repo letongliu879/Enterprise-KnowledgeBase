@@ -1,0 +1,45 @@
+{
+  "event_id": "evt_20260523_01",
+  "event_type": "IndexBuildRequested",
+  "event_version": 1,
+  "schema_version": "2026-05-23",
+  "tenant_id": "tnt_default",
+  "aggregate_type": "published_document",
+  "aggregate_id": "doc_expense_policy",
+  "sequence": 1,
+  "occurred_at": "2026-05-23T00:00:00Z",
+  "producer": "intake-pipeline",
+  "trace_id": "trc_20260523_01",
+  "payload": {
+    "build_request_id": "ibr_20260523_01",
+    "request_type": "publish",
+    "tenant_id": "tnt_default",
+    "collection_id": "col_policy",
+    "final_doc_id": "doc_expense_policy",
+    "document_version": "v3",
+    "publish_version": "pub_20260523_01",
+    "source_file_id": "src_20260523_01",
+    "visibility": "internal",
+    "source_binary_ref": "s3://bucket/source/expense-policy.pdf",
+    "parse_snapshot_id": "pss_20260523_01",
+    "governance_overlay_ref": "s3://bucket/publishing/doc_expense_policy/governance-overlay.json",
+    "sanitized_asset_ref": "s3://bucket/path/sanitized.md",
+    "canonical_asset_ref": "s3://bucket/path/canonical.md",
+    "metadata_ref": "s3://bucket/path/meta.json",
+    "quality_report_ref": "s3://bucket/path/quality.json",
+    "approval_decision_ref": "s3://bucket/path/approval.json",
+    "confirmed_tags": [
+      "finance",
+      "policy"
+    ],
+    "source_metadata": {
+      "filename": "expense-policy.pdf",
+      "mime_type": "application/pdf",
+      "source_system": "admin-upload"
+    },
+    "index_profile_id": "idx_default",
+    "target_index_version_id": "idxv_col_policy_active",
+    "idempotency_key": "doc_expense_policy:pub_20260523_01:idxv_col_policy_active",
+    "trace_id": "trc_20260523_01"
+  }
+}

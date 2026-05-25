@@ -1,0 +1,9 @@
+{
+  "collection_id": "col-finance-policy",
+  "tenant_id": "default",
+  "name": "Finance Policy",
+  "description": "Financial policies and procedures",
+  "authority_level": 8,
+  "created_at": "2026-05-15T00:00:00Z",
+  "updated_at": "2026-05-15T00:00:00Z"
+}

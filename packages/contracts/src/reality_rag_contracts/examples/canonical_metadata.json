@@ -1,0 +1,17 @@
+{
+  "tenant_id": "default",
+  "collection_id": "col-finance-policy",
+  "doc_id": "doc-travel-policy-v3",
+  "logical_document_id": "doc-travel-policy",
+  "source_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "version": 3,
+  "publish_status": "published",
+  "index_status": "indexed",
+  "effective_date": "2026-01-01T00:00:00Z",
+  "authority_level": 8,
+  "governance_level": "standard",
+  "access_policy": "collection_default",
+  "domain_tags": ["finance", "travel", "reimbursement"],
+  "risk_tags": [],
+  "quality_summary": "Tier A: high-confidence automatic ingestion"
+}

@@ -1,0 +1,53 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Retrieval Internal API
+  version: 0.1.0
+paths:
+  /internal/retrieve:
+    post:
+      operationId: internalRetrieve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/RetrieveRequest.schema.json
+      responses:
+        "200":
+          description: Knowledge context
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/KnowledgeContext.schema.json
+  /internal/retrieval-profiles/{profile_id}:
+    get:
+      operationId: getRetrievalProfile
+      parameters:
+        - name: profile_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Retrieval profile
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RetrievalProfile.schema.json
+  /health:
+    get:
+      operationId: retrievalHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                required: [service, status]

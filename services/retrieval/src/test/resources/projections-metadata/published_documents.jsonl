@@ -1,0 +1,2 @@
+{"tenant_id":"tnt_default","collection_id":"col_policy","final_doc_id":"doc_apac_policy","published_document_state":"PUBLISHED","active_index_version_id":"idxv_col_policy_metadata","visibility":"internal","allowed_principal_ids":[],"allowed_groups":["finance"]}
+{"tenant_id":"tnt_default","collection_id":"col_policy","final_doc_id":"doc_emea_policy","published_document_state":"PUBLISHED","active_index_version_id":"idxv_col_policy_metadata","visibility":"internal","allowed_principal_ids":[],"allowed_groups":["finance"]}

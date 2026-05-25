@@ -1,0 +1,15 @@
+{
+  "parse_snapshot_id": "pss_20260524_01",
+  "source_file_id": "src_20260524_01",
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "parser_backend": "ragflow-deepdoc",
+  "parser_profile_id": "parser_default",
+  "input_hash": "sha256:demo-input",
+  "preview_text_ref": "s3://bucket/parse-snapshots/pss_20260524_01/preview.txt",
+  "normalized_blocks_ref": "s3://bucket/parse-snapshots/pss_20260524_01/blocks.json",
+  "outline_ref": "s3://bucket/parse-snapshots/pss_20260524_01/outline.json",
+  "chunk_preview_ref": "s3://bucket/parse-snapshots/pss_20260524_01/chunks.json",
+  "warnings": [],
+  "created_at": "2026-05-24T00:00:00Z"
+}

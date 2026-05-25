@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Access API
+  version: 0.1.0
+paths:
+  /v1/retrieve:
+    post:
+      operationId: retrieveKnowledgeContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                query:
+                  type: string
+                collection_scope:
+                  type: array
+                  items:
+                    type: string
+                filters:
+                  type: object
+                language:
+                  type: string
+                cross_languages:
+                  type: array
+                  items:
+                    type: string
+                keyword:
+                  type: boolean
+                meta_data_filter:
+                  type: object
+                retrieval_profile_id:
+                  type: string
+                profile:
+                  type: string
+                  deprecated: true
+                max_context_tokens:
+                  type: integer
+                debug:
+                  type: string
+                  enum: [none, basic, full]
+              required: [query, collection_scope]
+      responses:
+        "200":
+          description: Knowledge context
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/KnowledgeContext.schema.json
+  /health:
+    get:
+      operationId: accessHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                  retrieval_status:
+                    type: string
+                required: [service, status, retrieval_status]

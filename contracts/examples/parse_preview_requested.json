@@ -1,0 +1,11 @@
+{
+  "request_id": "ppr_20260524_01",
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "source_file_id": "src_20260524_01",
+  "source_binary_ref": "s3://bucket/source/expense-policy.pdf",
+  "filename": "expense-policy.pdf",
+  "mime_type": "application/pdf",
+  "parser_profile_id": "parser_default",
+  "trace_id": "trc_20260524_01"
+}

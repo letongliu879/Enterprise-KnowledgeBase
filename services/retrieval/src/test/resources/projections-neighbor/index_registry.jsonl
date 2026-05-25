@@ -1,0 +1,1 @@
+{"tenant_id":"tnt_default","collection_id":"col_policy","index_version_id":"idxv_col_policy_neighbor","opensearch_index":"os_neighbor_policy","qdrant_collection":"qd_neighbor_policy","embedding_model":"text-embedding-3-large","chunk_profile_id":"chunk_neighbor","status":"ACTIVE"}

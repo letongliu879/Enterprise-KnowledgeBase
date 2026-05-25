@@ -1,0 +1,9 @@
+com\realityrag\access\profiles\RetrievalProfileSelectorTest.class
+com\realityrag\access\translate\RetrieveRequestBuilderTest.class
+com\realityrag\access\api\RetrieveControllerTest.class
+com\realityrag\access\clients\RetrievalClientTest.class
+com\realityrag\access\support\TestAgentAuthFactory.class
+com\realityrag\access\security\AccessAuthenticatorTest.class
+com\realityrag\access\mcp\SpringAiMcpServerTest.class
+com\realityrag\access\api\HealthControllerTest.class
+com\realityrag\access\mcp\SpringAiMcpServerTest$SseSession.class

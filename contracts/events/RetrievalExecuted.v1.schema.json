@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/events/RetrievalExecuted.v1.schema.json",
+  "allOf": [
+    {
+      "$ref": "./EventEnvelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "RetrievalExecuted"
+        },
+        "event_version": {
+          "const": 1
+        },
+        "aggregate_type": {
+          "const": "query"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "query_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/query_id"
+            },
+            "tenant_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/tenant_id"
+            },
+            "principal_id": {
+              "type": "string"
+            },
+            "collection_scope": {
+              "type": "array",
+              "items": {
+                "$ref": "../schemas/common.schema.json#/$defs/collection_id"
+              }
+            },
+            "profile_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/profile_id"
+            },
+            "index_version_used": {
+              "type": "array",
+              "items": {
+                "$ref": "../schemas/common.schema.json#/$defs/index_version_id"
+              }
+            },
+            "latency_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "top_chunk_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "../schemas/common.schema.json#/$defs/chunk_id"
+              }
+            },
+            "debug_ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query_id",
+            "tenant_id",
+            "principal_id",
+            "collection_scope",
+            "profile_id",
+            "index_version_used",
+            "latency_ms",
+            "top_chunk_ids",
+            "debug_ref"
+          ]
+        }
+      }
+    }
+  ]
+}

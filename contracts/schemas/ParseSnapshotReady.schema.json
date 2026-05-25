@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ParseSnapshotReady.schema.json",
+  "title": "ParseSnapshotReady",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "parse_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "parser_backend": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parser_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "preview_text_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chunk_preview_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    }
+  },
+  "required": [
+    "parse_snapshot_id",
+    "source_file_id",
+    "tenant_id",
+    "collection_id",
+    "parser_backend",
+    "parser_profile_id",
+    "preview_text_ref",
+    "chunk_preview_ref",
+    "warnings",
+    "trace_id"
+  ]
+}

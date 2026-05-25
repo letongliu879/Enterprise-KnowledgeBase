@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/TraceArtifact.schema.json",
+  "title": "TraceArtifact",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "artifact_ref": {
+      "type": "string"
+    },
+    "artifact_kind": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "trace_id",
+    "artifact_ref",
+    "artifact_kind",
+    "summary"
+  ]
+}

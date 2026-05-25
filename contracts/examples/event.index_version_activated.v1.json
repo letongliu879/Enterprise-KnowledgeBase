@@ -1,0 +1,19 @@
+{
+  "event_id": "evt_20260523_03",
+  "event_type": "IndexVersionActivated",
+  "event_version": 1,
+  "schema_version": "2026-05-23",
+  "tenant_id": "tnt_default",
+  "aggregate_type": "index_version",
+  "aggregate_id": "idxv_col_policy_active",
+  "sequence": 3,
+  "occurred_at": "2026-05-23T01:00:00Z",
+  "producer": "indexing",
+  "trace_id": "trc_20260523_01",
+  "payload": {
+    "collection_id": "col_policy",
+    "previous_index_version_id": "idxv_col_policy_prev",
+    "active_index_version_id": "idxv_col_policy_active",
+    "activated_by": "adm_ops_01"
+  }
+}

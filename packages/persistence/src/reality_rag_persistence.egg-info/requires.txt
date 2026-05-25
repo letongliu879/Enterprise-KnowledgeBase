@@ -1,0 +1,8 @@
+sqlalchemy>=2.0
+reality-rag-contracts
+
+[dev]
+pytest>=8.0
+
+[postgres]
+psycopg2-binary>=2.9

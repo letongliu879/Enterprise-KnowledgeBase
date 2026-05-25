@@ -1,0 +1,287 @@
+"""Outbox deliver callbacks for ingestion-worker.
+
+Routes outbox events to orchestrator actions or stage workers.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from reality_rag_contracts import EventType, IntakeJobState, OutboxEvent, PublishStatus, StageName
+from reality_rag_persistence.database import get_session
+from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+from reality_rag_persistence.repositories.source_files import SourceFileRepository
+
+from .job_event_flow import apply_approval_decision, apply_stage_completed
+from .document_service_client import DocumentServiceClient
+from .orchestrator import OrchestratorService
+
+logger = logging.getLogger(__name__)
+
+_FILE_READY_CONSUMER_ID = "ingestion-worker:file-ready"
+_STAGE_COMPLETED_CONSUMER_ID = "ingestion-worker:stage-completed"
+_APPROVAL_EVENT_CONSUMER_ID = "ingestion-worker:approval-event"
+_PUBLISH_EVENT_CONSUMER_ID = "ingestion-worker:publish-event"
+
+
+def _deliver_approval_event(event: OutboxEvent) -> bool:
+    """Forward approval requests or consume approval outcomes."""
+    from .domains.approval_domain import _get_remote_url, ApprovalService
+
+    if event.event_type in {EventType.APPROVAL_PENDING.value, EventType.APPROVAL_DECIDED.value}:
+        session = get_session()
+        try:
+            idem_repo = ConsumerIdempotencyRepository(session)
+            if idem_repo.is_processed(_APPROVAL_EVENT_CONSUMER_ID, event.event_id):
+                return True
+
+            intake_job_id = event.payload_json["intake_job_id"]
+            orch = OrchestratorService(session)
+            from reality_rag_persistence.models import IntakeJobModel
+            row = session.get(IntakeJobModel, intake_job_id)
+            if row is not None:
+                row.ticket_id = event.payload_json.get("ticket_id")
+                row.final_doc_id = event.payload_json.get("final_doc_id")
+
+            if event.event_type == EventType.APPROVAL_PENDING.value:
+                orch.advance_state(intake_job_id, IntakeJobState.AWAITING_APPROVAL)
+            else:
+                apply_approval_decision(orch, intake_job_id, event.payload_json)
+
+            idem_repo.record_processed(
+                _APPROVAL_EVENT_CONSUMER_ID,
+                event.event_id,
+                event.idempotency_key,
+            )
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            logger.exception("outbox: failed to process approval event")
+            return False
+        finally:
+            session.close()
+
+    remote_url = _get_remote_url()
+    if remote_url is None:
+        session = get_session()
+        try:
+            approval = ApprovalService(session)
+            payload = event.payload_json
+            if event.event_type == EventType.APPROVAL_REQUESTED.value:
+                publish_status = payload.get("publish_status")
+                if publish_status == PublishStatus.PUBLISHED.value:
+                    approval.submit_auto_approve(
+                        intake_job_id=payload["intake_job_id"],
+                        preliminary_doc_id=payload["preliminary_doc_id"],
+                        collection_id=payload["collection_id"],
+                        logical_document_id=payload.get("logical_document_id", ""),
+                        version=payload.get("version", 1),
+                        confirmed_tags=payload.get("confirmed_tags", []),
+                    )
+                elif publish_status == PublishStatus.REJECTED.value:
+                    approval.submit_auto_reject(
+                        intake_job_id=payload["intake_job_id"],
+                        preliminary_doc_id=payload["preliminary_doc_id"],
+                        collection_id=payload["collection_id"],
+                        rejection_reason=payload.get("rejection_reason", "System decision: reject"),
+                    )
+                else:
+                    approval.create_pending(
+                        intake_job_id=payload["intake_job_id"],
+                        preliminary_doc_id=payload["preliminary_doc_id"],
+                        collection_id=payload["collection_id"],
+                        routing_recommendation=payload.get("routing_recommendation", "require_approval"),
+                    )
+                session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            logger.exception("outbox: approval request local handling failed")
+            return False
+        finally:
+            session.close()
+
+    import httpx
+
+    try:
+        payload = event.payload_json
+        publish_status = payload.get("publish_status")
+        if publish_status == PublishStatus.PUBLISHED.value:
+            path = "/internal/approval/auto-approve"
+        elif publish_status == PublishStatus.REJECTED.value:
+            path = "/internal/approval/auto-reject"
+        else:
+            path = "/internal/approval/pending"
+        resp = httpx.post(f"{remote_url}{path}", json=payload, timeout=30.0)
+        return resp.status_code < 500
+    except Exception:
+        logger.exception("outbox: failed to forward approval event")
+        return False
+
+
+def _deliver_stage_completed(event: OutboxEvent) -> bool:
+    """Handle StageCompleted by letting orchestrator drive the next step."""
+    session = get_session()
+    try:
+        idem_repo = ConsumerIdempotencyRepository(session)
+        if idem_repo.is_processed(_STAGE_COMPLETED_CONSUMER_ID, event.event_id):
+            return True
+
+        payload = event.payload_json
+        intake_job_id = payload["intake_job_id"]
+        stage_name = StageName(payload["stage_name"])
+        success = bool(payload.get("success"))
+        if not success:
+            error_message = payload.get("error_message") or payload.get("error_code") or "Stage failed"
+            orch = OrchestratorService(session)
+            orch.fail_intake_job(intake_job_id, error_message)
+            idem_repo.record_processed(
+                _STAGE_COMPLETED_CONSUMER_ID,
+                event.event_id,
+                event.idempotency_key,
+            )
+            session.commit()
+            return True
+
+        orch = OrchestratorService(session)
+        job = IntakeJobRepository(session).get(intake_job_id)
+        if job is None:
+            raise ValueError(f"Intake job not found: {intake_job_id}")
+
+        apply_stage_completed(session, orch, job, stage_name)
+
+        idem_repo.record_processed(
+            _STAGE_COMPLETED_CONSUMER_ID,
+            event.event_id,
+            event.idempotency_key,
+        )
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        logger.exception("outbox: failed to process stage completed event")
+        return False
+    finally:
+        session.close()
+
+
+def _deliver_publish_event(event: OutboxEvent) -> bool:
+    """Consume publish lifecycle events or forward publish requests."""
+    if event.event_type == EventType.PUBLISH_COMPLETED.value:
+        session = get_session()
+        try:
+            idem_repo = ConsumerIdempotencyRepository(session)
+            if idem_repo.is_processed(_PUBLISH_EVENT_CONSUMER_ID, event.event_id):
+                return True
+
+            intake_job_id = event.payload_json["intake_job_id"]
+            orch = OrchestratorService(session)
+            from reality_rag_persistence.models import IntakeJobModel
+
+            row = session.get(IntakeJobModel, intake_job_id)
+            if row is not None:
+                row.final_doc_id = event.payload_json.get("final_doc_id")
+
+            orch.advance_state(intake_job_id, IntakeJobState.PUBLISHED)
+            idem_repo.record_processed(
+                _PUBLISH_EVENT_CONSUMER_ID,
+                event.event_id,
+                event.idempotency_key,
+            )
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            logger.exception("outbox: failed to process publish event")
+            return False
+        finally:
+            session.close()
+    logger.warning("outbox: unexpected publish event type %s", event.event_type)
+    return True
+
+
+def _deliver_file_ready(event: OutboxEvent) -> bool:
+    """Handle FILE_READY by creating intake job and first stage task only."""
+    source_file_id = event.payload_json.get("source_file_id") or event.aggregate_id
+    if not source_file_id:
+        logger.warning("outbox: file ready missing source_file_id")
+        return True
+
+    session = get_session()
+    try:
+        idem_repo = ConsumerIdempotencyRepository(session)
+        if idem_repo.is_processed(_FILE_READY_CONSUMER_ID, event.event_id):
+            logger.info("outbox: file ready already processed %s", source_file_id)
+            return True
+
+        source_file = SourceFileRepository(session).get(source_file_id)
+        if source_file is None:
+            raise ValueError(f"Source file not found: {source_file_id}")
+        if source_file.state.value != "ready":
+            logger.info("outbox: file ready ignored because source file is %s", source_file.state.value)
+            return True
+
+        existing_job = IntakeJobRepository(session).get_by_source_file_id(source_file_id)
+        if existing_job is not None:
+            logger.info("outbox: file ready ignored because intake job exists %s", existing_job.intake_job_id)
+            idem_repo.record_processed(_FILE_READY_CONSUMER_ID, event.event_id, event.idempotency_key)
+            session.commit()
+            return True
+
+        orch = OrchestratorService(session)
+        intake_job = orch.create_intake_job(
+            source_file_id=source_file.source_file_id,
+            object_id=source_file.object_id,
+            collection_id=source_file.collection_id,
+            trace_id=event.trace_id or source_file.upload_id or "",
+        )
+        claimed = __import__("ingestion_worker.document_service_client", fromlist=["DocumentServiceClient"]).DocumentServiceClient(session).claim(
+            source_file.source_file_id,
+            intake_job.intake_job_id,
+        )
+        if not claimed:
+            raise ValueError(f"Failed to claim source file {source_file.source_file_id}")
+
+        orch.advance_state(intake_job.intake_job_id, IntakeJobState.CONVERSION_QUEUED)
+        input_hash = source_file.content_hash or source_file.object_id
+        orch.find_or_create_stage_task(
+            intake_job.intake_job_id,
+            StageName.CONVERSION,
+            f"{intake_job.intake_job_id}:conversion:v1:{input_hash}",
+            "v1",
+            input_hash,
+        )
+        idem_repo.record_processed(_FILE_READY_CONSUMER_ID, event.event_id, event.idempotency_key)
+        session.commit()
+        logger.info("outbox: file ready scheduled %s", source_file_id)
+        return True
+    except Exception:
+        session.rollback()
+        logger.exception("outbox: file ready processing failed for %s", source_file_id)
+        return False
+    finally:
+        session.close()
+
+
+def make_deliver_callback() -> Any:
+    """Factory for the ingestion-worker outbox deliver callback."""
+
+    def deliver(event: OutboxEvent) -> bool:
+        handlers = {
+            EventType.STAGE_COMPLETED.value: _deliver_stage_completed,
+            EventType.APPROVAL_REQUESTED.value: _deliver_approval_event,
+            EventType.APPROVAL_DECIDED.value: _deliver_approval_event,
+            EventType.APPROVAL_PENDING.value: _deliver_approval_event,
+            EventType.PUBLISH_COMPLETED.value: _deliver_publish_event,
+            EventType.FILE_READY.value: _deliver_file_ready,
+        }
+        handler = handlers.get(event.event_type)
+        if handler is None:
+            logger.warning("outbox: no handler for event type %s", event.event_type)
+            return True
+        return handler(event)
+
+    return deliver

@@ -1,0 +1,6 @@
+{
+  "trace_id": "trc_qry_20260523_01",
+  "artifact_ref": "dbg://retrieval/qry_access_stub",
+  "artifact_kind": "context_pack",
+  "summary": "top_chunks=[chk_doc_expense_policy_idxv_col_policy_active_0001]"
+}

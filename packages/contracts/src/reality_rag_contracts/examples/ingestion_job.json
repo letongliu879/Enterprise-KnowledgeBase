@@ -1,0 +1,84 @@
+{
+  "job_id": "job-ingest-20260515-001",
+  "job_type": "ingestion",
+  "status": "completed",
+  "collection_id": "col-finance-policy",
+  "source_files": [
+    "/data/raw/finance/travel-policy.pdf",
+    "/data/raw/finance/expense-guidelines.docx",
+    "/data/raw/finance/corrupted-file.pdf",
+    "/data/raw/finance/data.bin",
+    "/data/raw/finance/vendor-list.xlsx"
+  ],
+  "conversion_report": {
+    "report_id": "rpt-20260515-001",
+    "job_id": "job-ingest-20260515-001",
+    "source_file_path": "/data/raw/finance/",
+    "conversion_status": "partial",
+    "total_files": 5,
+    "successful": 3,
+    "failed": 1,
+    "unsupported": 1,
+    "error_message": "1 file(s) failed conversion",
+    "warnings": [
+      "Unsupported extension .xyz for file data.bin",
+      "Low OCR confidence for scanned-invoice.pdf"
+    ],
+    "details": [
+      {
+        "source_file_path": "/data/raw/finance/travel-policy.pdf",
+        "conversion_status": "success",
+        "canonical_md": "# Travel Reimbursement Policy\n\n## Purpose\n...",
+        "error_message": "",
+        "warnings": [],
+        "metadata": {
+          "file_size_bytes": 204857
+        }
+      },
+      {
+        "source_file_path": "/data/raw/finance/expense-guidelines.docx",
+        "conversion_status": "success",
+        "canonical_md": "# Expense Guidelines\n\n...",
+        "error_message": "",
+        "warnings": [],
+        "metadata": {
+          "file_size_bytes": 152300
+        }
+      },
+      {
+        "source_file_path": "/data/raw/finance/corrupted-file.pdf",
+        "conversion_status": "failed",
+        "canonical_md": "",
+        "error_message": "PDF is encrypted and cannot be read",
+        "warnings": [],
+        "metadata": {
+          "file_size_bytes": 89000
+        }
+      },
+      {
+        "source_file_path": "/data/raw/finance/data.bin",
+        "conversion_status": "unsupported",
+        "canonical_md": "",
+        "error_message": "No converter available for .bin files",
+        "warnings": [],
+        "metadata": {
+          "file_size_bytes": 1234
+        }
+      },
+      {
+        "source_file_path": "/data/raw/finance/vendor-list.xlsx",
+        "conversion_status": "success",
+        "canonical_md": "# Vendor List\n\n| Vendor | Contact |...",
+        "error_message": "",
+        "warnings": [],
+        "metadata": {
+          "file_size_bytes": 45200
+        }
+      }
+    ],
+    "created_at": "2026-05-15T10:30:00Z"
+  },
+  "created_at": "2026-05-15T10:25:00Z",
+  "updated_at": "2026-05-15T10:30:00Z",
+  "error_message": null
+}

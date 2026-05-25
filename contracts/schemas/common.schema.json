@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/common.schema.json",
+  "title": "Reality-RAG Common Types",
+  "$defs": {
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "collection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "final_doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publish_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "document_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "index_version_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chunk_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "internal",
+        "external",
+        "restricted"
+      ]
+    },
+    "chunk_type": {
+      "type": "string",
+      "enum": [
+        "text",
+        "table",
+        "figure",
+        "mixed"
+      ]
+    },
+    "request_type": {
+      "type": "string",
+      "enum": [
+        "publish",
+        "reindex",
+        "lifecycle_tombstone"
+      ]
+    },
+    "debug_level": {
+      "type": "string",
+      "enum": [
+        "none",
+        "basic",
+        "full"
+      ],
+      "default": "none"
+    },
+    "published_document_state": {
+      "type": "string",
+      "enum": [
+        "PUBLISHED",
+        "DEPRECATED",
+        "ARCHIVED",
+        "RETRACTED",
+        "REINDEXING"
+      ]
+    },
+    "source_file_state": {
+      "type": "string",
+      "enum": [
+        "UPLOADING",
+        "UPLOADED",
+        "SCANNING",
+        "READY",
+        "CLAIMED",
+        "CONSUMED",
+        "CLEANABLE",
+        "CLEANED",
+        "FAILED"
+      ]
+    },
+    "intake_job_state": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "CONVERSION_QUEUED",
+        "CONVERSION_RUNNING",
+        "CONVERSION_SUCCEEDED",
+        "REVIEW_QUEUED",
+        "REVIEW_RUNNING",
+        "REVIEW_SUCCEEDED",
+        "APPROVAL_REQUESTED",
+        "AWAITING_APPROVAL",
+        "APPROVAL_DECIDED",
+        "PUBLISH_QUEUED",
+        "PUBLISH_RUNNING",
+        "PUBLISHED",
+        "REJECTED",
+        "FAILED",
+        "CANCELLED",
+        "EXPIRED",
+        "RETRY_SCHEDULED"
+      ]
+    },
+    "approval_ticket_state": {
+      "type": "string",
+      "enum": [
+        "SYSTEM_DECIDED",
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "RETURNED",
+        "EXPIRED"
+      ]
+    },
+    "publish_state": {
+      "type": "string",
+      "enum": [
+        "PUBLISH_CREATED",
+        "ASSET_WRITING",
+        "ASSET_WRITTEN",
+        "PERSISTING",
+        "PERSISTED",
+        "INDEXING",
+        "INDEXED",
+        "PUBLISH_SUCCEEDED",
+        "PUBLISH_RETRY_SCHEDULED",
+        "PUBLISH_FAILED"
+      ]
+    },
+    "index_version_status": {
+      "type": "string",
+      "enum": [
+        "BUILDING",
+        "READY",
+        "ACTIVE",
+        "INACTIVE",
+        "FAILED",
+        "DISCARDED",
+        "ROLLED_BACK"
+      ]
+    },
+    "page_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page_from": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "page_to": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "page_from",
+        "page_to"
+      ]
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "principal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "attributes": {
+          "type": "object",
+          "default": {}
+        }
+      },
+      "required": [
+        "principal_id",
+        "roles",
+        "groups",
+        "attributes"
+      ]
+    }
+  }
+}

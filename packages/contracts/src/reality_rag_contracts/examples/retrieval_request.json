@@ -1,0 +1,17 @@
+{
+  "query": "What materials are needed for travel reimbursement?",
+  "tenant_id": "default",
+  "application_profile_id": "ap-internal-assistant",
+  "permission_context": {
+    "tenant_id": "default",
+    "user_id": null,
+    "application_profile_id": "ap-internal-assistant",
+    "collection_scope": ["col-finance-policy", "col-hr-policy"],
+    "permission_scope_hash": "sha256:abc123def456"
+  },
+  "resolved_collection_ids": ["col-finance-policy", "col-hr-policy"],
+  "token_budget": 4096,
+  "max_results": 10,
+  "output_mode": "evidence_only",
+  "metadata_policy": "minimal"
+}

@@ -1,0 +1,19 @@
+{
+  "profile_id": "ret_default",
+  "collection_id": "col_policy",
+  "profile_version": 3,
+  "profile_hash": "sha256:ret-default-v3",
+  "bm25_weight": 0.55,
+  "vector_weight": 0.45,
+  "candidate_top_k": 20,
+  "similarity_threshold": 0.2,
+  "rerank_enabled": true,
+  "rerank_model": "rerank-v1",
+  "fail_policy": "fail_open",
+  "expansion_policy": {
+    "adjacent_window": 1
+  },
+  "pack_budget": 1200,
+  "updated_at": "2026-05-23T00:00:00Z",
+  "updated_by": "adm_ops_01"
+}

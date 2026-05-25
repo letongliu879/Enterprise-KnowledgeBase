@@ -1,0 +1,1 @@
+{"tenant_id":"tnt_default","collection_id":"col_policy","index_version_id":"idxv_col_policy_ragflow","opensearch_index":"os_ragflow_policy","qdrant_collection":"qd_ragflow_policy","embedding_model":"text-embedding-3-large","chunk_profile_id":"chunk_ragflow","status":"ACTIVE"}

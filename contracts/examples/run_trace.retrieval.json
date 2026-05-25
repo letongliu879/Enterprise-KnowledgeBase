@@ -1,0 +1,13 @@
+{
+  "trace_id": "trc_qry_20260523_01",
+  "run_kind": "retrieval",
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "principal_id": "principal_stub",
+  "query_id": "qry_access_stub",
+  "index_version_id": "idxv_col_policy_active",
+  "profile_id": "ret_default",
+  "root_status": "SUCCEEDED",
+  "debug_ref": "dbg://retrieval/qry_access_stub",
+  "result_count": 1
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/RetrieveRequest.schema.json",
+  "title": "RetrieveRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "query_id": {
+      "$ref": "./common.schema.json#/$defs/query_id"
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "principal": {
+      "$ref": "./common.schema.json#/$defs/principal"
+    },
+    "collection_scope": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/collection_id"
+      },
+      "minItems": 1
+    },
+    "query_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string"
+    },
+    "cross_languages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "keyword": {
+      "type": "boolean",
+      "default": false
+    },
+    "meta_data_filter": {
+      "type": "object",
+      "default": {}
+    },
+    "retrieval_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "filters": {
+      "type": "object",
+      "default": {}
+    },
+    "include_deprecated": {
+      "type": "boolean",
+      "default": false
+    },
+    "max_context_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "debug_level": {
+      "$ref": "./common.schema.json#/$defs/debug_level"
+    }
+  },
+  "required": [
+    "query_id",
+    "trace_id",
+    "principal",
+    "collection_scope",
+    "query_text",
+    "retrieval_profile_id",
+    "debug_level"
+  ]
+}

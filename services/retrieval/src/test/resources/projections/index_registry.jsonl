@@ -1,0 +1,2 @@
+{"tenant_id":"tnt_default","collection_id":"col_policy","index_version_id":"idxv_col_policy_file","opensearch_index":"os_file_policy","qdrant_collection":"qd_file_policy","embedding_model":"text-embedding-3-large","chunk_profile_id":"chunk_file","status":"ACTIVE"}
+{"tenant_id":"tnt_default","collection_id":"col_handbook","index_version_id":"idxv_col_handbook_file","opensearch_index":"os_file_handbook","qdrant_collection":"qd_file_handbook","embedding_model":"text-embedding-3-large","chunk_profile_id":"chunk_file","status":"ACTIVE"}

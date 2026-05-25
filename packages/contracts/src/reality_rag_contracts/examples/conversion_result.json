@@ -1,0 +1,13 @@
+{
+  "source_file_path": "/data/raw/finance/travel-policy.pdf",
+  "conversion_status": "success",
+  "canonical_md": "# Travel Reimbursement Policy\n\n## Purpose\nThis policy outlines the process for reimbursing travel expenses...\n\n## Eligibility\nAll full-time employees are eligible for travel reimbursement...\n\n## Required Materials\n- Completed Travel Authorization Form\n- Original receipts for expenses over $25\n- Itinerary documentation\n\n## Submission Deadline\nExpense reports must be submitted within 30 days of travel completion.",
+  "error_message": "",
+  "warnings": [],
+  "metadata": {
+    "file_size_bytes": 204857,
+    "encoding": "utf-8",
+    "converter": "markitdown-0.1.0",
+    "processing_time_ms": 3421
+  }
+}

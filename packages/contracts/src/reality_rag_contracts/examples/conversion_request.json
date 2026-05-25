@@ -1,0 +1,9 @@
+{
+  "source_file_path": "/data/raw/finance/travel-policy.pdf",
+  "collection_id": "col-finance-policy",
+  "options": {
+    "ocr": true,
+    "language": "en",
+    "extract_images": false
+  }
+}

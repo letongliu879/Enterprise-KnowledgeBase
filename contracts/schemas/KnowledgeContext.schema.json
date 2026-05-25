@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/KnowledgeContext.schema.json",
+  "title": "KnowledgeContext",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "query_id": {
+      "$ref": "./common.schema.json#/$defs/query_id"
+    },
+    "principal_context": {
+      "type": "object"
+    },
+    "index_version_used": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/index_version_id"
+      }
+    },
+    "collection_plans_used": {
+      "type": "array",
+      "items": {
+        "$ref": "./CollectionRetrievalPlan.schema.json"
+      }
+    },
+    "result_chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "collection_id": {
+            "$ref": "./common.schema.json#/$defs/collection_id"
+          },
+          "final_doc_id": {
+            "$ref": "./common.schema.json#/$defs/final_doc_id"
+          },
+          "chunk_id": {
+            "$ref": "./common.schema.json#/$defs/chunk_id"
+          },
+          "document_index_revision_id": {
+            "type": "string"
+          },
+          "display_text": {
+            "type": "string"
+          },
+          "section_path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_spans": {
+            "type": "array",
+            "items": {
+              "$ref": "./common.schema.json#/$defs/page_span"
+            }
+          },
+          "score": {
+            "type": "number"
+          },
+          "source_stage": {
+            "type": "string"
+          },
+          "why_selected": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection_id",
+          "final_doc_id",
+          "chunk_id",
+          "document_index_revision_id",
+          "display_text",
+          "section_path",
+          "page_spans",
+          "score",
+          "source_stage",
+          "why_selected"
+        ]
+      }
+    },
+    "grouped_sources": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "token_budget_used": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retrieval_debug": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "query_id",
+    "principal_context",
+    "index_version_used",
+    "collection_plans_used",
+    "result_chunks",
+    "grouped_sources",
+    "citations",
+    "token_budget_used",
+    "retrieval_debug"
+  ]
+}

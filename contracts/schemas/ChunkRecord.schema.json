@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ChunkRecord.schema.json",
+  "title": "ChunkRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "chunk_id": {
+      "$ref": "./common.schema.json#/$defs/chunk_id"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "final_doc_id": {
+      "$ref": "./common.schema.json#/$defs/final_doc_id"
+    },
+    "index_version_id": {
+      "$ref": "./common.schema.json#/$defs/index_version_id"
+    },
+    "document_index_revision_id": {
+      "type": "string"
+    },
+    "chunk_type": {
+      "$ref": "./common.schema.json#/$defs/chunk_type"
+    },
+    "display_text": {
+      "type": "string"
+    },
+    "vector_text": {
+      "type": "string"
+    },
+    "section_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "page_spans": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/page_span"
+      }
+    },
+    "source_block_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "keyword_terms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confirmed_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "visibility": {
+      "$ref": "./common.schema.json#/$defs/visibility"
+    },
+    "published_document_state": {
+      "$ref": "./common.schema.json#/$defs/published_document_state"
+    },
+    "access_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_principal_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "allowed_principal_ids",
+        "allowed_groups"
+      ]
+    },
+    "citation_payload": {
+      "type": "object"
+    },
+    "lexical_payload": {
+      "type": "object"
+    },
+    "vector_payload": {
+      "type": "object"
+    },
+    "chunk_hash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "chunk_id",
+    "tenant_id",
+    "collection_id",
+    "final_doc_id",
+    "index_version_id",
+    "chunk_type",
+    "display_text",
+    "vector_text",
+    "section_path",
+    "page_spans",
+    "source_block_ids",
+    "keyword_terms",
+    "confirmed_tags",
+    "visibility",
+    "citation_payload",
+    "lexical_payload",
+    "vector_payload",
+    "chunk_hash"
+  ]
+}

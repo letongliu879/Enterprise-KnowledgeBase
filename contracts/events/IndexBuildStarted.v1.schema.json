@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/events/IndexBuildStarted.v1.schema.json",
+  "allOf": [
+    {
+      "$ref": "./EventEnvelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "IndexBuildStarted"
+        },
+        "event_version": {
+          "const": 1
+        },
+        "aggregate_type": {
+          "const": "index_version"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "index_version_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/index_version_id"
+            },
+            "collection_id": {
+              "$ref": "../schemas/common.schema.json#/$defs/collection_id"
+            },
+            "build_job_id": {
+              "type": "string"
+            },
+            "started_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "index_version_id",
+            "collection_id",
+            "build_job_id",
+            "started_at"
+          ]
+        }
+      }
+    }
+  ]
+}

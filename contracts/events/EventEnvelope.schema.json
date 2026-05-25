@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/events/EventEnvelope.schema.json",
+  "title": "EventEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "../schemas/common.schema.json#/$defs/tenant_id"
+    },
+    "aggregate_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "$ref": "../schemas/common.schema.json#/$defs/trace_id"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "event_version",
+    "schema_version",
+    "tenant_id",
+    "aggregate_type",
+    "aggregate_id",
+    "sequence",
+    "occurred_at",
+    "producer",
+    "trace_id",
+    "payload"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "collection_id": "col-finance-policy",
+  "index_version": "v1",
+  "query": "travel reimbursement materials",
+  "top_k": 10,
+  "search_params": {}
+}

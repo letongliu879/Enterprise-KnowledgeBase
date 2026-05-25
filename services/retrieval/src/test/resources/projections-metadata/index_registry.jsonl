@@ -1,0 +1,1 @@
+{"tenant_id":"tnt_default","collection_id":"col_policy","index_version_id":"idxv_col_policy_metadata","opensearch_index":"os_policy_metadata","qdrant_collection":"qd_policy_metadata","embedding_model":"text-embedding-3-large","chunk_profile_id":"chunk_metadata","status":"ACTIVE"}

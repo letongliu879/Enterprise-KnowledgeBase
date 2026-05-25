@@ -1,0 +1,86 @@
+server:
+  port: 18082
+
+spring:
+  application:
+    name: retrieval
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+retrieval:
+  agent-access:
+    api-keys:
+      rr-agent-platform-dev:
+        secret: change-this-agent-secret-to-at-least-32-bytes
+        agent-type-id: kb_assistant
+        platform-id: enterprise_platform
+        tenant-id: tnt_default
+        knowledge-scopes: [col_policy, col_finance]
+        roles: [agent]
+        debug-permission: false
+        max-context-tokens: 4096
+      rr-agent-platform-ops:
+        secret: change-this-ops-agent-secret-at-least-32
+        agent-type-id: ops_assistant
+        platform-id: enterprise_platform
+        tenant-id: tnt_default
+        knowledge-scopes: [col_policy, col_finance, col_runbook]
+        roles: [agent, ops]
+        debug-permission: true
+        max-context-tokens: 8192
+  backends:
+    live-recall-enabled: false
+    live-embedding-enabled: false
+    embedding-base-url: https://api.siliconflow.cn/v1
+    embedding-api-key:
+    embedding-model:
+    live-rerank-enabled: false
+    reranker-base-url: https://api.siliconflow.cn/v1/rerank
+    reranker-api-key:
+    reranker-model:
+    live-prompt-strategies-enabled: false
+  search:
+    fused-top-m: 60
+    enable-rerank: true
+    rerank-top-n: 10
+    max-rerank-chars: 1000
+    max-breadcrumb-chars: 250
+    head-ratio: 0.67
+    enable-ragflow-rerank-window: true
+    ragflow-rerank-window-min: 30
+    ragflow-rerank-window-max: 64
+    enable-ragflow-token-weighting: true
+    ragflow-title-token-weight: 2
+    ragflow-important-keyword-weight: 5
+    ragflow-question-token-weight: 6
+    enable-ragflow-rank-features: true
+    enable-ragflow-keyword-extraction: true
+    ragflow-keyword-top-n: 3
+    enable-ragflow-cross-languages: true
+    enable-ragflow-metadata-auto-filter: true
+    enable-ragflow-toc-aggregation: true
+    enable-ragflow-toc-llm-selector: true
+    ragflow-toc-top-n: 6
+    ragflow-toc-min-score: 0.3
+    enable-ragflow-children-aggregation: true
+    enable-smart-top-k: true
+    smart-top-score-ratio: 0.5
+    smart-top-score-delta-abs: 0.25
+    smart-min-score: 0.25
+    smart-min-k: 2
+    smart-max-k: 8
+    enable-neighbor-expansion: true
+    neighbor-hops: 2
+    decay-neighbor: 0.8
+    enable-breadcrumb-expansion: true
+    breadcrumb-expand-limit: 3
+    decay-breadcrumb: 0.7
+    max-segments-per-file: 3
+    max-total-chars: 48000

@@ -1,0 +1,20 @@
+[project]
+name = "ragflow-runtime"
+version = "0.1.0"
+description = "Controlled RAGFlow-derived runtime for Enterprise KnowledgeBase indexing"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4>=4.13,<5",
+    "chardet>=7.0,<8",
+    "filelock>=3.18,<4",
+    "openpyxl>=3.1,<4",
+    "pandas>=2.3,<3",
+    "pydantic>=2.0",
+    "pypdf>=6.0,<7",
+    "python-docx>=1.2,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]

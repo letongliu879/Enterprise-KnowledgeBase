@@ -1,0 +1,9 @@
+{
+  "collection_id": "col-finance-policy",
+  "index_version": "v1",
+  "canonical_asset_paths": [
+    "col-finance-policy/doc-travel-policy-v3/canonical.md",
+    "col-finance-policy/doc-expense-guide-v1/canonical.md"
+  ],
+  "options": {}
+}

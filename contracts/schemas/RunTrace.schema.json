@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/RunTrace.schema.json",
+  "title": "RunTrace",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "run_kind": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "principal_id": {
+      "type": "string"
+    },
+    "query_id": {
+      "$ref": "./common.schema.json#/$defs/query_id"
+    },
+    "index_version_id": {
+      "$ref": "./common.schema.json#/$defs/index_version_id"
+    },
+    "profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "root_status": {
+      "type": "string"
+    },
+    "debug_ref": {
+      "type": "string"
+    },
+    "result_count": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "trace_id",
+    "run_kind",
+    "tenant_id",
+    "collection_id",
+    "principal_id",
+    "query_id",
+    "index_version_id",
+    "profile_id",
+    "root_status",
+    "debug_ref",
+    "result_count"
+  ]
+}

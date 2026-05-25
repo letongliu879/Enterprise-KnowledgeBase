@@ -1,0 +1,204 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Admin API
+  version: 0.1.0
+paths:
+  /admin/collections:
+    get:
+      operationId: listCollections
+      responses:
+        "200":
+          description: Collections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/AdminCollection.schema.json
+    post:
+      operationId: createCollection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/AdminCollection.schema.json
+      responses:
+        "201":
+          description: Created
+  /admin/retrieval-profiles:
+    get:
+      operationId: listRetrievalProfiles
+      responses:
+        "200":
+          description: Retrieval profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/RetrievalProfile.schema.json
+    post:
+      operationId: createRetrievalProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/RetrievalProfile.schema.json
+      responses:
+        "201":
+          description: Created
+  /admin/index-versions:
+    get:
+      operationId: listIndexVersions
+      responses:
+        "200":
+          description: Index versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/IndexVersion.schema.json
+  /admin/index-versions/{id}/activate:
+    post:
+      operationId: adminActivateIndexVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+  /admin/index-versions/{id}/rollback:
+    post:
+      operationId: adminRollbackIndexVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+  /admin/retrieval-logs:
+    get:
+      operationId: listRetrievalLogs
+      responses:
+        "200":
+          description: Retrieval logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /admin/runs:
+    get:
+      operationId: listRuns
+      responses:
+        "200":
+          description: Run traces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/RunTrace.schema.json
+  /admin/runs/{trace_id}:
+    get:
+      operationId: getRun
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run trace
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RunTrace.schema.json
+  /admin/runs/{trace_id}/steps:
+    get:
+      operationId: listRunSteps
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run steps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/RunStep.schema.json
+  /admin/runs/{trace_id}/artifacts/{artifact_ref}:
+    get:
+      operationId: getRunArtifact
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: artifact_ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run artifact
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/TraceArtifact.schema.json
+  /admin/runs/compare:
+    post:
+      operationId: compareRuns
+      responses:
+        "200":
+          description: Run comparison
+          content:
+            application/json:
+              schema:
+                type: object
+  /admin/bad-cases:
+    get:
+      operationId: listBadCases
+      responses:
+        "200":
+          description: Bad cases
+    post:
+      operationId: createBadCase
+      responses:
+        "201":
+          description: Created
+  /admin/eval-runs:
+    get:
+      operationId: listEvalRuns
+      responses:
+        "200":
+          description: Eval runs
+    post:
+      operationId: createEvalRun
+      responses:
+        "201":
+          description: Created
+  /health:
+    get:
+      operationId: adminHealth
+      responses:
+        "200":
+          description: Service health

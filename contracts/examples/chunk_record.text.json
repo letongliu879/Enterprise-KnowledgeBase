@@ -1,0 +1,54 @@
+{
+  "chunk_id": "chk_doc_expense_policy_idxv_col_policy_active_0001",
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "final_doc_id": "doc_expense_policy",
+  "index_version_id": "idxv_col_policy_active",
+  "document_index_revision_id": "dir_doc_expense_policy_pub_20260523_01",
+  "chunk_type": "text",
+  "display_text": "Approved expenses are reimbursable.",
+  "vector_text": "Document: Expense Policy\nSection: Expense Policy\nTags: finance, policy\nContent:\nApproved expenses are reimbursable.",
+  "section_path": [
+    "Expense Policy"
+  ],
+  "page_spans": [
+    {
+      "page_from": 1,
+      "page_to": 1
+    }
+  ],
+  "source_block_ids": [
+    "blk_1"
+  ],
+  "keyword_terms": [
+    "approved",
+    "expenses",
+    "reimbursable"
+  ],
+  "confirmed_tags": [
+    "finance",
+    "policy"
+  ],
+  "visibility": "internal",
+  "published_document_state": "PUBLISHED",
+  "access_control": {
+    "allowed_principal_ids": [
+      "principal_stub"
+    ],
+    "allowed_groups": [
+      "default"
+    ]
+  },
+  "citation_payload": {
+    "collection_id": "col_policy",
+    "final_doc_id": "doc_expense_policy",
+    "anchor": "page:1:span:0-36"
+  },
+  "lexical_payload": {
+    "lexical_text": "Approved expenses are reimbursable."
+  },
+  "vector_payload": {
+    "embedding_model": "text-embedding-3-large"
+  },
+  "chunk_hash": "sha256:chunk01"
+}

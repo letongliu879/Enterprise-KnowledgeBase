@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: ingestion-worker
+Version: 0.1.0
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.100
+Requires-Dist: uvicorn[standard]
+Requires-Dist: markitdown
+Requires-Dist: reality-rag-ai-clients
+Requires-Dist: reality-rag-contracts
+Requires-Dist: reality-rag-persistence
+Requires-Dist: httpx
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: httpx; extra == "dev"

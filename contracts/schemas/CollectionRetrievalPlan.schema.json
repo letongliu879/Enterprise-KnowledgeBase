@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/CollectionRetrievalPlan.schema.json",
+  "title": "CollectionRetrievalPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "active_index_version_id": {
+      "$ref": "./common.schema.json#/$defs/index_version_id"
+    },
+    "opensearch_index": {
+      "type": "string"
+    },
+    "qdrant_collection": {
+      "type": "string"
+    },
+    "embedding_model": {
+      "type": "string"
+    },
+    "chunk_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "retrieval_profile_snapshot": {
+      "type": "object"
+    },
+    "profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "profile_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "profile_hash": {
+      "type": "string"
+    },
+    "permission_scope": {
+      "type": "object"
+    },
+    "lifecycle_filter": {
+      "type": "object"
+    },
+    "include_deprecated": {
+      "type": "boolean"
+    },
+    "allowed_doc_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata_filters": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "tenant_id",
+    "collection_id",
+    "active_index_version_id",
+    "opensearch_index",
+    "qdrant_collection",
+    "embedding_model",
+    "chunk_profile_id",
+    "retrieval_profile_snapshot",
+    "profile_id",
+    "profile_version",
+    "profile_hash",
+    "permission_scope",
+    "lifecycle_filter",
+    "include_deprecated",
+    "allowed_doc_ids",
+    "metadata_filters"
+  ]
+}

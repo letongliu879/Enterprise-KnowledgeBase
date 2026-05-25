@@ -1,0 +1,15 @@
+{
+  "index_version_id": "idxv_col_policy_active",
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "status": "ACTIVE",
+  "schema_version": "2026-05-23",
+  "index_profile_id": "idx_default",
+  "chunk_profile_id": "chunk_default",
+  "embedding_model": "text-embedding-3-large",
+  "opensearch_index": "os_tnt_default_col_policy_idxv_col_policy_active",
+  "qdrant_collection": "qd_tnt_default_col_policy_idxv_col_policy_active",
+  "chunk_count": 128,
+  "created_at": "2026-05-23T00:00:00Z",
+  "activated_at": "2026-05-23T01:00:00Z"
+}

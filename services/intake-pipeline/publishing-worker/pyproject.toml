@@ -1,0 +1,18 @@
+[project]
+name = "publishing-worker"
+version = "0.1.0"
+description = "Standalone publishing worker for Reality-RAG"
+requires-python = "==3.14.*"
+dependencies = [
+    "fastapi>=0.100",
+    "uvicorn[standard]",
+    "reality-rag-contracts",
+    "reality-rag-persistence",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx",
+]

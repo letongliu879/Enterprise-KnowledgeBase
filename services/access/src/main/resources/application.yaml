@@ -1,0 +1,48 @@
+server:
+  port: 18081
+
+spring:
+  application:
+    name: access
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+  ai:
+    mcp:
+      server:
+        enabled: true
+        name: reality-rag-access
+        version: 0.1.0
+        type: SYNC
+        instructions: Enterprise KnowledgeBase access MCP server.
+        sse-message-endpoint: /mcp/messages
+        stdio: false
+        resource-change-notification: false
+        tool-change-notification: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+access:
+  default-retrieval-profile-id: ret_default
+  security:
+    api-keys:
+      rr-agent-platform-dev:
+        agent-type-id: kb_assistant
+        knowledge-scopes: [col_policy, col_finance]
+        roles: [agent]
+        debug-permission: false
+        max-context-tokens: 4096
+      rr-agent-platform-ops:
+        agent-type-id: ops_assistant
+        knowledge-scopes: [col_policy, col_finance, col_runbook]
+        roles: [agent, ops]
+        debug-permission: true
+        max-context-tokens: 8192
+  retrieval:
+    base-url: http://127.0.0.1:18082
+    connect-timeout: 1s
+    read-timeout: 3s

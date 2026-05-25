@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/events/IndexBuildRequested.v1.schema.json",
+  "allOf": [
+    {
+      "$ref": "./EventEnvelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "IndexBuildRequested"
+        },
+        "event_version": {
+          "const": 1
+        },
+        "aggregate_type": {
+          "const": "published_document"
+        },
+        "payload": {
+          "$ref": "../schemas/IndexBuildRequested.schema.json"
+        }
+      }
+    }
+  ]
+}

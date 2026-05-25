@@ -1,0 +1,12 @@
+{
+  "application_profile_id": "ap-internal-assistant",
+  "tenant_id": "default",
+  "name": "Internal Assistant",
+  "allowed_collections": ["col-finance-policy", "col-hr-policy"],
+  "default_collections": ["col-finance-policy"],
+  "allow_cross_collection": true,
+  "default_token_budget": 4096,
+  "metadata_policy": "minimal",
+  "debug_permission": false,
+  "rate_limit": 100
+}

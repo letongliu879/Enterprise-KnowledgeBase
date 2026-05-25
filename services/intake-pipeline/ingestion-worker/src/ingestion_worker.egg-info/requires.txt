@@ -1,0 +1,11 @@
+fastapi>=0.100
+uvicorn[standard]
+markitdown
+reality-rag-ai-clients
+reality-rag-contracts
+reality-rag-persistence
+httpx
+
+[dev]
+pytest>=8.0
+httpx

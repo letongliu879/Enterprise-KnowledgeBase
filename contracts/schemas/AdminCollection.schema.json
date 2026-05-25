@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/AdminCollection.schema.json",
+  "title": "AdminCollection",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "INACTIVE"
+      ]
+    },
+    "default_index_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "default_retrieval_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "collection_id",
+    "tenant_id",
+    "name",
+    "description",
+    "status",
+    "default_index_profile_id",
+    "default_retrieval_profile_id",
+    "created_at",
+    "updated_at"
+  ]
+}

@@ -1,0 +1,14 @@
+[project]
+name = "reality-rag-documents"
+version = "0.1.0"
+description = "Shared document domain logic for Reality-RAG"
+requires-python = ">=3.11"
+dependencies = [
+    "reality-rag-contracts",
+    "reality-rag-persistence",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]

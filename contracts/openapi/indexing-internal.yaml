@@ -1,0 +1,153 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Indexing Internal API
+  version: 0.1.0
+paths:
+  /internal/parse-previews:
+    post:
+      operationId: createParsePreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ParsePreviewRequested.schema.json
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                  source_file_id:
+                    type: string
+                  parser_profile_id:
+                    type: string
+                  chunk_profile_id:
+                    type: string
+                  parse_mode:
+                    type: string
+                  document_family:
+                    type: string
+                  decision_reason:
+                    type: string
+                  trace_id:
+                    type: string
+                required: [request_id, source_file_id, parser_profile_id, chunk_profile_id, parse_mode, document_family, decision_reason, trace_id]
+  /internal/index-jobs:
+    post:
+      operationId: createIndexJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/IndexBuildRequested.schema.json
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  build_job_id:
+                    type: string
+                  status:
+                    type: string
+                  accepted_command:
+                    type: string
+                required: [build_job_id, status, accepted_command]
+  /internal/index-jobs/{job_id}:
+    get:
+      operationId: getIndexJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Build job summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  build_job_id:
+                    type: string
+                  build_request_id:
+                    type: string
+                  status:
+                    type: string
+                  final_doc_id:
+                    type: string
+                  index_version_id:
+                    type: string
+                required: [build_job_id, build_request_id, status, final_doc_id, index_version_id]
+  /internal/parse-snapshots/{parse_snapshot_id}:
+    get:
+      operationId: getParseSnapshot
+      parameters:
+        - name: parse_snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Parse snapshot
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParseSnapshot.schema.json
+  /internal/index-versions/{index_version_id}/activate:
+    post:
+      operationId: activateIndexVersion
+      parameters:
+        - name: index_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+  /internal/index-versions/{index_version_id}/rollback:
+    post:
+      operationId: rollbackIndexVersion
+      parameters:
+        - name: index_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+  /internal/index-versions/{index_version_id}:
+    get:
+      operationId: getIndexVersion
+      parameters:
+        - name: index_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Index version
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/IndexVersion.schema.json
+  /health:
+    get:
+      operationId: indexingHealth
+      responses:
+        "200":
+          description: Service health

@@ -1,0 +1,23 @@
+{
+  "event_id": "evt_20260523_02",
+  "event_type": "IndexReady",
+  "event_version": 1,
+  "schema_version": "2026-05-23",
+  "tenant_id": "tnt_default",
+  "aggregate_type": "document_index_revision",
+  "aggregate_id": "dir_doc_expense_policy_01",
+  "sequence": 2,
+  "occurred_at": "2026-05-23T00:05:00Z",
+  "producer": "indexing",
+  "trace_id": "trc_20260523_01",
+  "payload": {
+    "index_version_id": "idxv_col_policy_active",
+    "document_index_revision_id": "dir_doc_expense_policy_01",
+    "final_doc_id": "doc_expense_policy",
+    "collection_id": "col_policy",
+    "chunk_count": 1,
+    "opensearch_record_count": 1,
+    "qdrant_point_count": 1,
+    "warnings": []
+  }
+}

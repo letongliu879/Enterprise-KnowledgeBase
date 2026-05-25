@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: reality-rag-persistence
+Version: 0.1.0
+Requires-Python: >=3.11
+Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: reality-rag-contracts
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: postgres
+Requires-Dist: psycopg2-binary>=2.9; extra == "postgres"

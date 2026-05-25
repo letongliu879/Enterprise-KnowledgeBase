@@ -1,0 +1,31 @@
+{
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "active_index_version_id": "idxv_col_policy_active",
+  "opensearch_index": "os_tnt_default_col_policy_idxv_col_policy_active",
+  "qdrant_collection": "qd_tnt_default_col_policy_idxv_col_policy_active",
+  "embedding_model": "text-embedding-3-large",
+  "chunk_profile_id": "chunk_default",
+  "retrieval_profile_snapshot": {
+    "candidate_top_k": 20,
+    "rerank_enabled": true
+  },
+  "profile_id": "ret_default",
+  "profile_version": 3,
+  "profile_hash": "sha256:ret-default-v3",
+  "permission_scope": {
+    "permission_fingerprint": "perm:finance:apac"
+  },
+  "lifecycle_filter": {
+    "allowed_states": [
+      "PUBLISHED"
+    ]
+  },
+  "include_deprecated": false,
+  "allowed_doc_ids": [
+    "doc_expense_policy"
+  ],
+  "metadata_filters": {
+    "visibility": "internal"
+  }
+}
