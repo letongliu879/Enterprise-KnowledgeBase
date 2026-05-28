@@ -9,7 +9,8 @@ from indexing_service.backends import get_index_backend
 from indexing_service.config import load_indexing_config
 from indexing_service.domain import (
     BuildJobRecord,
-    ChunkRecordRecord,
+    ChunkRecord,
+    ChunkRevisionRecord,
     IndexBuildStatus,
     IndexVersionRecord,
     IndexVersionStatus,
@@ -45,10 +46,12 @@ class PersistentIndexingRepository:
         self.jobs_by_idempotency: dict[str, BuildJobRecord] = {}
         self.jobs_by_id: dict[str, BuildJobRecord] = {}
         self.index_versions: dict[str, IndexVersionRecord] = {}
-        self.chunks_by_index_version: dict[str, list[ChunkRecordRecord]] = {}
+        self.chunks_by_index_version: dict[str, list[ChunkRecord]] = {}
         self.parse_snapshots_by_id: dict[str, ParseSnapshotRecord] = {}
         self.index_asset_bundles: dict[str, object] = {}
         self.indexed_documents_by_id: dict[str, IndexedDocument] = {}
+        self.chunk_revisions_by_id: dict[str, ChunkRevisionRecord] = {}
+        self.chunk_revision_idempotency: dict[str, ChunkRevisionRecord] = {}
         self.security = IndexingSecurity()
         self.index_backend = get_index_backend()
         self._hydrate_from_db()
@@ -102,6 +105,7 @@ class PersistentIndexingRepository:
         index_version_id: str,
         idempotency_key: str,
         index_profile_id: str,
+        chunk_profile_id: str = "",
     ) -> BuildJobRecord:
         existing = self.jobs_by_idempotency.get(idempotency_key)
         if existing is not None:
@@ -116,22 +120,17 @@ class PersistentIndexingRepository:
             index_version_id=index_version_id,
             idempotency_key=idempotency_key,
         )
-        self.jobs_by_idempotency[idempotency_key] = job
-        self.jobs_by_id[build_job_id] = job
-        self.index_versions.setdefault(
-            index_version_id,
-            IndexVersionRecord(
-                index_version_id=index_version_id,
-                tenant_id=tenant_id,
-                collection_id=collection_id,
-                status=IndexVersionStatus.BUILDING,
-                schema_version="2026-05-26",
-                index_profile_id=index_profile_id,
-                chunk_profile_id="chunk_default",
-                embedding_model=self.DEFAULT_EMBEDDING_MODEL,
-                opensearch_index=f"os_{tenant_id}_{collection_id}_{index_version_id}",
-                qdrant_collection=f"qd_{tenant_id}_{collection_id}_{index_version_id}",
-            ),
+        version_record = self.index_versions.get(index_version_id) or IndexVersionRecord(
+            index_version_id=index_version_id,
+            tenant_id=tenant_id,
+            collection_id=collection_id,
+            status=IndexVersionStatus.BUILDING,
+            schema_version="2026-05-26",
+            index_profile_id=index_profile_id,
+            chunk_profile_id=chunk_profile_id or "chunk_default",
+            embedding_model=self.DEFAULT_EMBEDDING_MODEL,
+            opensearch_index=f"os_{tenant_id}_{collection_id}_{index_version_id}",
+            qdrant_collection=f"qd_{tenant_id}_{collection_id}_{index_version_id}",
         )
         session, repos = self._db()
         try:
@@ -142,11 +141,14 @@ class PersistentIndexingRepository:
             )
             repos.build_job_repo.update_state(build_job_id, _to_contract_job_state(IndexBuildStatus.RUNNING))
             repos.index_registry_repo.mark_indexing(collection_id, index_version_id)
-            repos.index_version_repo.save(self.index_versions[index_version_id])
+            repos.index_version_repo.save(version_record)
             session.commit()
         finally:
             session.close()
-        self.jobs_by_id[build_job_id].status = IndexBuildStatus.RUNNING
+        # DB transaction succeeded: refresh in-memory projection
+        self.jobs_by_idempotency[idempotency_key] = job
+        self.jobs_by_id[build_job_id] = job
+        self.index_versions[index_version_id] = version_record
         return job
 
     def get_job(self, build_job_id: str) -> BuildJobRecord:
@@ -170,29 +172,30 @@ class PersistentIndexingRepository:
         version = self.get_index_version(index_version_id)
         previous_active = self._active_version_id(version.collection_id)
         activated_at = utc_now()
+
+        # Prepare new records for DB without mutating in-memory state yet
+        new_version = version.model_copy(update={
+            "status": IndexVersionStatus.ACTIVE,
+            "activated_at": activated_at,
+            "previous_active_index_version_id": (
+                previous_active if previous_active != index_version_id else version.previous_active_index_version_id
+            ),
+            "replaced_by_index_version_id": None,
+        })
+        new_current = None
         if previous_active and previous_active != index_version_id:
             current = self.get_index_version(previous_active)
-            current.status = IndexVersionStatus.INACTIVE
-            current.replaced_by_index_version_id = index_version_id
-        for indexed_document in self.indexed_documents_by_id.values():
-            if indexed_document.collection_id != version.collection_id:
-                continue
-            if indexed_document.index_version == index_version_id:
-                continue
-            indexed_document.state = IndexedDocumentState.CANDIDATE
-            indexed_document.updated_at = utc_now()
-        version.status = IndexVersionStatus.ACTIVE
-        version.activated_at = activated_at
-        version.previous_active_index_version_id = (
-            previous_active if previous_active != index_version_id else version.previous_active_index_version_id
-        )
-        version.replaced_by_index_version_id = None
+            new_current = current.model_copy(update={
+                "status": IndexVersionStatus.INACTIVE,
+                "replaced_by_index_version_id": index_version_id,
+            })
+
         session, repos = self._db()
         try:
             repos.index_registry_repo.activate(version.collection_id, index_version_id)
-            repos.index_version_repo.save(version)
-            if previous_active and previous_active != index_version_id:
-                repos.index_version_repo.save(current)
+            repos.index_version_repo.save(new_version)
+            if new_current is not None:
+                repos.index_version_repo.save(new_current)
             for indexed_document in self.indexed_documents_by_id.values():
                 if indexed_document.collection_id != version.collection_id:
                     continue
@@ -206,48 +209,54 @@ class PersistentIndexingRepository:
             session.commit()
         finally:
             session.close()
+
+        # DB committed successfully: refresh in-memory projection
+        self.index_versions[index_version_id] = new_version
+        if new_current is not None:
+            self.index_versions[previous_active] = new_current
         for indexed_document in self.indexed_documents_by_id.values():
             if indexed_document.collection_id != version.collection_id:
                 continue
             if indexed_document.index_version == index_version_id:
                 indexed_document.state = IndexedDocumentState.ACTIVE
                 indexed_document.activated_at = activated_at
-                indexed_document.updated_at = indexed_document.activated_at
-        self.index_versions[index_version_id] = version
-        if previous_active and previous_active != index_version_id:
-            self.index_versions[previous_active] = current
-        return version
+                indexed_document.updated_at = activated_at
+            else:
+                indexed_document.state = IndexedDocumentState.CANDIDATE
+                indexed_document.updated_at = activated_at
+        return new_version
 
     def rollback(self, index_version_id: str) -> IndexVersionRecord:
         version = self.get_index_version(index_version_id)
-        version.status = IndexVersionStatus.ROLLED_BACK
         rolled_back_at = utc_now()
-        version.rolled_back_at = rolled_back_at
-        for indexed_document in self.indexed_documents_by_id.values():
-            if indexed_document.collection_id != version.collection_id:
-                continue
-            if indexed_document.index_version == index_version_id:
-                indexed_document.state = IndexedDocumentState.CANDIDATE
-                indexed_document.updated_at = utc_now()
         fallback_index_version_id = version.previous_active_index_version_id
+
+        # Prepare new records for DB without mutating in-memory state yet
+        new_version = version.model_copy(update={
+            "status": IndexVersionStatus.ROLLED_BACK,
+            "rolled_back_at": rolled_back_at,
+        })
+        new_fallback = None
+        if fallback_index_version_id and fallback_index_version_id in self.index_versions:
+            fallback = self.get_index_version(fallback_index_version_id)
+            new_fallback = fallback.model_copy(update={
+                "status": IndexVersionStatus.ACTIVE,
+                "activated_at": rolled_back_at,
+                "replaced_by_index_version_id": None,
+            })
+
         session, repos = self._db()
         try:
             repos.index_registry_repo.rollback(version.collection_id, fallback_index_version_id)
-            repos.index_version_repo.save(version)
-            if fallback_index_version_id and fallback_index_version_id in self.index_versions:
-                fallback = self.get_index_version(fallback_index_version_id)
-                fallback.status = IndexVersionStatus.ACTIVE
-                fallback.activated_at = utc_now()
-                fallback.replaced_by_index_version_id = None
-                repos.index_version_repo.save(fallback)
+            repos.index_version_repo.save(new_version)
+            if new_fallback is not None:
+                repos.index_version_repo.save(new_fallback)
+            if new_fallback is not None:
                 for indexed_document in self.indexed_documents_by_id.values():
                     if indexed_document.collection_id != version.collection_id:
                         continue
                     if indexed_document.index_version == fallback_index_version_id:
                         repos.indexed_document_repo.activate(indexed_document.indexed_document_id)
-                        indexed_document.state = IndexedDocumentState.ACTIVE
-                        indexed_document.activated_at = utc_now()
-                        indexed_document.updated_at = indexed_document.activated_at
                     else:
                         repos.indexed_document_repo.update_state(
                             indexed_document.indexed_document_id,
@@ -264,27 +273,41 @@ class PersistentIndexingRepository:
             session.commit()
         finally:
             session.close()
-        self.index_versions[index_version_id] = version
-        if fallback_index_version_id and fallback_index_version_id in self.index_versions:
-            self.index_versions[fallback_index_version_id] = fallback
-        return version
+
+        # DB committed successfully: refresh in-memory projection
+        self.index_versions[index_version_id] = new_version
+        if new_fallback is not None:
+            self.index_versions[fallback_index_version_id] = new_fallback
+        for indexed_document in self.indexed_documents_by_id.values():
+            if indexed_document.collection_id != version.collection_id:
+                continue
+            if indexed_document.index_version == fallback_index_version_id:
+                indexed_document.state = IndexedDocumentState.ACTIVE
+                indexed_document.activated_at = rolled_back_at
+                indexed_document.updated_at = rolled_back_at
+            elif indexed_document.index_version == index_version_id:
+                indexed_document.state = IndexedDocumentState.CANDIDATE
+                indexed_document.updated_at = rolled_back_at
+            else:
+                indexed_document.state = IndexedDocumentState.CANDIDATE
+                indexed_document.updated_at = rolled_back_at
+        return new_version
 
     def cleanup(self, index_version_id: str) -> tuple[IndexVersionRecord, int]:
         version = self.get_index_version(index_version_id)
         if version.status == IndexVersionStatus.ACTIVE:
             raise ValueError("cannot cleanup an active index version")
         removed_chunks = len(self.chunks_by_index_version.get(index_version_id, []))
-        self.chunks_by_index_version.pop(index_version_id, None)
-        self.index_asset_bundles = {
-            key: bundle
-            for key, bundle in self.index_asset_bundles.items()
-            if not str(key).startswith(f"{index_version_id}:")
-        }
         remove_ids = [
             key
             for key, value in self.indexed_documents_by_id.items()
             if value.index_version == index_version_id
         ]
+        new_version = version.model_copy(update={
+            "chunk_count": 0,
+            "status": IndexVersionStatus.DISCARDED,
+            "cleaned_up_at": utc_now(),
+        })
         session, repos = self._db()
         try:
             repos.chunk_registry_repo.delete_by_index_version(index_version_id)
@@ -296,29 +319,34 @@ class PersistentIndexingRepository:
             raise
         finally:
             session.close()
-        for key in remove_ids:
-            self.indexed_documents_by_id.pop(key, None)
-        version.chunk_count = 0
-        version.status = IndexVersionStatus.DISCARDED
-        version.cleaned_up_at = utc_now()
         session, repos = self._db()
         try:
-            repos.index_version_repo.save(version)
+            repos.index_version_repo.save(new_version)
             session.commit()
         finally:
             session.close()
-        self.index_versions[index_version_id] = version
-        return version, removed_chunks
+        # Both transactions committed: refresh in-memory projection
+        self.chunks_by_index_version.pop(index_version_id, None)
+        self.index_asset_bundles = {
+            key: bundle
+            for key, bundle in self.index_asset_bundles.items()
+            if not str(key).startswith(f"{index_version_id}:")
+        }
+        for key in remove_ids:
+            self.indexed_documents_by_id.pop(key, None)
+        self.index_versions[index_version_id] = new_version
+        return new_version, removed_chunks
 
-    def replace_chunks(self, index_version_id: str, chunks: list[ChunkRecordRecord]) -> None:
+    def replace_chunks(self, index_version_id: str, chunks: list[ChunkRecord]) -> None:
         existing = self.chunks_by_index_version.get(index_version_id, [])
         final_doc_ids = {chunk.final_doc_id for chunk in chunks}
         retained = [chunk for chunk in existing if chunk.final_doc_id not in final_doc_ids]
-        self.chunks_by_index_version[index_version_id] = [*retained, *chunks]
+        merged_chunks = [*retained, *chunks]
         version = self.index_versions[index_version_id]
-        version.chunk_count = len(self.chunks_by_index_version[index_version_id])
-        if version.status != IndexVersionStatus.ACTIVE:
-            version.status = IndexVersionStatus.READY
+        new_version = version.model_copy(update={
+            "chunk_count": len(merged_chunks),
+            "status": IndexVersionStatus.READY if version.status != IndexVersionStatus.ACTIVE else version.status,
+        })
         session, repos = self._db()
         try:
             for final_doc_id in final_doc_ids:
@@ -328,11 +356,13 @@ class PersistentIndexingRepository:
                     final_doc_id=final_doc_id,
                     chunks=doc_chunks,
                 )
-            repos.index_version_repo.save(version)
+            repos.index_version_repo.save(new_version)
             session.commit()
         finally:
             session.close()
-        self.index_versions[index_version_id] = version
+        # DB committed successfully: refresh in-memory projection
+        self.chunks_by_index_version[index_version_id] = merged_chunks
+        self.index_versions[index_version_id] = new_version
     def write_index_assets(
         self,
         *,
@@ -340,7 +370,7 @@ class PersistentIndexingRepository:
         index_version_id: str,
         final_doc_id: str,
         canonical_source: str,
-        chunks: list[ChunkRecordRecord],
+        chunks: list[ChunkRecord],
     ) -> dict[str, int]:
         version = self.index_versions[index_version_id]
         bundle = build_index_asset_bundle(
@@ -419,12 +449,12 @@ class PersistentIndexingRepository:
         return record
 
     def list_indexed_documents(self) -> list[IndexedDocument]:
-        return list(self.indexed_documents_by_id.values())
+        return [doc for doc in self.indexed_documents_by_id.values() if doc is not None]
 
-    def list_chunks(self) -> list[ChunkRecordRecord]:
+    def list_chunks(self) -> list[ChunkRecord]:
         return [chunk for chunks in self.chunks_by_index_version.values() for chunk in chunks]
 
-    def list_active_chunks(self) -> list[ChunkRecordRecord]:
+    def list_active_chunks(self) -> list[ChunkRecord]:
         session, repos = self._db()
         try:
             registry_entries = repos.index_registry_repo.list_all()
@@ -440,8 +470,8 @@ class PersistentIndexingRepository:
         principal_id: str,
         principal_groups: tuple[str, ...] = (),
         collection_id: str | None = None,
-    ) -> list[ChunkRecordRecord]:
-        visible: list[ChunkRecordRecord] = []
+    ) -> list[ChunkRecord]:
+        visible: list[ChunkRecord] = []
         for chunk in self.list_active_chunks():
             if chunk.tenant_id != tenant_id:
                 continue
@@ -459,14 +489,196 @@ class PersistentIndexingRepository:
                 visible.append(chunk)
         return visible
 
+    def create_chunk_revision(
+        self,
+        *,
+        revision_id: str,
+        base_evidence_id: str,
+        doc_id: str,
+        collection_id: str,
+        tenant_id: str,
+        operation: str = "update",
+        content: str | None = None,
+        vector_text: str | None = None,
+        section_path: list[str] | None = None,
+        metadata_patch: dict[str, object] | None = None,
+        citation_payload: dict[str, object] | None = None,
+        idempotency_key: str | None = None,
+        trace_id: str | None = None,
+    ) -> ChunkRevisionRecord:
+        if idempotency_key and idempotency_key in self.chunk_revision_idempotency:
+            return self.chunk_revision_idempotency[idempotency_key]
+
+        # Find base chunk
+        base_chunk = None
+        for chunk in self.list_chunks():
+            if chunk.chunk_id == base_evidence_id:
+                base_chunk = chunk
+                break
+
+        if base_chunk is None:
+            raise KeyError(f"Base chunk not found: {base_evidence_id}")
+
+        # Validate tenant/collection match
+        if base_chunk.tenant_id != tenant_id or base_chunk.collection_id != collection_id:
+            raise ValueError("Tenant or collection mismatch with base chunk")
+
+        revision = ChunkRevisionRecord(
+            revision_id=revision_id,
+            base_evidence_id=base_evidence_id,
+            doc_id=doc_id,
+            collection_id=collection_id,
+            tenant_id=tenant_id,
+            operation=operation,
+            content=content,
+            vector_text=vector_text,
+            section_path=section_path,
+            metadata_patch=metadata_patch,
+            citation_payload=citation_payload,
+            status="draft",
+            idempotency_key=idempotency_key,
+            trace_id=trace_id,
+        )
+        self.chunk_revisions_by_id[revision_id] = revision
+        if idempotency_key:
+            self.chunk_revision_idempotency[idempotency_key] = revision
+        return revision
+
+    def get_chunk_revision(self, revision_id: str) -> ChunkRevisionRecord:
+        revision = self.chunk_revisions_by_id.get(revision_id)
+        if revision is not None:
+            return revision
+        raise KeyError(revision_id)
+
+    def list_chunk_revisions_by_doc(
+        self,
+        *,
+        doc_id: str,
+        collection_id: str,
+        status: str | None = None,
+    ) -> list[ChunkRevisionRecord]:
+        """Return chunk revisions for a document, optionally filtered by status."""
+        results: list[ChunkRevisionRecord] = []
+        for revision in self.chunk_revisions_by_id.values():
+            if revision.doc_id != doc_id or revision.collection_id != collection_id:
+                continue
+            if status is not None and revision.status != status:
+                continue
+            results.append(revision)
+        return results
+
+    def materialize_chunk_revision(self, revision_id: str) -> dict[str, object]:
+        revision = self.get_chunk_revision(revision_id)
+        if revision.status not in ("draft", "failed"):
+            return {
+                "revision_id": revision_id,
+                "status": revision.status,
+                "message": "Revision already materialized or in progress",
+            }
+
+        revision.status = "materializing"
+        revision.updated_at = utc_now()
+
+        try:
+            # Find base chunk
+            base_chunk = None
+            for chunk in self.list_chunks():
+                if chunk.chunk_id == revision.base_evidence_id:
+                    base_chunk = chunk
+                    break
+
+            if base_chunk is None:
+                revision.status = "failed"
+                revision.updated_at = utc_now()
+                raise ValueError(f"Base chunk not found during materialization: {revision.base_evidence_id}")
+
+            # Apply operation to create new chunk
+            new_chunk = self._apply_chunk_revision(base_chunk, revision)
+
+            # Write to index backend
+            version = self.index_versions.get(new_chunk.index_version_id)
+            if version is None:
+                revision.status = "failed"
+                revision.updated_at = utc_now()
+                raise ValueError(f"Index version not found: {new_chunk.index_version_id}")
+
+            bundle = build_index_asset_bundle(
+                indexed_document_id=revision.doc_id,
+                index_version=version,
+                final_doc_id=revision.doc_id,
+                canonical_source="chunk_revision",
+                chunks=[new_chunk],
+            )
+            result = __import__("asyncio").run(self.index_backend.write_bundle(bundle))
+
+            # Update in-memory chunks: old chunk unavailable, new chunk active
+            for chunk_list in self.chunks_by_index_version.values():
+                for i, chunk in enumerate(chunk_list):
+                    if chunk.chunk_id == revision.base_evidence_id:
+                        chunk.available_int = 0
+                        chunk.chunk_data = chunk.chunk_data or {}
+                        chunk.chunk_data["superseded_by"] = revision.revision_id
+                        break
+
+            self.chunks_by_index_version.setdefault(new_chunk.index_version_id, []).append(new_chunk)
+
+            # Update revision status
+            revision.status = "active"
+            revision.superseded_evidence_id = revision.base_evidence_id
+            revision.updated_at = utc_now()
+
+            return {
+                "revision_id": revision_id,
+                "status": "active",
+                "opensearch_record_count": result.get("opensearch_record_count", 0),
+                "qdrant_point_count": result.get("qdrant_point_count", 0),
+                "superseded_evidence_id": revision.base_evidence_id,
+            }
+        except Exception as e:
+            revision.status = "failed"
+            revision.updated_at = utc_now()
+            raise RuntimeError(f"Materialization failed: {e}") from e
+
+    def _apply_chunk_revision(self, base_chunk: ChunkRecord, revision: ChunkRevisionRecord) -> ChunkRecord:
+        import uuid
+        new_chunk_id = f"chunk_{uuid.uuid4().hex[:12]}"
+        new_chunk = base_chunk.model_copy(deep=True)
+        new_chunk.chunk_id = new_chunk_id
+        new_chunk.available_int = 1
+
+        if revision.operation == "delete":
+            new_chunk.available_int = 0
+        elif revision.operation == "hide":
+            new_chunk.available_int = 0
+            new_chunk.visibility = "restricted"
+        else:
+            if revision.content is not None:
+                new_chunk.display_text = revision.content
+            if revision.vector_text is not None:
+                new_chunk.vector_text = revision.vector_text
+                new_chunk.embedding_text = revision.vector_text
+            if revision.section_path is not None:
+                new_chunk.section_path = revision.section_path
+            if revision.metadata_patch is not None:
+                new_metadata = dict(new_chunk.metadata or {})
+                new_metadata.update(revision.metadata_patch)
+                new_chunk.metadata = new_metadata
+            if revision.citation_payload is not None:
+                new_chunk.citation_payload = revision.citation_payload
+
+        # Recompute chunk hash
+        new_chunk.chunk_hash = self.stable_chunk_hash(new_chunk.display_text or "")
+        return new_chunk
+
     def save_parse_snapshot(self, snapshot: ParseSnapshotRecord) -> ParseSnapshotRecord:
-        self.parse_snapshots_by_id[snapshot.parse_snapshot_id] = snapshot
         session, repos = self._db()
         try:
             repos.parse_snapshot_repo.save(snapshot)
             session.commit()
         finally:
             session.close()
+        # DB committed successfully: refresh in-memory projection
+        self.parse_snapshots_by_id[snapshot.parse_snapshot_id] = snapshot
         return snapshot
 
     def get_parse_snapshot(self, parse_snapshot_id: str) -> ParseSnapshotRecord:
@@ -487,22 +699,27 @@ class PersistentIndexingRepository:
     def stable_chunk_hash(content: str) -> str:
         return "sha256:" + sha256(content.encode("utf-8")).hexdigest()
 
-    def mark_job_completed(self, build_job_id: str, *, failure_reason: str | None = None) -> BuildJobRecord:
+    def mark_job_completed(self, build_job_id: str, *, error_message: str | None = None) -> BuildJobRecord:
         job = self.jobs_by_id[build_job_id]
-        job.status = IndexBuildStatus.FAILED if failure_reason else IndexBuildStatus.READY
-        job.failure_reason = failure_reason
-        job.completed_at = utc_now()
+        new_job = job.model_copy(update={
+            "status": IndexBuildStatus.FAILED if error_message else IndexBuildStatus.READY,
+            "error_message": error_message,
+            "completed_at": utc_now(),
+        })
         session, repos = self._db()
         try:
             repos.build_job_repo.complete(
                 build_job_id,
-                succeeded=not bool(failure_reason),
-                error_message=failure_reason,
+                succeeded=not bool(error_message),
+                error_message=error_message,
             )
             session.commit()
         finally:
             session.close()
-        return job
+        # DB committed successfully: refresh in-memory projection
+        self.jobs_by_id[build_job_id] = new_job
+        self.jobs_by_idempotency[new_job.idempotency_key] = new_job
+        return new_job
 
     def _active_version_id(self, collection_id: str) -> str | None:
         session, repos = self._db()
@@ -532,11 +749,12 @@ def _synthesize_missing_index_versions(
     existing: dict[str, IndexVersionRecord],
     registry_entries,
     indexed_documents: list[IndexedDocument],
-    chunks: list[ChunkRecordRecord],
+    chunks: list[ChunkRecord],
     embedding_model: str,
+    chunk_profile_id: str = "chunk_default",
 ) -> list[IndexVersionRecord]:
     registry_by_collection = {entry.collection_id: entry for entry in registry_entries}
-    chunks_by_version: dict[str, list[ChunkRecordRecord]] = {}
+    chunks_by_version: dict[str, list[ChunkRecord]] = {}
     docs_by_version: dict[str, list[IndexedDocument]] = {}
     for chunk in chunks:
         chunks_by_version.setdefault(chunk.index_version_id, []).append(chunk)
@@ -606,7 +824,7 @@ def _synthesize_missing_index_versions(
                 status=status,
                 schema_version="2026-05-26",
                 index_profile_id="ragflow",
-                chunk_profile_id="chunk_default",
+                chunk_profile_id=chunk_profile_id or "chunk_default",
                 embedding_model=embedding_model,
                 opensearch_index=f"os_{tenant_id}_{collection_id}_{index_version_id}",
                 qdrant_collection=f"qd_{tenant_id}_{collection_id}_{index_version_id}",

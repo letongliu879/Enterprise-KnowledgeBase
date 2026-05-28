@@ -7,4 +7,6 @@ public interface RetrievalProfileStore {
     Optional<RetrievalProfile> findByProfileId(String profileId);
 
     Optional<RetrievalProfile> findByProfileId(String profileId, String collectionId);
+
+    void upsert(RetrievalProfile profile);
 }

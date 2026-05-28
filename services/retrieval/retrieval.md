@@ -1,501 +1,432 @@
-# retrieval 权限感知混合检索核心设计
+# retrieval 运行时设计
 
 ## 1. 定位
 
-`retrieval` 是 `Enterprise KnowledgeBase` 的 Java 在线检索核心，负责全链路中的在线检索阶段：
+`retrieval` 是内部检索内核，不对外承担接入职责。
 
-1. 权限过滤
-2. 多路召回
-3. 融合排序
-4. rerank 精排
-5. 上下文包装
-6. 返回 `KnowledgeContext`
+它只接收来自 `access` 的受控 `RetrieveRequest`，然后完成：
 
-它不暴露外部 REST/MCP 协议，不处理文件摄入，不写索引。它只接收 `access` 传入的受控检索请求，返回权限感知、可引用、可审计的 `KnowledgeContext`。
+1. collection 级检索计划构建
+2. 权限与发布态过滤
+3. 召回、排序、扩展与上下文打包
+4. `KnowledgeContext` 返回
+5. 检索 trace 落库
 
-在本项目中，`retrieval` 延续 `Reality-RAG` 的服务职责与边界，但上游接入原则已经变化：
+## 2. 当前运行时事实源
 
-- 不再以“移植上游能力”为目标叙事
-- `retrieval` 仍然是 Java 主链实现
-- RAGFlow 与 ContextWeaver 都可以影响检索参数模型、方法链、调试契约与上下文工程方式
-- RAGFlow 不能成为在线检索的权限真相源或产品边界宿主
+当前运行时默认全部走 JDBC，不再依赖生产内存实现。
 
-## 1.1 当前实现状态（截至 2026-05-24）
+代码里实际读取的表如下：
 
-截至当前仓库状态，`services/retrieval` 已经在本仓库落地为一个可运行的 Java Spring Boot 内部服务。
+- `retrieval_profiles`
+  - `JdbcRetrievalProfileStore`
+  - 通过 `POST /internal/retrieval-profile-projections/sync` 接收 admin 投影同步
+- `published_documents`
+  - `JdbcPublishedDocumentSource`
+  - 通过 `POST /internal/index-projections/sync` 接收 indexing 投影同步
+- `index_registry` + `index_versions`
+  - `JdbcIndexRegistrySource`
+  - 通过 `POST /internal/index-projections/sync` 接收 indexing 投影同步
+- `chunk_registry`
+  - `JdbcChunkRegistryKnowledgeStore`
+  - 通过 `POST /internal/index-projections/sync` 接收 indexing 投影同步
+- `indexed_documents.outline`
+  - `JdbcDocumentTocSource`
+- `run_traces` + `run_steps`
+  - `JdbcRetrievalTraceRecorder`
 
-当前已可见的内容包括：
+说明：
 
-- controller 与 health endpoint
-- scope / plan builder
-- file projection 数据源
-- OpenSearch / Qdrant recaller
-- RAGFlow 风格 query 预处理、TOC 聚合、children 聚合
-- rerank、cutoff、expand、pack
-- 一组围绕主链行为的测试
+- file projection 类仍然存在，但当前只作为测试替身使用
+- 运行时默认 bean 已经固定到 JDBC 主链
+- 所有运行时事实源（profile、index、published document、chunk）均通过显式 projection sync 接收，不做跨服务表直连
+
+## 3. 当前执行链路
+
+`RetrievalService` 现在的执行顺序如下：
+
+1. `CollectionRetrievalPlanBuilder` 为每个 collection 构建 `CollectionRetrievalPlan`
+2. `QueryPreparationService` 做 query 预处理
+3. `RecallOrchestrator` 做 hybrid recall
+4. `RerankService` 做 rerank
+5. `SmartTopKCutoffService` 选 seeds
+6. `NeighborChunkExpander` 与 `BreadcrumbChunkExpander` 做扩展
+7. `RagflowTocAggregationService` 与 `RagflowChildrenAggregationService` 做聚合
+8. `JdbcRetrievalTraceRecorder` 记录 trace
+9. `KnowledgeContextPacker` 打包 `KnowledgeContext`
+
+## 4. 缓存层
+
+retrieval 服务自带两层 read-path 缓存，完全独立于上游 RAGFlow，不依赖 upstream Redis key。
+
+### 4.1 设计原则
+
+- 缓存只插在自有边界：`QueryEmbeddingClient` decorator 和 `RecallOrchestrator` 内部
+- 不缓存最终 `KnowledgeContext`（后面还有 expansion、TOC aggregation、packing、trace）
+- 失效靠 `activeIndexVersionId` + `profileHash` + `scope/filter hash`，不扫 Redis，不依赖 upstream epoch
+- 默认 `provider: noop`，不启用时不影响任何行为
+- Redis 故障时 fail-open，不阻塞检索主链
+
+### 4.2 第一层：Query Embedding Cache
+
+`CachedQueryEmbeddingClient` 装饰真实 `QueryEmbeddingClient`（如 `OpenAiCompatibleQueryEmbeddingClient`）。
+
+| 项 | 值 |
+|---|---|
+| Key 前缀 | `retrieval:qemb:v1:{sha256(...)}` |
+| hash 内容 | `query` + `embedding_model` + `embedding_client` + `embedding_base_url_fingerprint` |
+| TTL | 默认 24h (`retrieval.cache.query-embedding-ttl-seconds`) |
+| 无关因子 | collection、权限、index version（query embedding 只取决于 query 和模型） |
+
+行为：
+- cache hit → 直接返回 embedding，不走外部 embedding 服务
+- cache miss → 调用 delegate → 非空结果写入 Redis → 返回
+- 空结果或 null 不写入缓存
+
+### 4.3 第二层：Recall Candidate Cache
+
+位于 `RecallOrchestrator.recall(...)` 内部，缓存融合后的候选 `RetrievedChunk` 列表。
+
+| 项 | 值 |
+|---|---|
+| Key 前缀 | `retrieval:recall:v1:{sha256(...)}` |
+| hash 内容 | `CollectionRetrievalPlan` 的完整投影：`query` + `principal_id` + `principal_groups` + `collection_ids` + `active_index_versions` + `profile_hashes` + `embedding_models` + `allowed_doc_ids_hash` + `metadata_filters_hash` + `lifecycle_filter_hash` + `include_deprecated` + `candidate_top_k` + `opensearch_index` + `qdrant_collection` |
+| TTL | 默认 60s (`retrieval.cache.recall-ttl-seconds`) |
+| 失效因子 | `activeIndexVersionId`、`profileHash`、filter hash 任一变化即 key miss |
+
+行为：
+- cache hit → 直接返回 fused candidates，不走 OpenSearch/Qdrant
+- cache miss → 执行 hybrid recall → 权限裁剪 → fusion → 写入缓存 → 返回
+
+### 4.4 权限边界加固
+
+`RecallOrchestrator` 在 fusion 前强制执行：
+
+```
+live backend hits -> intersect permitted chunk ids -> fusion -> cache
+```
+
+`intersectWithPermitted` 将 OpenSearch/Qdrant 返回的 chunk 与 `PermissionPrefilter.filter(...)` 后的 `filteredChunks` 做 `chunkId` 交集。即使后端召回过滤不完整，最终进入 fusion 和 cache 的候选集都经过权限裁剪。
+
+### 4.5 配置
+
+```yaml
+retrieval:
+  cache:
+    enabled: true
+    provider: noop           # noop (默认) | redis
+    redis-url: redis://127.0.0.1:6379/0
+    key-prefix: reality-rag:retrieval
+    query-embedding-ttl-seconds: 86400
+    recall-ttl-seconds: 60
+    fail-open: true
+```
+
+Maven 依赖：`spring-boot-starter-data-redis`（已加入 pom.xml）。
+
+### 4.6 Cache Purge
+
+`POST /internal/cache/purge` 提供按 scope 清理检索缓存的能力。
+
+**请求体**（snake_case）：
+
+```json
+{
+  "tenant_id": "tenant_acme",
+  "collection_id": "col_default",
+  "doc_id": "doc_001",
+  "evidence_id": "chunk_001"
+}
+```
+
+- `tenant_id`：必填
+- `collection_id`、`doc_id`、`evidence_id`：可选，用于记录 purge scope
+
+**响应**（snake_case）：
+
+```json
+{
+  "purged_count": 0,
+  "scope": {
+    "tenant_id": "tenant_acme",
+    "collection_id": "col_default",
+    "doc_id": "doc_001",
+    "evidence_id": "chunk_001"
+  }
+}
+```
+
+**实现说明**：
+
+- 当前 cache key 使用 SHA-256 hash，无法按 tenant/collection/doc/evidence 精确匹配
+- 实际执行的是前缀匹配删除（`key_prefix:*`），删除所有以 `retrieval.cache.key-prefix` 为前缀的 key
+- `purged_count` 返回实际删除的 key 数量
+- NoOp 模式下 `purged_count` 始终为 0
+
+**调用方**：
+
+- `services/indexing` 在 `materialize_chunk_revision` 成功后调用此接口清理检索缓存
+- `services/indexing` 在 `IndexJobRunner.accept()` 成功激活 index version（`request_type="publish"` 或 `"reindex"`）后调用此接口清理检索缓存
+- purge 失败记录 warning，不回滚 revision 或索引物化结果
+
+### 4.7 不做的事
+
+- 不改 `upstream/ragflow/`
+- 不复用 upstream Redis key
+- 不复用 GraphRAG cache
+- 不缓存最终 answer
+- 第一版不缓存最终 `KnowledgeContext`
+
+## 5. 计划构建与 fail-closed
+
+每个 collection 的 plan 当前由三类事实拼出来：
+
+1. `retrieval_profiles`（通过 `/internal/retrieval-profile-projections/sync` 接收 admin 投影）
+2. `index_registry` / `index_versions`（通过 `/internal/index-projections/sync` 接收 indexing 投影）
+3. `published_documents`（通过 `/internal/index-projections/sync` 接收 indexing 投影）
+
+`CollectionRetrievalPlanBuilder` 的当前规则：
+
+- 缺 profile：直接报错
+- 缺 active index：直接报错
+- `allowed_doc_ids` 来自 `published_documents`
+- `include_deprecated=false` 时只允许 `PUBLISHED`
 
 这意味着：
 
-- 本文既是 retrieval 目标边界文档，也是当前实现说明文档
-- 当前代码还不是最终完态，但已经不是纯设计占位
-- access、admin、eval、trace 等后续模块应同时以本文和现有代码为准，而不是再回退到旧仓库文档口径
+- "key 有权限"不等于"一定能查到内容"
+- 如果 collection 已建索引但还没有发布事实，plan 仍可构建，但 `allowed_doc_ids` 会为空
+- 后续 recall 会 fail-closed，结果为空，而不是把全部 chunk 放进结果
 
-已存在并可直接作为 retrieval 契约输入的内容包括：
+这条约束是当前代码明确实现的，不是文档约定。
 
-- `contracts/schemas/RetrieveRequest.schema.json`
-- `contracts/schemas/CollectionRetrievalPlan.schema.json`
-- `contracts/schemas/KnowledgeContext.schema.json`
-- `contracts/openapi/retrieval-internal.yaml`
+## 6. 权限与过滤
 
-## 2. 核心设计决策
+`retrieval` 自己不做 API key 鉴权，但会执行 request 内部权限边界。
 
-### 2.1 权限先于检索
+当前 `PermissionPrefilter` 会同时过滤：
 
-`retrieval` 必须先生成 `RetrievalScope` 和 `CollectionRetrievalPlan[]`，再执行 OpenSearch / Qdrant 查询。
-
-任何召回、扩展、融合、打包阶段都不得绕过权限范围。
-
-生命周期过滤与权限过滤同级。默认只返回 `PUBLISHED` 文档；`DEPRECATED` 只有在请求显式授权包含时才允许进入最终输出；`ARCHIVED`、`RETRACTED` 和未恢复原状态的 `REINDEXING` 不得进入 recall、fusion、rerank、expansion、pack 的最终结果。
-
-补充约束：
-
-- chunk 是文档派生产物，不拥有独立 ACL
-- 检索授权始终围绕 `final_doc_id`、`collection_id` 和发布状态执行
-- 检索权限模型绝不能围绕 RAGFlow 的 `dataset/file` 标识执行
-
-### 2.2 hybrid recall 是主线
-
-基础召回固定为：
-
-- OpenSearch BM25 / lexical recall
-- Qdrant dense vector recall
-
-其他召回方式只能作为增强，不能替代 hybrid 主线。
-
-### 2.3 Java 主链自有，RAGFlow 只借机制，不借宿主
-
-本项目的 retrieval 依然以 Java 主体实现为准。
-
-RAGFlow 对 retrieval 的价值主要体现在：
-
-- 检索参数模型
-- query normalization 思路
-- hybrid retrieval 方法链
-- fusion / rerank 的调试与观测契约
-- 检索工作台的观察与调参方式
-
-但以下内容不进入 retrieval 主链宿主语义：
-
-- RAGFlow 的 Python / Go 检索运行时
-- RAGFlow 的 dataset/file 权限模型
-- RAGFlow 的 chat/search/agent 产品边界
-
-如果后续引入上游机制，优先顺序应是：
-
-1. 保留本平台契约与服务边界
-2. 吸收参数模型、方法链和调试契约
-3. 仅在少数高价值且短期无法本地等价承接的模块上考虑 sidecar
-
-### 2.4 ContextWeaver：借上下文工程机制，不借代码仓库语义
-
-本项目的 retrieval 仍然需要吸收 ContextWeaver 的上下文工程能力，重点包括：
-
-- smart cutoff
-- adjacent expansion
-- section expansion
-- token budget context pack
-
-这些能力进入 retrieval 的方式应是：
-
-- 吸收行为语义、触发条件、预算规则和打包思路
-- 适配到本平台的 `RetrieveRequest`、`CollectionRetrievalPlan`、`KnowledgeContext` 契约
-- 保持 Java 主链实现主导
-
-明确不借的部分包括：
-
-- AST / import graph 代码语义
-- 面向代码仓库的 chunk 关系假设
-- LanceDB / FTS / SQLite 存储层
-
-### 2.5 RAGFlow 与 ContextWeaver 的组合关系
-
-在 retrieval 侧，两者的作用不同：
-
-- RAGFlow 更偏检索方法链、query normalization、hybrid recall、fusion、rerank 参数化
-- ContextWeaver 更偏上下文工程、cutoff、expand、pack
-
-因此 retrieval 的目标不是“选一个上游站队”，而是：
-
-- 用本平台的治理与契约托住边界
-- 吸收 RAGFlow 的检索机制
-- 吸收 ContextWeaver 的上下文工程机制
-- 在 Java 主链里收敛成统一实现
-
-### 2.6 active index 真相必须双源解析
-
-`retrieval` 解析 active index 时必须同时读取两个事实源：
-
-- publishing domain 的 `published_documents` 或其受控只读投影
-- indexing registry
-
-各自职责：
-
-- publishing domain 决定文档是否可检索、当前文档绑定的 `active_index_version`、`published_document_state`、visibility、confirmed tags
-- indexing registry 决定 `index_version_id` 对应的 OpenSearch index、Qdrant collection、embedding model、schema/chunk profile
-
-规则：
-
-- 文档可见性只信 publishing domain，不从 `IndexReady` 本地缓存推断
-- 物理索引位置只信 indexing registry，不从 intake 表或 workbench 元数据硬编码
-- `IndexReady` 只能作为缓存刷新信号，不能单独让文档对检索可见
-- `DocumentLifecycleChanged` 必须使本地 scope/cache 失效
-- 查询时若 publishing state 与 indexing registry 不一致，必须 fail-closed 或跳过该 document，并写 trace
-
-### 2.7 `KnowledgeContext` 是证据上下文，不是最终答案
-
-`retrieval` 的输出是 `KnowledgeContext`，不是最终回答。
-
-因此：
-
-- 它返回 evidence、citation、section path、debug 信息
-- 它不拼接聊天回答
-- 它不替代上层 LLM answer generation
-
-这一点与现有 `packages/contracts/tests/test_retrieval_constraints.py` 的约束保持一致。
-
-## 3. 边界
-
-只负责：
-
-- `RetrieveRequest` 执行
-- principal scope 解析
-- active index 与 document lifecycle 联合解析
-- collection retrieval plan 生成
-- permission prefilter
-- OpenSearch recall
-- Qdrant recall
-- fusion
-- rerank
-- expansion
-- context pack
-- `KnowledgeContext`
-- retrieval trace
-
-不负责：
-
-- 用户认证
-- REST/MCP 对外暴露
-- 文档审批
-- chunking / embedding
-- index write
-- 管理 UI
-
-## 4. 全局架构
-
-```text
-RetrieveRequest
-      |
-      v
-┌────────────────────────────┐
-│ RetrievalOrchestrator      │
-└────────────┬───────────────┘
-             v
-┌────────────────────────────┐
-│ ScopeResolver              │
-│ - tenant                   │
-│ - collection               │
-│ - principal                │
-│ - active index + lifecycle │
-└────────────┬───────────────┘
-             v
-┌────────────────────────────┐
-│ CollectionRetrievalPlan[]  │
-│ - per collection profile   │
-│ - index registry binding   │
-│ - lifecycle filter         │
-└────────────┬───────────────┘
-             v
-┌────────────────────────────┐
-│ Permission/LifecycleFilter │
-│ - allowed_doc_ids          │
-│ - published state          │
-│ - metadata filters         │
-└────────────┬───────────────┘
-             v
-┌────────────────────────────┐
-│ RecallOrchestrator         │
-│ - lexical recall           │
-│ - dense recall             │
-│ - per model group recall   │
-└────────────┬───────────────┘
-             v
-┌────────────────────────────┐
-│ Fusion + Rerank            │
-│ - per collection fusion    │
-│ - cross collection merge   │
-│ - rerank / cutoff          │
-└────────────┬───────────────┘
-             v
-┌────────────────────────────┐
-│ Expansion + ContextPacker  │
-└────────────┬───────────────┘
-             v
-      KnowledgeContext
-```
-
-## 5. 目标模块分层
-
-下列目录结构表达的是目标模块分层，不代表当前仓库已经具备这些实现。
-
-```text
-services/retrieval/
-  pom.xml
-  README.md
-  retrieval.md
-  src/main/java/.../contracts/
-    RetrieveRequest.java
-    RetrievalScope.java
-    CollectionRetrievalPlan.java
-    RecallCandidate.java
-    FusedCandidate.java
-    RankedEvidence.java
-    KnowledgeContext.java
-  src/main/java/.../scope/
-    TenantScopeResolver.java
-    CollectionScopeResolver.java
-    IndexVersionResolver.java
-    PublishedDocumentStateResolver.java
-    CollectionRetrievalPlanBuilder.java
-    PrincipalScopeResolver.java
-  src/main/java/.../permission/
-    PermissionPrefilter.java
-    DocumentAccessPolicy.java
-    LifecycleFilter.java
-  src/main/java/.../recall/
-    OpenSearchRecaller.java
-    QdrantRecaller.java
-    RecallOrchestrator.java
-  src/main/java/.../embedding/
-    QueryEmbeddingClient.java
-    EmbeddingModelResolver.java
-  src/main/java/.../fusion/
-    RrfFusion.java
-    WeightedFusion.java
-    ScoreNormalizer.java
-  src/main/java/.../rerank/
-    RerankerClient.java
-    RerankPolicy.java
-  src/main/java/.../expansion/
-    AdjacentChunkExpander.java
-    SectionPathExpander.java
-  src/main/java/.../packing/
-    KnowledgeContextPacker.java
-    TokenBudgetPolicy.java
-  src/main/java/.../trace/
-    RetrievalTraceRecorder.java
-```
-
-## 6. 核心契约
-
-本节以当前仓库已存在的 `contracts/` 为准。
-
-### 6.1 `RetrieveRequest`
-
-当前 schema 位置：
-
-- `contracts/schemas/RetrieveRequest.schema.json`
-
-关键字段：
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `query_id` | string | 是 | 查询 ID |
-| `trace_id` | string | 是 | 运行轨迹 ID |
-| `tenant_id` | string | 是 | 租户 |
-| `principal` | object | 是 | 用户/主体 |
-| `collection_scope` | string[] | 是 | 查询 collection 范围 |
-| `query_text` | string | 是 | 查询文本 |
-| `language` | string | 否 | 查询语言 |
-| `retrieval_profile_id` | string | 是 | 检索策略入口 key |
-| `filters` | object | 否 | 元数据过滤 |
-| `include_deprecated` | boolean | 否 | 默认 false |
-| `max_context_tokens` | integer | 否 | 上下文预算 |
-| `debug_level` | enum | 是 | `none/basic/full` |
-
-规则：
-
-- `retrieval_profile_id` 是入口 key，不是跨 collection 唯一执行 profile
-- `trace_id` 必须跨 `access -> retrieval -> admin` 贯穿
-- `debug_level` 决定返回多少 debug 信息，但不能突破权限边界
-
-### 6.2 `CollectionRetrievalPlan`
-
-当前 schema 位置：
-
-- `contracts/schemas/CollectionRetrievalPlan.schema.json`
-
-关键字段：
-
-- `tenant_id`
 - `collection_id`
-- `active_index_version_id`
-- `opensearch_index`
-- `qdrant_collection`
-- `embedding_model`
-- `chunk_profile_id`
-- `retrieval_profile_snapshot`
-- `profile_id`
-- `profile_version`
-- `profile_hash`
-- `permission_scope`
-- `lifecycle_filter`
-- `include_deprecated`
+- `published_document_state`
 - `allowed_doc_ids`
-- `metadata_filters`
+- chunk 级 principal / group 可见性
+- metadata 里的 `visibility`
 
-规则：
+关键点：
 
-- 每个 collection 必须生成独立 plan
-- 多 collection 请求必须记录每个 plan 的 `profile_id/profile_version/profile_hash`
-- embedding model 不兼容时，按 plan 分组执行 query embedding
-- plan 缺少 active index 或 retrieval profile 时，该 collection 必须 fail-closed
+- `allowed_doc_ids` 为空时，不会默认放行
+- 这一点是为了避免"发布事实缺失但检索假成功"
 
-### 6.3 `KnowledgeContext`
+此外，`RecallOrchestrator` 在 fusion 前额外执行 `intersectWithPermitted`，将 OpenSearch/Qdrant 返回的 chunk 与 `PermissionPrefilter` 后的 permitted set 做交集。即使后端过滤不完整，进入 fusion 和 cache 的候选集也经过最终权限裁剪。详见第 4.4 节。
 
-当前 schema 位置：
+## 7. query 预处理与 RAGFlow 风格能力
 
-- `contracts/schemas/KnowledgeContext.schema.json`
+当前请求契约里已经接入这些字段：
 
-顶层字段：
+- `cross_languages`
+- `keyword`
+- `meta_data_filter`
+
+当前实现状态要分开看：
+
+- `manual` `meta_data_filter` 已经可用
+- `cross_languages`、`keyword`、`auto/semi_auto meta_data_filter` 依赖 prompt backend
+- 没配 live prompt backend 时，会安全降级，不会虚构条件
+
+## 8. recall / rerank 的当前实现状态
+
+当前 recall 主线是：
+
+- `OpenSearchRecaller`
+- `QdrantRecaller`
+- `HybridFusionService`
+
+`retrieval.backends.live-recall-enabled=true` 且配置了真实地址时，会调用 OpenSearch / Qdrant 真实后端。**Normal mode**：如果真实后端调用抛异常或返回空结果，代码会静默 fallback 到基于 DB chunk 的本地 stub recall（WARN 日志）。**Strict mode**（`require-live-backends=true`）：fallback 被禁止，任何后端失败或空结果均抛出 `IllegalStateException`。
+
+rerank 模式：
+
+- `retrieval.backends.live-rerank-enabled=false` 时，走本地 heuristic rerank（`source_stage="rerank_heuristic"`）
+- `live-rerank-enabled=true` 且配置了真实地址和 API key 后，走 live rerank（`source_stage="rerank_live"`）
+- **Normal mode**: live rerank 异常时静默 fallback 到 heuristic（WARN 日志）
+- **Strict mode**: live rerank 异常或空结果 → `IllegalStateException`
+
+**Strict smoke 已验证的真实后端证据（2026-05-28, 28/28 PASS）**：
+
+- retrieval smoke profile：`live-recall-enabled=true`、`live-rerank-enabled=true`
+- OpenSearch 索引 `os_default_col_smoke_idxv_col_smoke_active` 含 smoke 测试文档
+- Qdrant collection `qd_default_col_smoke_idxv_col_smoke_active` 含 smoke 测试 point（vector size=1024）
+- PostgreSQL `run_steps` 记录到 `source_stages: ["rerank_live"]`，证明 live rerank 被实际调用
+- Qdrant point 携带真实 1024 维向量，证明 SiliconFlow embedding（BAAI/bge-m3）被实际调用
+
+## 9. TOC 事实源
+
+当前 TOC 不是单独的 `document_toc` 表。
+
+`JdbcDocumentTocSource` 现在读取的是：
+
+- `indexed_documents.outline`
+
+条件是：
+
+- `collection_id` 命中
+- `final_doc_id` 命中
+- `state in ('ACTIVE', 'ACTIVATED')`
+
+所以现在的 TOC 聚合依赖的是 indexing 写进 `indexed_documents` 的 outline 字段。
+
+## 10. 可观测性
+
+当前 retrieval 已经把查询结果写入：
+
+- `run_traces`
+- `run_steps`
+
+当前至少会写：
+
+- `run_trace_id = retrieval_<query_id>`
+- `step_name = retrieval.response`
+- `step_name = retrieval.failure`
+
+当前记录内容包括：
 
 - `query_id`
-- `tenant_id`
-- `principal_context`
-- `index_version_used`
-- `collection_plans_used`
-- `result_chunks`
-- `grouped_sources`
-- `citations`
-- `token_budget_used`
-- `retrieval_debug`
+- `trace_id`
+- `principal_id`
+- `collection_scope`
+- `retrieval_profile_id`
+- `index_versions`
+- `allowed_doc_ids`
+- `chunk_ids`
+- `final_doc_ids`
+- `debug_ref`
 
-其中 `result_chunks` 至少包含：
+排查一条查询时，应把 access 与 retrieval 的 `trace_id` 串起来一起看。
 
-- `collection_id`
-- `final_doc_id`
-- `chunk_id`
-- `document_index_revision_id`
-- `display_text`
-- `section_path`
-- `page_spans`
-- `score`
-- `source_stage`
-- `why_selected`
+## 11. RetrievalProfile 运行时校验
 
-约束：
+`POST /internal/retrieval-profiles/validate` 是 retrieval 作为 runtime owner 提供的校验接口。
 
-- `KnowledgeContext` 只承载证据上下文，不承载最终答案
-- 所有返回 chunk 必须可回溯到 `final_doc_id` 和 `document_index_revision_id`
-- `retrieval_debug` 可以受控返回，但不得泄露越权中间产物
+### 11.1 设计原则
 
-## 7. 关键流程
+- retrieval 只校验 runtime 可执行性，不做 admin 控制面校验
+- 不修改 `retrieval_profiles` 表、不修改 retrieval cache、不改变 active profile
+- 输出 `canonical_config` 和 `profile_hash`，供 admin 控制面参考
 
-### 7.1 请求执行
+### 11.2 校验项
 
-1. 接收 `RetrieveRequest`
-2. 解析 principal scope
-3. 读取 collection 范围内的 publishing lifecycle 与 active index
-4. 生成每个 collection 的 `CollectionRetrievalPlan`
-5. 执行 permission/lifecycle prefilter
-6. 按 plan 执行 lexical recall 与 dense recall
-7. 执行 per-collection fusion 与 cross-collection merge
-8. 视策略执行 rerank、cutoff、expansion
-9. 执行 context pack，生成 `KnowledgeContext`
-10. 写 retrieval trace 并返回
+| 字段 | 规则 |
+|---|---|
+| `bm25_weight` | 0.0 ~ 1.0，且 + `vector_weight` = 1.0 |
+| `vector_weight` | 0.0 ~ 1.0，且 + `bm25_weight` = 1.0 |
+| `candidate_top_k` | > 0，且 <= 1000 |
+| `pack_budget` | > 0 |
+| `similarity_threshold` | 0.0 ~ 1.0 |
+| `rerank_enabled` | boolean |
+| `rerank_model` | 必须在支持列表中 (`default`, `none`, `bge-reranker-v2-m3`, `rerank-v1`, `rerank-multilingual-v1.0`) |
+| `fail_policy` | `fail_open` 或 `fail_closed` |
+| `expansion_policy` | 可选；如有 `type`，必须是 `neighbor` / `breadcrumb` / `none` |
 
-### 7.2 lifecycle 过滤
+### 11.3 输出格式
 
-默认规则：
+```json
+{
+  "valid": true,
+  "canonical_config": {
+    "bm25_weight": 0.3,
+    "vector_weight": 0.7,
+    "candidate_top_k": 20,
+    "similarity_threshold": 0.75,
+    "rerank_enabled": true,
+    "rerank_model": "bge-reranker-v2-m3",
+    "fail_policy": "fail_closed",
+    "expansion_policy": {},
+    "pack_budget": 1200
+  },
+  "profile_hash": "sha256:...",
+  "warnings": [],
+  "errors": [],
+  "runtime_owner": "retrieval",
+  "validator_version": "1.0.0"
+}
+```
 
-- `PUBLISHED`：允许进入检索
-- `DEPRECATED`：默认过滤，仅在显式授权请求中允许
-- `ARCHIVED`：禁止进入检索
-- `RETRACTED`：禁止进入检索
-- `REINDEXING`：未恢复原状态前禁止进入最终结果
+当 `valid=false` 时，`canonical_config` 字段不存在，`profile_hash` 为占位值 `sha256:0000...`。
 
-### 7.3 active index 解析
+### 11.4 与 admin 控制面的边界
 
-查询前必须同时解析：
+- admin 负责 RetrievalProfile CRUD、审批流、版本管理
+- retrieval 负责校验 profile 在 runtime 是否可执行，并生成 canonical runtime view
+- admin 发布 RetrievalProfile 前必须调用此接口；retrieval 不主动调用 admin
+- 若 `valid=false`，admin 拒绝发布并写 `ops_audit_log`（`after_state=rejected`）
+- 若 `valid=true`，admin 将 `runtime_canonical_config`、`profile_hash`、`validator_version`、`warnings` 写入 profile 记录后发布
 
-- 文档当前是否可见
-- 文档绑定的 `active_index_version`
-- `active_index_version` 对应的 OpenSearch/Qdrant 物理位置
+## 12. 配置
 
-这三项缺一不可；任一项不一致时必须 fail-closed 或跳过并写 trace。
+主配置在 `src/main/resources/application.yaml`。
 
-## 8. 与其他服务的关系
+关键项：
 
-### 8.1 与 `access`
+- `server.port=18082`
+- `spring.datasource.*`
+- `retrieval.backends.*`
+- `retrieval.search.*`
+- `retrieval.cache.*`
 
-`access` 负责：
+## 附录 A. 当前本地验证事实
 
-- 对外 REST / MCP
-- auth / rate limit / deadline
-- 入口参数格式校验
-- `retrieval_profile_id` 的选择或透传
+仓库里已有 DB-backed 验证：
 
-`retrieval` 负责：
+- `DbBackedRuntimeRetrieveControllerTest`
+  - 验证 retrieval 运行时可直接使用 DB-backed profile / index / chunk / trace
+- `RealSqliteIndexingRegistrySmokeTest`
+  - 验证本地 `.verify/runtime/indexing-real.db` 能读到 `col_default` 的 active index、chunk、`ret_default`
+- `scripts/run_real_runtime_smoke.py`
+  - 端到端 real-runtime smoke test，28/28 通过（已验证 strict mode，2026-05-28）
+  - 验证真实多进程 HTTP + 真实 PostgreSQL + 契约投影同步全链路
+  - 验证 profile projection sync、index projection sync、published document projection、hybrid recall、rerank、context pack 全链路
+  - **Live dependency strict proof (28/28 PASS with `--require-live-backends`)**:
+    - OpenSearch direct verification: `os_default_col_smoke_idxv_col_smoke_active` hits=1, `doc_smoke_test` confirmed
+    - Qdrant direct verification: `qd_default_col_smoke_idxv_col_smoke_active` points=1, `doc_smoke_test` confirmed
+    - OpenSearch live recall: `OpenSearch live recall returned 1 hits for collection=col_smoke`
+    - SiliconFlow embedding: `SiliconFlow embedding succeeded, model=BAAI/bge-m3, dimension=1024`
+    - Qdrant live recall: `Qdrant live recall returned 1 hits for collection=col_smoke`
+    - SiliconFlow rerank: `SiliconFlow rerank succeeded, model=BAAI/bge-reranker-v2-m3, returned 1 results`
+    - Trace `source_stages: ["rerank_live"]` recorded in PostgreSQL `run_steps`
+    - Access query returns same doc_id/chunk through live retrieval path
+  - JWT auth 使用 smoke-test-secret（test double）；production JWT 配置（issuer/audience）已实现，见 admin 测试
+  - **Redis cache**: implementation complete（`RedisRetrievalCache.java`）；strict Redis smoke **NOT RUN**（credentials unavailable）。Normal mode uses noop provider。
+  - **Strict mode 完整选项**: `py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends`
+    - 禁止所有静默 fallback：recall stub、rerank heuristic、embedding empty/stub 均抛出 `IllegalStateException`
+    - OpenSearch/Qdrant/SiliconFlow 任一不可达 → FAIL
 
-- 真正展开 per-collection retrieval plan
-- 解析 profile snapshot
-- 组合权限、召回、融合、精排、pack
+**检索 backend 的真实使用状态**
 
-### 8.2 与 `indexing`
+retrieval recall/rerank 已配置为 live 模式（smoke profile）：
 
-`indexing` 负责：
+- `live-recall-enabled: true` → OpenSearch + Qdrant
+- `live-embedding-enabled: true` → SiliconFlow BAAI/bge-m3
+- `live-rerank-enabled: true` → SiliconFlow BAAI/bge-reranker-v2-m3
+- `cache.enabled: false`
 
-- chunk 生成
-- embedding 生成
-- OpenSearch / Qdrant 写入
-- index version 注册与切换
+**模式行为**：
 
-`retrieval` 负责消费它的结果，但不定义其内部 chunking / embedding schema 生成过程。
+| Mode | Backend 不可用 | Embedding 失败 | Rerank 失败 | 日志 |
+|---|---|---|---|---|
+| Normal | 静默 fallback 到 stub，WARN 日志 | 静默 fallback 到 stub/empty，WARN 日志 | 静默 fallback 到 heuristic，WARN 日志 | `live recall failed — falling back to stub` |
+| Strict (`--require-live-backends`) | 抛出 `IllegalStateException`，请求失败 | 抛出 `IllegalStateException`，请求失败 | 抛出 `IllegalStateException`，请求失败 | `required but failed` / `required but not configured` |
 
-### 8.3 与 `intake-pipeline`
+**Strict smoke 已验证的证据 (2026-05-28, 28/28 PASS)**：
 
-`intake-pipeline` 负责：
+- OpenSearch 索引 `os_default_col_smoke_idxv_col_smoke_active` 含 `doc_smoke_test`（direct `_search` hits=1）
+- Qdrant collection `qd_default_col_smoke_idxv_col_smoke_active` 含 `doc_smoke_test`（direct `scroll` points=1）
+- 日志：`OpenSearch live recall returned 1 hits`、`Qdrant live recall returned 1 hits`
+- 日志：`SiliconFlow embedding succeeded, model=BAAI/bge-m3, dimension=1024`
+- 日志：`SiliconFlow rerank succeeded, model=BAAI/bge-reranker-v2-m3, returned 1 results`
+- Trace：`run_steps.details_json.source_stages: ["rerank_live"]`
 
-- 文档治理真相
-- published document lifecycle
-- `DocumentLifecycleChanged` 等事件
+**运行时必须通过 projection sync 接收事实**
 
-`retrieval` 必须以这些治理事实作为检索可见性前提。
+- admin -> retrieval：`/internal/retrieval-profile-projections/sync`
+- indexing -> retrieval：`/internal/index-projections/sync`
 
-### 8.4 与 `admin`
-
-`admin` 负责：
-
-- retrieval profile 管理
-- trace 查询
-- bad case / eval
-- 运维观测
-
-`retrieval` 负责产生可查询的 trace 与 debug_ref，但不承担管理界面职责。
-
-## 9. 明确不做的事
-
-- 不把 retrieval 做成外部 REST/MCP 服务
-- 不直接访问工作台对象并把它们当成治理真相
-- 不把 RAGFlow 检索运行时当成 Java 主链宿主
-- 不把 `KnowledgeContext` 变成最终答案载体
-- 不让 retrieval 自己写索引、改 lifecycle、改审批状态
-
-## 10. 与本项目总体架构的关系
-
-本文是 [docs/architecture.md](/E:/AI/My-Project/Enterprise%20KnowledgeBase/docs/architecture.md) 在 retrieval 侧的展开。
-
-若与其他历史文档冲突，以本文和顶层架构文档为准；不再回退到旧仓库“上游能力移植”叙事。
-
-## 11. 一句话
-
-`retrieval` 是本项目的 Java 权限感知混合检索核心：治理真相来自平台，索引事实来自 indexing，RAGFlow 提供检索机制参考，ContextWeaver 提供上下文工程参考，二者都不进入权限真相与服务宿主边界。
+如果缺少 projection sync，retrieval 会因找不到 profile、index 或 published document 而 fail-closed 返回空结果。这不是服务故障，而是"运行时尚未收到投影"的预期行为。

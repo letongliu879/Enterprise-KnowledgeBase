@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.realityrag.access.contracts.InternalPrincipal;
 import com.realityrag.access.contracts.InternalRetrieveRequest;
+import com.realityrag.access.support.AccessException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -32,10 +33,23 @@ class RetrievalClientTest {
             .andRespond(withSuccess("""
                 {
                   "query_id":"qry_1",
-                  "principal_context":{},
+                  "principal_context":{"tenant_id":"t1"},
                   "index_version_used":["idx_v1"],
                   "collection_plans_used":[],
-                  "result_chunks":[],
+                  "evidence_items":[
+                    {
+                      "collection_id":"c1",
+                      "doc_id":"doc_1",
+                      "evidence_id":"chunk_1",
+                      "document_index_revision_id":"rev_1",
+                      "content":"test content",
+                      "section_path":["Section A"],
+                      "page_spans":[{"page_from":1,"page_to":2}],
+                      "score":0.95,
+                      "source_stage":"hybrid",
+                      "why_selected":"bm25+vector"
+                    }
+                  ],
                   "grouped_sources":[],
                   "citations":[],
                   "token_budget_used":128,
@@ -45,6 +59,12 @@ class RetrievalClientTest {
 
         var response = client.retrieve(request());
         assertEquals("qry_1", response.queryId());
+        assertEquals(1, response.resultChunks().size());
+        var chunk = response.resultChunks().get(0);
+        assertEquals("doc_1", chunk.finalDocId());
+        assertEquals("chunk_1", chunk.chunkId());
+        assertEquals("test content", chunk.displayText());
+        assertEquals(0.95, chunk.score());
         server.verify();
     }
 
@@ -58,7 +78,7 @@ class RetrievalClientTest {
         server.expect(requestTo("http://retrieval/internal/retrieve"))
             .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
 
-        assertThrows(RetrievalUnavailableException.class, () -> client.retrieve(request()));
+        assertThrows(AccessException.RetrievalUnavailable.class, () -> client.retrieve(request()));
         server.verify();
     }
 

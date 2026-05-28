@@ -77,8 +77,110 @@ class CollectionModel(Base):
     tenant_id = Column(String(64), ForeignKey("tenants.tenant_id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(String(1024), default="")
+    lifecycle_state = Column(String(32), default="active", nullable=False)
     authority_level = Column(Integer, default=0)
+    access_policy = Column(JSON, default=dict)
+    default_parser_profile_id = Column(String(64), nullable=False, default="")
+    default_retrieval_profile_id = Column(String(64), nullable=False, default="")
+    default_approval_policy_id = Column(String(64), nullable=False, default="")
+    created_by = Column(String(128), nullable=False, default="")
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_by = Column(String(128), nullable=False, default="")
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+# ── Admin Users ─────────────────────────────────────────────────────────
+
+class AdminUserModel(Base):
+    __tablename__ = "admin_users"
+
+    user_id = Column(String(128), primary_key=True)
+    email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    display_name = Column(String(255), nullable=False, default="")
+    roles = Column(JSON, default=list)
+    clearance_level = Column(Integer, default=0)
+    allowed_tenants = Column(JSON, default=list)
+    allowed_collections = Column(JSON, default=list)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class AdminSessionModel(Base):
+    __tablename__ = "admin_sessions"
+
+    session_id = Column(String(128), primary_key=True)
+    user_id = Column(String(128), ForeignKey("admin_users.user_id"), nullable=False)
+    token_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    ip_address = Column(String(64), nullable=False, default="")
+    user_agent = Column(String(512), nullable=False, default="")
+
+
+# ── Collection Profile Bindings ─────────────────────────────────────────
+
+class CollectionProfileBindingModel(Base):
+    __tablename__ = "collection_profile_bindings"
+
+    binding_id = Column(String(128), primary_key=True)
+    tenant_id = Column(String(64), ForeignKey("tenants.tenant_id"), nullable=False)
+    collection_id = Column(String(64), ForeignKey("collections.collection_id"), nullable=False)
+    parser_profile_id = Column(String(128), nullable=False, default="")
+    retrieval_profile_id = Column(String(128), nullable=False, default="")
+    approval_policy_id = Column(String(128), nullable=False, default="")
+    effective_from = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    effective_to = Column(DateTime(timezone=True), nullable=True)
+    binding_version = Column(Integer, nullable=False, default=1)
+    config_hash = Column(String(128), nullable=False, default="")
+    created_by = Column(String(128), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_bindings_collection_version", "collection_id", "binding_version"),
+    )
+
+
+# ── Parser Profiles ─────────────────────────────────────────────────────
+
+class ParserProfileModel(Base):
+    __tablename__ = "parser_profiles"
+
+    parser_profile_id = Column(String(128), primary_key=True)
+    name = Column(String(255), nullable=False)
+    description = Column(String(1024), nullable=False, default="")
+    parser_id = Column(String(64), nullable=False, default="naive")
+    parser_config = Column(JSON, default=dict)
+    runtime_canonical_config = Column(JSON, nullable=True)
+    profile_hash = Column(String(128), nullable=False, default="")
+    validator_version = Column(String(64), nullable=False, default="")
+    warnings = Column(JSON, default=list)
+    version = Column(Integer, nullable=False, default=1)
+    state = Column(String(32), nullable=False, default="draft")
+    created_by = Column(String(128), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_by = Column(String(128), nullable=False, default="")
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
+# ── Retrieval Profiles (Admin View) ─────────────────────────────────────
+
+class RetrievalProfileAdminModel(Base):
+    __tablename__ = "retrieval_profiles_admin"
+
+    retrieval_profile_id = Column(String(128), primary_key=True)
+    name = Column(String(255), nullable=False)
+    description = Column(String(1024), nullable=False, default="")
+    profile_config = Column(JSON, default=dict)
+    runtime_canonical_config = Column(JSON, nullable=True)
+    profile_hash = Column(String(128), nullable=False, default="")
+    validator_version = Column(String(64), nullable=False, default="")
+    warnings = Column(JSON, default=list)
+    version = Column(Integer, nullable=False, default=1)
+    state = Column(String(32), nullable=False, default="draft")
+    created_by = Column(String(128), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_by = Column(String(128), nullable=False, default="")
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -161,7 +263,60 @@ class ApplicationProfileModel(Base):
     rate_limit = Column(Integer, default=100)
 
 
+class RetrievalProfileModel(Base):
+    __tablename__ = "retrieval_profiles"
+
+    profile_id = Column(String(64), primary_key=True)
+    collection_id = Column(String(64), primary_key=True)
+    profile_version = Column(Integer, default=1, nullable=False)
+    profile_hash = Column(String(128), nullable=False, default="")
+    bm25_weight = Column(Float, default=0.5, nullable=False)
+    vector_weight = Column(Float, default=0.5, nullable=False)
+    candidate_top_k = Column(Integer, default=20, nullable=False)
+    similarity_threshold = Column(Float, default=0.0, nullable=False)
+    rerank_enabled = Column(Boolean, default=True, nullable=False)
+    rerank_model = Column(String(128), nullable=False, default="")
+    fail_policy = Column(String(32), nullable=False, default="fail_closed")
+    expansion_policy = Column(JSON, default=dict)
+    pack_budget = Column(Integer, default=1200, nullable=False)
+    enabled = Column(Boolean, default=True, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_by = Column(String(128), nullable=False, default="system")
+
+    __table_args__ = (
+        Index("ix_retrieval_profiles_enabled", "enabled"),
+        Index("ix_retrieval_profiles_collection", "collection_id"),
+    )
+
+
 # ── Principal Profile ──────────────────────────────────────────────────
+
+class ApiKeyRegistryModel(Base):
+    __tablename__ = "api_key_registry"
+
+    api_key_id = Column(String(128), primary_key=True)
+    tenant_id = Column(String(64), ForeignKey("tenants.tenant_id"), nullable=False, default="")
+    display_name = Column(String(255), nullable=False, default="")
+    agent_type_id = Column(String(128), nullable=False, default="")
+    key_hash = Column(String(255), nullable=False, default="")
+    knowledge_scopes = Column(JSON, default=list)
+    roles = Column(JSON, default=list)
+    debug_permission = Column(Boolean, default=False, nullable=False)
+    max_context_tokens = Column(Integer, default=4096, nullable=False)
+    token_budget_limit = Column(Integer, default=4096, nullable=False)
+    state = Column(String(32), nullable=False, default="active")
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(128), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_by = Column(String(128), nullable=False, default="")
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    last_rotated_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_api_key_registry_state", "state"),
+        Index("ix_api_key_registry_tenant", "tenant_id"),
+    )
+
 
 class PrincipalProfileModel(Base):
     __tablename__ = "principal_profiles"
@@ -444,6 +599,7 @@ class ApprovalTicketModel(Base):
 
     ticket_id = Column(String(64), primary_key=True)
     intake_job_id = Column(String(64), nullable=False)
+    tenant_id = Column(String(64), nullable=True)
     approval_round = Column(Integer, nullable=False, default=1)
     preliminary_doc_id = Column(String(128), nullable=False)
     collection_id = Column(String(64), nullable=False)
@@ -986,18 +1142,115 @@ class OpsAuditLogModel(Base):
     __tablename__ = "ops_audit_log"
 
     audit_id = Column(String(64), primary_key=True)
+    command_id = Column(String(128), nullable=False, default="")
+    trace_id = Column(String(64), nullable=False, default="")
+    idempotency_key = Column(String(512), nullable=False, default="")
     actor_id = Column(String(128), nullable=False)
+    tenant_id = Column(String(64), nullable=False, default="")
+    collection_id = Column(String(64), nullable=True)
     action = Column(String(32), nullable=False)
     target_type = Column(String(32), nullable=False)
     target_id = Column(String(128), nullable=False)
     before_state = Column(String(256), nullable=True)
     after_state = Column(String(256), nullable=True)
     reason = Column(String(2048), nullable=True)
-    payload_hash = Column(String(128), nullable=False)
+    payload_hash = Column(String(128), nullable=False, default="")
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     __table_args__ = (
         Index("ix_ops_audit_target", "target_type", "target_id"),
         Index("ix_ops_audit_actor", "actor_id"),
         Index("ix_ops_audit_created", "created_at"),
+        Index("ix_ops_audit_trace", "trace_id"),
+        Index("ix_ops_audit_idempotency", "idempotency_key"),
+    )
+
+
+# ── Workbench Models ────────────────────────────────────────────────────
+
+class WorkbenchUploadSessionModel(Base):
+    """Workbench upload session projection. Owner: workbench-api.
+    Status is UI aggregate, derived from downstream owner states.
+    """
+
+    __tablename__ = "workbench_upload_sessions"
+
+    upload_id = Column(String(64), primary_key=True)
+    user_id = Column(String(128), nullable=False)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    source_file_id = Column(String(64), nullable=True)
+    intake_job_id = Column(String(64), nullable=True)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    ticket_id = Column(String(64), nullable=True)
+    selected_parser_profile_id = Column(String(128), nullable=True)
+    parser_override_json = Column(JSON, nullable=True)
+    status = Column(String(32), nullable=False, default="uploading")
+    progress_pct = Column(Integer, nullable=False, default=0)
+    filename = Column(String(512), nullable=False)
+    mime_type = Column(String(128), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    error_message = Column(String(2048), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_wb_uploads_user", "user_id"),
+        Index("ix_wb_uploads_tenant", "tenant_id"),
+        Index("ix_wb_uploads_collection", "collection_id"),
+        Index("ix_wb_uploads_status", "status"),
+    )
+
+
+class WorkbenchUserPreferenceModel(Base):
+    """Workbench user preference. Owner: workbench-api."""
+
+    __tablename__ = "workbench_user_preferences"
+
+    preference_id = Column(String(64), primary_key=True)
+    user_id = Column(String(128), nullable=False)
+    preference_type = Column(String(64), nullable=False)
+    preference_value = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_wb_prefs_user", "user_id"),
+        Index("ix_wb_prefs_type", "user_id", "preference_type"),
+    )
+
+
+class WorkbenchChunkEditModel(Base):
+    """Workbench chunk edit intent. Owner: workbench-api.
+    Uses canonical wire fields: base_evidence_id, content.
+    """
+
+    __tablename__ = "workbench_chunk_edits"
+
+    chunk_edit_id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    source_file_id = Column(String(64), nullable=False)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    base_evidence_id = Column(String(128), nullable=False)
+    edit_scope = Column(String(32), nullable=False, default="pre_publish")
+    operation = Column(String(32), nullable=False, default="update")
+    content = Column(Text, nullable=True)
+    vector_text = Column(Text, nullable=True)
+    section_path = Column(JSON, nullable=True)
+    metadata_patch = Column(JSON, nullable=True)
+    citation_payload = Column(JSON, nullable=True)
+    source_block_ids = Column(JSON, nullable=True)
+    edit_reason = Column(String(2048), nullable=True)
+    edited_by = Column(String(128), nullable=False)
+    status = Column(String(32), nullable=False, default="draft")
+    downstream_revision_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_wb_chunk_edits_snapshot", "parse_snapshot_id"),
+        Index("ix_wb_chunk_edits_source", "source_file_id"),
+        Index("ix_wb_chunk_edits_evidence", "base_evidence_id"),
+        Index("ix_wb_chunk_edits_editor", "edited_by"),
     )

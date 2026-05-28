@@ -3,7 +3,7 @@ package com.realityrag.access.mcp;
 import com.realityrag.access.security.AccessRequestContext;
 import com.realityrag.access.security.AccessRequestContextHolder;
 import com.realityrag.access.security.McpSessionPrincipalBindingStore;
-import com.realityrag.access.support.AccessUnauthenticatedException;
+import com.realityrag.access.support.AccessException;
 import io.modelcontextprotocol.server.transport.WebMvcSseServerTransportProvider;
 import io.modelcontextprotocol.spec.McpServerSession;
 import io.modelcontextprotocol.spec.McpServerTransport;
@@ -34,7 +34,7 @@ public class AccessMcpTransportProvider implements McpServerTransportProvider {
             AccessRequestContext context = AccessRequestContextHolder.get();
             if (context == null) {
                 log.warn("ACCESS_MCP event=session_bind_missing_context");
-                throw new AccessUnauthenticatedException("Missing MCP session access context");
+                throw new AccessException.Unauthenticated("Missing MCP session access context");
             }
             String transportSessionId = extractSessionId(transport);
             McpServerSession session = sessionFactory.create(transport);

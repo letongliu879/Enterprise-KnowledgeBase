@@ -1,10 +1,10 @@
-# RAGFlow Source Isolation Map
+# RAGFlow 源码隔离映射
 
-This repository keeps `upstream/ragflow` as the source fork, but the runtime is being narrowed to an intake-focused workbench.
+本仓库保留 `upstream/ragflow` 作为源码分叉基础，但运行时正在收缩为面向摄入的工作台。
 
-## Current Runtime White List
+## 1. 当前运行时白名单
 
-Only these backend entry modules should be registered at runtime:
+以下后端入口模块应在运行时注册：
 
 - `upstream/ragflow/api/apps/llm_app.py`
 - `upstream/ragflow/api/apps/restful_apis/user_api.py`
@@ -19,20 +19,20 @@ Only these backend entry modules should be registered at runtime:
 - `upstream/ragflow/api/apps/restful_apis/connector_api.py`
 - `upstream/ragflow/api/apps/restful_apis/langfuse_api.py`
 
-These modules remain loaded because the current workbench still depends on them:
+这些模块继续加载的原因是当前工作台仍依赖它们：
 
-- `llm_app.py`: dataset creation and model selection still call `/v1/llm/*`.
-- `user_api.py`: login, `/users/me`, `/users/me/models`.
-- `tenant_api.py`: current settings/team flows still call `/tenants*`.
-- `system_api.py`: system config/version/token management.
-- `connector_api.py`: data-source ingestion entrypoints remain part of upstream intake UX.
-- `langfuse_api.py`: user settings still request Langfuse config.
+- `llm_app.py`：dataset 创建与模型选择仍调用 `/v1/llm/*`
+- `user_api.py`：login、`/users/me`、`/users/me/models`
+- `tenant_api.py`：当前设置/团队流程仍调用 `/tenants*`
+- `system_api.py`：系统配置/版本/token 管理
+- `connector_api.py`：数据源摄入入口仍属于上游 intake UX
+- `langfuse_api.py`：用户设置仍请求 Langfuse 配置
 
-## Core Intake Workbench
+## 2. 核心摄入工作台
 
-These modules are part of the document intake and chunking path and should be treated as the primary fork surface.
+以下模块属于文档摄入与分块路径，应作为主要分叉面处理。
 
-### REST routes
+### REST 路由
 
 - `dataset_api.py`
 - `document_api.py`
@@ -41,13 +41,13 @@ These modules are part of the document intake and chunking path and should be tr
 - `file2document_api.py`
 - `task_api.py`
 
-### App services
+### App 服务
 
 - `apps/services/dataset_api_service.py`
 - `apps/services/document_api_service.py`
 - `apps/services/file_api_service.py`
 
-### DB services
+### DB 服务
 
 - `db/services/knowledgebase_service.py`
 - `db/services/document_service.py`
@@ -57,9 +57,9 @@ These modules are part of the document intake and chunking path and should be tr
 - `db/services/doc_metadata_service.py`
 - `db/services/pipeline_operation_log_service.py`
 
-## Shared Supporting Infra
+## 3. 共享支撑设施
 
-These modules are not the intake domain itself, but the current workbench still depends on them.
+以下模块不属于摄入域本身，但当前工作台仍依赖它们。
 
 - `user_api.py`
 - `tenant_api.py`
@@ -76,11 +76,11 @@ These modules are not the intake domain itself, but the current workbench still 
 - `db/joint_services/tenant_model_service.py`
 - `db/joint_services/user_account_service.py`
 
-## Legacy Product Domains
+## 4. 遗留产品域
 
-These modules are product domains we are pruning away from the intake fork. They may remain in source temporarily, but they should not be loaded by default and should be candidates for physical relocation later.
+以下模块是我们正在从摄入分叉中裁剪掉的产品域。它们可能暂时保留在源码中，但默认不应加载，后续应作为物理迁移的候选对象。
 
-### REST routes
+### REST 路由
 
 - `agent_api.py`
 - `bot_api.py`
@@ -93,14 +93,14 @@ These modules are product domains we are pruning away from the intake fork. They
 - `search_api.py`
 - `stats_api.py`
 
-### App modules and services
+### App 模块与服务
 
 - `apps/services/canvas_replica_service.py`
 - `apps/services/memory_api_service.py`
 
-### DB services
+### DB 服务
 
-- `db/services/api_service.py` (`API4ConversationService` only after extraction)
+- `db/services/api_service.py`（`API4ConversationService` 在提取后仅保留）
 - `db/services/canvas_service.py`
 - `db/services/chunk_feedback_service.py`
 - `db/services/conversation_service.py`
@@ -113,46 +113,57 @@ These modules are product domains we are pruning away from the intake fork. They
 - `db/services/user_canvas_version.py`
 - `db/joint_services/memory_message_service.py`
 
-## Next Cuts
+## 5. 下一轮裁剪
 
-The next backend pruning step should follow this order:
+下一轮后端裁剪应按以下顺序进行：
 
-1. Stop importing legacy service modules from any surviving intake/shared route.
-2. Move legacy product domains under an explicit `legacy/` or equivalent holding area inside the fork.
-3. Replace MySQL and Elasticsearch only after the runtime entry set is stable and the intake data model boundary is clear.
+1. 停止从任何存活的路由中导入遗留服务模块。
+2. 将遗留产品域迁移到分叉内明确的 `legacy/` 或等效暂存区。
+3. 仅在运行时入口集合稳定且摄入数据模型边界清晰后，再替换 MySQL 和 Elasticsearch。
 
-## Storage Replacement Entry Points
+## 6. 存储替换入口
 
-The fork now has an explicit runtime port layer at:
+分叉现在拥有显式的运行时端口层：
 
 - `upstream/ragflow/api/ports/runtime_ports.py`
 - `upstream/ragflow/api/ports/__init__.py`
 
-Current ports:
+当前端口：
 
 - `doc_store_port`
 - `metadata_store_port`
 - `task_queue_port`
 
-Current live adopters:
+当前已接入的使用方：
 
 - `apps/restful_apis/system_api.py`
 - `db/services/task_service.py`
 
-This is the intended fast path for replacing infrastructure without re-editing every business module first.
+这是在不先逐个重编每个业务模块的情况下替换基础设施的推荐快速路径。
 
-Recommended migration order:
+推荐的迁移顺序：
 
 1. `task_queue_port`
-   Replace Redis-backed queue/cancel/heartbeat behavior first.
+   先替换基于 Redis 的队列/取消/心跳行为。
 2. `doc_store_port`
-   Replace chunk index CRUD and retrieval-facing document store operations.
+   替换 chunk 索引 CRUD 与面向检索的文档存储操作。
 3. `metadata_store_port`
-   Replace document metadata index access after document-store behavior is stable.
+   在文档存储行为稳定后，替换文档元数据索引访问。
 
-Recommended next files to switch onto ports:
+推荐下一个切换到端口的文件：
 
 - `apps/services/dataset_api_service.py`
 - `db/services/document_service.py`
 - `apps/restful_apis/chunk_api.py`
 - `apps/restful_apis/document_api.py`
+
+## 7. 与平台服务的关系
+
+`upstream/ragflow` 的解析/分块运行时能力通过 `services/indexing` 接入，而不是直接被外部服务调用。
+
+具体接入方式：
+
+- `services/indexing` 中的 `ParsePreviewRunner` 通过 `RAGFlowAppRuntime` 调用上游解析路径
+- `services/indexing` 中的 `IndexJobRunner` 消费 `ParseSnapshot.upstream_chunks` 做正式 chunk 生成
+- 平台不直接暴露 `upstream/ragflow` 的 REST 边界给外部调用方
+- `upstream/ragflow` 的 `dataset/file/chunk` 对象模型只在解析工作台内部使用，不替代平台的 `collection/final_doc_id` 治理模型

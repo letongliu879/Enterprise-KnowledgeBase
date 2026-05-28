@@ -65,6 +65,25 @@ class AdminRole(str, Enum):
     AUDITOR = "auditor"
 
 
+class ProfileState(str, Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    RETIRED = "retired"
+
+
+class ApiKeyState(str, Enum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+
+
+class CollectionLifecycleState(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DISABLED = "disabled"
+
+
 class ConversionStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
@@ -129,6 +148,7 @@ class IndexRegistryStatus(str, Enum):
     """Status of an index version in the registry."""
     INDEXING = "indexing"
     INDEXED = "indexed"
+    ACTIVE = "active"
 
 
 class IntakeJobState(str, Enum):
@@ -212,6 +232,7 @@ class PublishedDocumentState(str, Enum):
     DEPRECATED = "deprecated"
     RETRACTED = "retracted"
     REINDEXING = "reindexing"
+    PUBLISHED_UPPER = "PUBLISHED"  # Java IndexProjectionSyncController legacy value
 
 
 class PublishJobState(str, Enum):
@@ -358,4 +379,12 @@ class LLMCallStatus(str, Enum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     RATE_LIMITED = "rate_limited"
+
+
+class WorkbenchRole(str, Enum):
+    """Roles recognized by the workbench API."""
+
+    UPLOADER = "uploader"
+    CHUNK_EDITOR = "chunk_editor"
+    REVIEWER = "reviewer"
     SCHEMA_INVALID = "schema_invalid"

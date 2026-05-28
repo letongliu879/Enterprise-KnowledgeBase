@@ -1,7 +1,5 @@
 package com.realityrag.access.api;
 
-import com.realityrag.access.clients.RetrievalTimeoutException;
-import com.realityrag.access.clients.RetrievalUnavailableException;
 import com.realityrag.access.contracts.AccessErrorResponse;
 import com.realityrag.access.support.AccessException;
 import org.springframework.http.HttpStatus;
@@ -34,18 +32,6 @@ public class AccessExceptionHandler {
     public ResponseEntity<AccessErrorResponse> handleUnreadableBody(HttpMessageNotReadableException error) {
         return ResponseEntity.badRequest()
             .body(new AccessErrorResponse("ACC_INVALID_REQUEST", "Malformed request body"));
-    }
-
-    @ExceptionHandler(RetrievalTimeoutException.class)
-    public ResponseEntity<AccessErrorResponse> handleRetrievalTimeout(RetrievalTimeoutException error) {
-        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
-            .body(new AccessErrorResponse("ACC_RETRIEVAL_TIMEOUT", error.getMessage()));
-    }
-
-    @ExceptionHandler(RetrievalUnavailableException.class)
-    public ResponseEntity<AccessErrorResponse> handleRetrievalUnavailable(RetrievalUnavailableException error) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(new AccessErrorResponse("ACC_RETRIEVAL_UNAVAILABLE", error.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

@@ -1,0 +1,13 @@
+{
+  "command_id": "cmd_01JABC123456",
+  "trace_id": "trc_01JABC123456",
+  "idempotency_key": "mat_01JABC123456",
+  "actor": "user-001",
+  "tenant_id": "tenant_acme",
+  "collection_id": "col_default",
+  "target_type": "chunk_revision",
+  "target_id": "crv_01JABC123456",
+  "payload": {
+    "reason": "Manual edit by chunk editor"
+  }
+}

@@ -1,5 +1,6 @@
 package com.realityrag.access.contracts;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import java.util.List;
@@ -11,7 +12,7 @@ public record InternalRetrieveRequest(
     String traceId,
     InternalPrincipal principal,
     List<String> collectionScope,
-    String queryText,
+    @JsonProperty("query") String queryText,
     String language,
     List<String> crossLanguages,
     Boolean keyword,
@@ -19,7 +20,7 @@ public record InternalRetrieveRequest(
     String retrievalProfileId,
     Map<String, Object> filters,
     boolean includeDeprecated,
-    Integer maxContextTokens,
+    @JsonProperty("token_budget") Integer maxContextTokens,
     String debugLevel
 ) {
     public InternalRetrieveRequest {

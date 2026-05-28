@@ -9,8 +9,9 @@ from hashlib import sha256
 import ragflow_runtime
 from indexing_service._compat import utc_now
 from indexing_service.contracts import IndexBuildRequestedCommand
-from indexing_service.domain import ChunkRecordRecord
+from indexing_service.domain import ChunkRecord
 from indexing_service.embedding.vector_text_builder import VectorTextBuilder
+from indexing_service.parser_profiles import get_parser_profile
 from indexing_service.governance_assets import (
     governance_confirmed_tags,
     governance_final_doc_id,
@@ -21,7 +22,7 @@ from indexing_service.governance_assets import (
     load_governance_assets,
 )
 from indexing_service.metrics import InMemoryIndexingMetrics
-from indexing_service.repository import InMemoryIndexingRepository
+from indexing_service.repository import IndexingRepository
 from indexing_service.security import IndexingSecurity
 from indexing_service.trace_recorder import IndexingTraceRecorder
 from indexing_service.vendor.ragflow_pdf_chunk_metadata import finalize_pdf_chunk
@@ -33,7 +34,7 @@ from reality_rag_contracts import IndexedDocumentState
 class IndexJobRunner:
     def __init__(
         self,
-        repository: InMemoryIndexingRepository,
+        repository: IndexingRepository,
         metrics: InMemoryIndexingMetrics | None = None,
         security: IndexingSecurity | None = None,
     ) -> None:
@@ -75,6 +76,8 @@ class IndexJobRunner:
             ),
         )
         index_version_id = command.target_index_version_id or f"idxv_{command.collection_id}_active"
+        snapshot = self.repository.get_parse_snapshot(command.parse_snapshot_id)
+        chunk_profile_id = snapshot.chunk_profile_id or snapshot.parser_id or command.index_profile_id
         record = self.repository.create_job(
             build_job_id=f"ibj_{command.build_request_id}",
             build_request_id=command.build_request_id,
@@ -84,15 +87,15 @@ class IndexJobRunner:
             index_version_id=index_version_id,
             idempotency_key=command.idempotency_key,
             index_profile_id=command.index_profile_id,
+            chunk_profile_id=chunk_profile_id,
         )
         self.trace.write_run_step(
             trace_id=command.trace_id,
             step_name="index_build_job_created",
             status="SUCCEEDED",
-            summary=f"build_job_id={record.build_job_id};index_version_id={index_version_id}",
+            summary=f"build_job_id={record.build_job_id};index_version_id={index_version_id};chunk_profile_id={chunk_profile_id}",
         )
         try:
-            snapshot = self.repository.get_parse_snapshot(command.parse_snapshot_id)
             governance_assets = load_governance_assets(
                 governance_overlay_ref=command.governance_overlay_ref,
                 approval_decision_ref=command.approval_decision_ref,
@@ -178,7 +181,10 @@ class IndexJobRunner:
                 canonical_source=command.canonical_asset_ref,
                 chunks=chunk_records,
             )
-            if command.request_type == "publish" or str(command.request_type) == "publish":
+            # Contract: request_type="publish" or "reindex" means build + activate atomically.
+            # If caller wants build-only (e.g., staging), use request_type="build".
+            request_type_value = str(command.request_type).lower()
+            if request_type_value in ("publish", "reindex"):
                 activated = self.repository.activate(index_version_id)
                 self.repository.upsert_indexed_document(
                     indexed_document_id=indexed_document.indexed_document_id,
@@ -205,6 +211,20 @@ class IndexJobRunner:
                         f"index_version_id={activated.index_version_id};"
                         f"previous_active_index_version_id={activated.previous_active_index_version_id or ''}"
                     ),
+                )
+                self._purge_retrieval_cache(
+                    tenant_id=command.tenant_id,
+                    collection_id=command.collection_id,
+                    doc_id=resolved_final_doc_id,
+                    trace_id=command.trace_id,
+                )
+                self._sync_index_projection_to_retrieval(
+                    tenant_id=command.tenant_id,
+                    collection_id=command.collection_id,
+                    index_version_id=index_version_id,
+                    final_doc_id=resolved_final_doc_id,
+                    chunk_records=chunk_records,
+                    trace_id=command.trace_id,
                 )
             chunk_count = len(self.repository.list_active_chunks())
             duration_ms = int((perf_counter() - started_at) * 1000)
@@ -256,14 +276,14 @@ class IndexJobRunner:
                     "build_job_id": record.build_job_id,
                 },
             )
-            self.repository.mark_job_completed(record.build_job_id)
+            completed_record = self.repository.mark_job_completed(record.build_job_id)
             return {
-                "build_job_id": record.build_job_id,
-                "status": record.status,
-                "accepted_command": record.accepted_command,
+                "build_job_id": completed_record.build_job_id,
+                "status": completed_record.status,
+                "accepted_command": completed_record.accepted_command,
             }
         except Exception as exc:
-            self.repository.mark_job_completed(record.build_job_id, failure_reason=type(exc).__name__)
+            self.repository.mark_job_completed(record.build_job_id, error_message=type(exc).__name__)
             raise
 
     def _build_chunks(
@@ -307,9 +327,14 @@ class IndexJobRunner:
             status="SUCCEEDED",
             summary=f"assembled_chunk_count={len(snapshot.upstream_chunks)};section_count={len(snapshot.upstream_chunks)}",
         )
+        upstream_chunks = self._apply_pre_publish_edits(
+            snapshot.upstream_chunks,
+            command=command,
+            trace_id=command.trace_id,
+        )
         self.metrics.observe_ms(
             "indexing.materialization.chunk_count",
-            len(snapshot.upstream_chunks),
+            len(upstream_chunks),
         )
         governance = self.security.authorize_index_build(
             tenant_id=command.tenant_id,
@@ -329,9 +354,11 @@ class IndexJobRunner:
         if pagerank_fea is None:
             pagerank_fea = _optional_int(command.source_metadata.get("pagerank"))
 
-        chunk_records: list[ChunkRecordRecord] = []
+        profile = get_parser_profile(snapshot.parser_profile_id) or get_parser_profile(snapshot.parser_id)
+        embedding_text_policy = profile.embedding_text_policy if profile else "display_text"
+        chunk_records: list[ChunkRecord] = []
         mother_chunk_ids: set[str] = set()
-        for ordinal, chunk in enumerate(snapshot.upstream_chunks, start=1):
+        for ordinal, chunk in enumerate(upstream_chunks, start=1):
             chunk_id = f"chk_{resolved_final_doc_id}_{index_version_id}_{ordinal:04d}"
             normalized_chunk_metadata = finalize_pdf_chunk(dict(chunk))
             created_at = utc_now()
@@ -348,6 +375,8 @@ class IndexJobRunner:
                 title=title,
                 display_text=display_text,
                 upstream_chunk=normalized_chunk_metadata,
+                embedding_text_policy=embedding_text_policy,
+                section_path=section_path,
             )
             title_text = self.vector_text_builder.build_title_text(
                 title=title,
@@ -438,7 +467,7 @@ class IndexJobRunner:
             approval_metadata = resolved_document_metadata.get("approval")
             if isinstance(approval_metadata, dict) and approval_metadata:
                 chunk_metadata["approval"] = dict(approval_metadata)
-            chunk_payload = ChunkRecordRecord(
+            chunk_payload = ChunkRecord(
                 chunk_id=chunk_id,
                 record_id=chunk_id,
                 kb_id=kb_id,
@@ -453,7 +482,7 @@ class IndexJobRunner:
                     display_text=display_text,
                 ),
                 doc_type_kwd=str(normalized_chunk_metadata.get("doc_type_kwd") or ""),
-                available_int=1,
+                available_int=0 if chunk.get("__hidden__") else 1,
                 display_text=display_text,
                 content_with_weight=display_text,
                 content_ltks=content_tokens,
@@ -561,6 +590,225 @@ class IndexJobRunner:
                 return stem
         return Path(final_doc_id).stem
 
+    def _apply_pre_publish_edits(
+        self,
+        upstream_chunks: list[dict[str, object]],
+        *,
+        command: IndexBuildRequestedCommand,
+        trace_id: str,
+    ) -> list[dict[str, object]]:
+        """Apply pre-publish chunk edit overlays from repository before materialization.
+
+        Matches revisions to upstream chunks by the upstream chunk's ``id`` field
+        against ``revision.base_evidence_id``.  Revisions with ``status != draft``
+        are ignored.  This is fail-open: if the repository does not support listing
+        revisions, the original upstream chunks are returned unchanged.
+        """
+        list_revisions = getattr(self.repository, "list_chunk_revisions_by_doc", None)
+        if list_revisions is None:
+            return list(upstream_chunks)
+
+        revisions = list_revisions(
+            doc_id=command.final_doc_id,
+            collection_id=command.collection_id,
+            status="draft",
+        )
+        if not revisions:
+            return list(upstream_chunks)
+
+        # Build lookup by base_evidence_id
+        revision_by_chunk_id: dict[str, Any] = {}
+        for revision in revisions:
+            revision_by_chunk_id[revision.base_evidence_id] = revision
+
+        modified: list[dict[str, object]] = []
+        applied_count = 0
+        skipped_count = 0
+
+        for chunk in upstream_chunks:
+            chunk_id = str(chunk.get("id") or "").strip()
+            revision = revision_by_chunk_id.get(chunk_id) if chunk_id else None
+
+            if revision is None:
+                modified.append(dict(chunk))
+                continue
+
+            if revision.operation == "delete":
+                skipped_count += 1
+                continue
+
+            if revision.operation == "hide":
+                hidden_chunk = dict(chunk)
+                hidden_chunk["__hidden__"] = True
+                if revision.content is not None:
+                    hidden_chunk["content_with_weight"] = revision.content
+                modified.append(hidden_chunk)
+                applied_count += 1
+                continue
+
+            if revision.operation == "update":
+                updated_chunk = dict(chunk)
+                if revision.content is not None:
+                    updated_chunk["content_with_weight"] = revision.content
+                if revision.vector_text is not None:
+                    updated_chunk["__vector_text_override__"] = revision.vector_text
+                if revision.section_path is not None:
+                    updated_chunk["__section_path_override__"] = revision.section_path
+                if revision.metadata_patch is not None:
+                    metadata = dict(updated_chunk.get("metadata", {}))
+                    metadata.update(revision.metadata_patch)
+                    updated_chunk["metadata"] = metadata
+                modified.append(updated_chunk)
+                applied_count += 1
+                continue
+
+            # Unknown operation — pass through unchanged
+            modified.append(dict(chunk))
+
+        if applied_count or skipped_count:
+            self.trace.write_run_step(
+                trace_id=trace_id,
+                step_name="pre_publish_edits_applied",
+                status="SUCCEEDED",
+                summary=(
+                    f"applied_count={applied_count};"
+                    f"skipped_count={skipped_count};"
+                    f"original_count={len(upstream_chunks)};"
+                    f"result_count={len(modified)}"
+                ),
+            )
+
+        return modified
+
+    def _purge_retrieval_cache(
+        self,
+        *,
+        tenant_id: str,
+        collection_id: str,
+        doc_id: str,
+        trace_id: str,
+    ) -> None:
+        """Purge retrieval cache after index activation. Fail-open."""
+        import logging
+        import os
+
+        retrieval_url = os.environ.get("RETRIEVAL_SERVICE_URL", "").rstrip("/")
+        if not retrieval_url:
+            return
+
+        try:
+            import httpx
+
+            resp = httpx.post(
+                f"{retrieval_url}/internal/cache/purge",
+                json={
+                    "tenant_id": tenant_id,
+                    "collection_id": collection_id,
+                    "doc_id": doc_id,
+                },
+                timeout=10.0,
+            )
+            if resp.status_code >= 400:
+                logging.getLogger(__name__).warning(
+                    "retrieval cache purge failed: %s %s",
+                    resp.status_code,
+                    resp.text,
+                )
+            else:
+                result = resp.json()
+                self.trace.write_run_step(
+                    trace_id=trace_id,
+                    step_name="retrieval_cache_purged",
+                    status="SUCCEEDED",
+                    summary=f"purged_count={result.get('purged_count', 0)}",
+                )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "retrieval cache purge failed with exception",
+                exc_info=True,
+            )
+
+    def _sync_index_projection_to_retrieval(
+        self,
+        *,
+        tenant_id: str,
+        collection_id: str,
+        index_version_id: str,
+        final_doc_id: str,
+        chunk_records: list[ChunkRecord],
+        trace_id: str,
+    ) -> None:
+        """Sync index projection (chunks + index registry + published doc) to retrieval runtime. Fail-open."""
+        import logging
+        import os
+        import uuid
+
+        retrieval_url = os.environ.get("RETRIEVAL_SERVICE_URL", "").rstrip("/")
+        if not retrieval_url:
+            return
+
+        try:
+            import httpx
+            from reality_rag_contracts import IndexProjectionSync, IndexProjectionPayload
+
+            chunks_json = [chunk.model_dump(mode="json", by_alias=True) for chunk in chunk_records]
+
+            # Look up index version record to include registry metadata
+            index_version_record = self.repository.get_index_version(index_version_id)
+
+            sync_command = IndexProjectionSync(
+                command_id=f"cmd_idxproj_{uuid.uuid4().hex[:12]}",
+                trace_id=trace_id,
+                idempotency_key=f"idemp_idxproj_{collection_id}_{index_version_id}_{final_doc_id}_{uuid.uuid4().hex[:8]}",
+                actor="indexing-service",
+                tenant_id=tenant_id,
+                target_type="index_projection",
+                target_id=f"{collection_id}:{index_version_id}",
+                payload=IndexProjectionPayload(
+                    collection_id=collection_id,
+                    index_version_id=index_version_id,
+                    sync_mode="full_replace",
+                    doc_id=final_doc_id,
+                    chunks=chunks_json,
+                    tenant_id=tenant_id,
+                    opensearch_index=index_version_record.opensearch_index if index_version_record else None,
+                    qdrant_collection=index_version_record.qdrant_collection if index_version_record else None,
+                    embedding_model=index_version_record.embedding_model if index_version_record else None,
+                    chunk_profile_id=index_version_record.chunk_profile_id if index_version_record else None,
+                    index_profile_id=index_version_record.index_profile_id if index_version_record else None,
+                    schema_version=index_version_record.schema_version if index_version_record else "v1",
+                    published_document_state="PUBLISHED",
+                ),
+            )
+
+            resp = httpx.post(
+                f"{retrieval_url}/internal/index-projections/sync",
+                json=sync_command.model_dump(mode="json"),
+                timeout=30.0,
+            )
+            if resp.status_code >= 400:
+                logging.getLogger(__name__).warning(
+                    "retrieval index projection sync failed: %s %s",
+                    resp.status_code,
+                    resp.text,
+                )
+            else:
+                result = resp.json()
+                self.trace.write_run_step(
+                    trace_id=trace_id,
+                    step_name="retrieval_index_projection_synced",
+                    status="SUCCEEDED",
+                    summary=(
+                        f"chunks_synced={result.get('chunks_synced', 0)};"
+                        f"chunks_removed={result.get('chunks_removed', 0)}"
+                    ),
+                )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "retrieval index projection sync failed with exception",
+                exc_info=True,
+            )
+
 def _csv_values(raw: str | None) -> list[str]:
     if raw is None or not raw.strip():
         return []
@@ -662,14 +910,14 @@ def _mom_id_from_chunk(chunk: dict[str, object]) -> str:
 
 def _mother_chunk_record(
     *,
-    source_chunk: ChunkRecordRecord,
+    source_chunk: ChunkRecord,
     source_metadata: dict[str, object],
-) -> ChunkRecordRecord | None:
+) -> ChunkRecord | None:
     parent_text = str(source_metadata.get("mom") or source_metadata.get("mom_with_weight") or "").strip()
     if not parent_text:
         return None
     mom_id = source_chunk.mom_id or _stable_parent_id(parent_text)
-    return ChunkRecordRecord(
+    return ChunkRecord(
         chunk_id=mom_id,
         record_id=mom_id,
         kb_id=source_chunk.kb_id,
@@ -743,9 +991,9 @@ def _stable_parent_id(parent_text: str) -> str:
 def _toc_chunk_record(
     *,
     snapshot,
-    source_chunk: ChunkRecordRecord | None,
-    visible_chunks: list[ChunkRecordRecord],
-) -> ChunkRecordRecord | None:
+    source_chunk: ChunkRecord | None,
+    visible_chunks: list[ChunkRecord],
+) -> ChunkRecord | None:
     outline_payload = snapshot.document_metadata.get("outline")
     if not outline_payload:
         return None
@@ -756,7 +1004,7 @@ def _toc_chunk_record(
     if not toc_text:
         return None
     toc_chunk_id = sha256(f"{snapshot.parse_snapshot_id}:toc".encode("utf-8")).hexdigest()[:16]
-    return ChunkRecordRecord(
+    return ChunkRecord(
         chunk_id=toc_chunk_id,
         record_id=toc_chunk_id,
         kb_id=source_chunk.kb_id,
@@ -843,7 +1091,7 @@ def _toc_json_text(value: object) -> str:
         return ""
 
 
-def _indexed_document_outline(snapshot, chunk_records: list[ChunkRecordRecord]) -> list[dict[str, object]]:
+def _indexed_document_outline(snapshot, chunk_records: list[ChunkRecord]) -> list[dict[str, object]]:
     outline_payload = snapshot.document_metadata.get("outline")
     visible_chunks = [chunk for chunk in chunk_records if chunk.available_int >= 1]
     if isinstance(outline_payload, list):
@@ -859,7 +1107,7 @@ def _indexed_document_outline(snapshot, chunk_records: list[ChunkRecordRecord]) 
 
 def _outline_with_chunk_ids(
     outline_payload: object,
-    visible_chunks: list[ChunkRecordRecord],
+    visible_chunks: list[ChunkRecord],
 ) -> list[dict[str, object]]:
     if not isinstance(outline_payload, list):
         return []

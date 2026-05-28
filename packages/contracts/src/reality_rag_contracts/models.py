@@ -5,15 +5,18 @@ No service may invent its own field names or shapes for these concepts.
 """
 
 from datetime import datetime, timezone
+from enum import StrEnum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .enums import (
     AdminRole,
+    ApiKeyState,
     ApprovalAction,
     ApprovalTicketState,
     BudgetPolicy,
+    CollectionLifecycleState,
     ConversionStatus,
     DocumentSupportTier,
     GovernanceSource,
@@ -22,6 +25,7 @@ from .enums import (
     IndexedDocumentState,
     JobStatus,
     OutputMode,
+    ProfileState,
     PublishJobState,
     PublishedDocumentState,
     PublishStatus,
@@ -71,6 +75,21 @@ class ApplicationProfile(BaseModel):
 
 
 # ── Permission Context ────────────────────────────────────────────────
+
+
+class ApiKeyRegistryEntry(BaseModel):
+    """Server-side API key registry entry used by access/MCP authentication."""
+
+    api_key_id: str = Field(description="Opaque API key presented by the caller")
+    display_name: str = Field(default="", description="Human-readable integration name")
+    agent_type_id: str = Field(description="Stable agent/integration type identifier")
+    knowledge_scopes: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    debug_permission: bool = False
+    max_context_tokens: int = Field(default=4096, gt=0)
+    enabled: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class PermissionContext(BaseModel):
@@ -256,6 +275,27 @@ class RetrievalMetadata(BaseModel):
     budget_policy: BudgetPolicy = BudgetPolicy.BALANCED
     applied_token_budget: int = Field(default=0, ge=0)
     query_intent: QueryIntent | None = None
+
+
+class RetrievalProfile(BaseModel):
+    """DB-backed retrieval execution profile consumed by retrieval-service."""
+
+    profile_id: str
+    collection_id: str
+    profile_version: int = Field(default=1, ge=1)
+    profile_hash: str = ""
+    bm25_weight: float = 0.5
+    vector_weight: float = 0.5
+    candidate_top_k: int = Field(default=20, gt=0)
+    similarity_threshold: float = 0.0
+    rerank_enabled: bool = True
+    rerank_model: str = ""
+    fail_policy: str = "fail_closed"
+    expansion_policy: dict[str, Any] = Field(default_factory=dict)
+    pack_budget: int = Field(default=1200, gt=0)
+    enabled: bool = True
+    updated_at: Optional[datetime] = None
+    updated_by: str = "system"
 
 
 class KnowledgeContext(BaseModel):
@@ -752,6 +792,7 @@ class ApprovalTicket(BaseModel):
 
     ticket_id: str
     intake_job_id: str
+    tenant_id: Optional[str] = None
     approval_round: int = Field(default=1, ge=1)
     preliminary_doc_id: str
     collection_id: str
@@ -1110,3 +1151,534 @@ class ParseSnapshotReady(BaseModel):
     chunk_preview_ref: str
     warnings: list[str] = Field(default_factory=list)
     trace_id: str
+
+
+# ── Indexing Contracts ──────────────────────────────────────────────────
+
+
+class IndexRequestType(StrEnum):
+    PUBLISH = "publish"
+    REINDEX = "reindex"
+    LIFECYCLE_TOMBSTONE = "lifecycle_tombstone"
+
+
+class IndexBuildRequestedCommand(BaseModel):
+    """Canonical command sent to indexing-service to materialize an index.
+
+    This model is the single source of truth for the wire format between
+    publishing-worker (or ingestion-worker) and indexing-service.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    build_request_id: str
+    request_type: IndexRequestType
+    tenant_id: str
+    collection_id: str
+    source_file_id: str
+    final_doc_id: str = Field(alias="doc_id")
+    document_version: str
+    publish_version: str
+    visibility: str
+    source_binary_ref: str
+    parse_snapshot_id: str
+    governance_overlay_ref: str
+    sanitized_asset_ref: str
+    canonical_asset_ref: str
+    metadata_ref: str
+    quality_report_ref: str | None = None
+    approval_decision_ref: str
+    confirmed_tags: list[str] = Field(default_factory=list)
+    source_metadata: dict[str, str]
+    index_profile_id: str
+    target_index_version_id: str | None = None
+    chunk_edit_refs: list[str] = Field(default_factory=list)
+    idempotency_key: str
+    trace_id: str
+
+
+# ── Profile Validate Contracts ─────────────────────────────────────────
+
+
+class ParserProfileValidateRequest(BaseModel):
+    """Request to indexing-service to validate and canonicalize a parser profile."""
+
+    parser_profile_id: str
+    parser_id: str
+    parser_config: dict[str, Any]
+    chunk_profile_id: Optional[str] = None
+    tenant_id: str
+    collection_id: Optional[str] = None
+    version: str | int | None = None
+
+
+class ParserProfileValidateResponse(BaseModel):
+    """Response from indexing-service for parser profile validation."""
+
+    valid: bool
+    canonical_config: dict[str, Any] | None = None
+    profile_hash: str
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[dict[str, str]] = Field(default_factory=list)
+    runtime_owner: str = "indexing"
+    validator_version: str
+
+
+class RetrievalProfileValidateRequest(BaseModel):
+    """Request to retrieval-service to validate and canonicalize a retrieval profile."""
+
+    retrieval_profile_id: str
+    profile_config: dict[str, Any]
+    tenant_id: str
+    collection_id: Optional[str] = None
+    version: str | int | None = None
+
+
+class RetrievalProfileValidateResponse(BaseModel):
+    """Response from retrieval-service for retrieval profile validation."""
+
+    valid: bool
+    canonical_config: dict[str, Any] | None = None
+    profile_hash: str
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[dict[str, str]] = Field(default_factory=list)
+    runtime_owner: str = "retrieval"
+    validator_version: str
+
+
+# ── Admin API Contracts ────────────────────────────────────────────────
+
+
+class AdminCollection(BaseModel):
+    """Collection as seen by the admin control panel."""
+
+    collection_id: str
+    tenant_id: str
+    name: str
+    description: str = ""
+    lifecycle_state: CollectionLifecycleState = CollectionLifecycleState.ACTIVE
+    authority_level: int = Field(default=0, ge=0, le=10)
+    access_policy: dict[str, Any] = Field(default_factory=dict)
+    default_parser_profile_id: str = ""
+    default_retrieval_profile_id: str = ""
+    default_approval_policy_id: str = ""
+    created_by: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_by: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ParserProfile(BaseModel):
+    """Parser profile managed by admin control panel."""
+
+    parser_profile_id: str
+    name: str
+    description: str = ""
+    parser_id: str = "naive"
+    parser_config: dict[str, Any] = Field(default_factory=dict)
+    runtime_canonical_config: dict[str, Any] | None = None
+    profile_hash: str = ""
+    validator_version: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    version: int = Field(default=1, ge=1)
+    state: ProfileState = ProfileState.DRAFT
+    created_by: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_by: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RetrievalProfileAdmin(BaseModel):
+    """Retrieval profile managed by admin control panel (distinct from runtime profile)."""
+
+    retrieval_profile_id: str
+    name: str
+    description: str = ""
+    profile_config: dict[str, Any] = Field(default_factory=dict)
+    runtime_canonical_config: dict[str, Any] | None = None
+    profile_hash: str = ""
+    validator_version: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    version: int = Field(default=1, ge=1)
+    state: ProfileState = ProfileState.DRAFT
+    created_by: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_by: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ApiKeyRegistryEntryAdmin(BaseModel):
+    """API key registry entry managed by admin control panel.
+
+    Uses token_budget_limit as canonical wire field.
+    """
+
+    api_key_id: str
+    tenant_id: str
+    key_hash: str = ""
+    display_name: str = ""
+    agent_type_id: str = ""
+    knowledge_scopes: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    debug_permission: bool = False
+    token_budget_limit: int = Field(default=4096, gt=0)
+    state: ApiKeyState = ApiKeyState.ACTIVE
+    expires_at: Optional[datetime] = None
+    created_by: str = ""
+    created_at: Optional[datetime] = None
+    updated_by: str = ""
+    updated_at: Optional[datetime] = None
+    last_rotated_at: Optional[datetime] = None
+
+
+class ApiKeyProjection(BaseModel):
+    """Access runtime projection of an API key.
+
+    Derived from admin control plane. Uses canonical wire fields.
+    Does NOT include key_hash — access runtime never stores plaintext keys.
+    """
+
+    api_key_id: str
+    tenant_id: str
+    agent_type_id: str = ""
+    knowledge_scopes: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    debug_permission: bool = False
+    token_budget_limit: int = Field(default=4096, gt=0)
+    state: ApiKeyState = ApiKeyState.ACTIVE
+    expires_at: Optional[datetime] = None
+    projection_version: int = Field(default=1, ge=1)
+    last_updated_at: Optional[datetime] = None
+
+
+class ApiKeyProjectionSync(BaseModel):
+    """Command envelope for syncing an API key projection to access runtime.
+
+    All mutation commands MUST carry stable idempotency_key.
+    """
+
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    target_type: str = Field(default="api_key_projection")
+    target_id: str
+    payload: ApiKeyProjection
+
+
+class IndexProjectionPayload(BaseModel):
+    """Payload for syncing an index projection to retrieval runtime."""
+
+    collection_id: str
+    index_version_id: str
+    sync_mode: str = Field(description="full_replace | lifecycle_patch")
+    doc_id: Optional[str] = Field(default=None, description="Required for lifecycle_patch")
+    lifecycle_state: Optional[str] = Field(default=None, description="Required for lifecycle_patch")
+    available_int: Optional[int] = Field(default=None, description="Optional override for lifecycle_patch")
+    chunks: list[dict[str, Any]] = Field(default_factory=list, description="Required for full_replace")
+    tenant_id: Optional[str] = Field(default=None, description="Tenant for index_versions/published_documents upsert")
+    opensearch_index: Optional[str] = Field(default=None, description="OpenSearch index for index_versions upsert")
+    qdrant_collection: Optional[str] = Field(default=None, description="Qdrant collection for index_versions upsert")
+    embedding_model: Optional[str] = Field(default=None, description="Embedding model for index_versions upsert")
+    chunk_profile_id: Optional[str] = Field(default=None, description="Chunk profile for index_versions upsert")
+    index_profile_id: Optional[str] = Field(default=None, description="Index profile for index_versions upsert")
+    schema_version: Optional[str] = Field(default="v1", description="Schema version for index_versions upsert")
+    published_document_state: Optional[str] = Field(default="PUBLISHED", description="Published document state for published_documents upsert")
+
+
+class IndexProjectionSync(BaseModel):
+    """Command envelope for syncing an index projection to retrieval runtime.
+
+    All mutation commands MUST carry stable idempotency_key.
+    """
+
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    target_type: str = Field(default="index_projection")
+    target_id: str
+    payload: IndexProjectionPayload
+
+
+class RetrievalProfileProjection(BaseModel):
+    """Runtime projection of a retrieval profile for retrieval-service DB."""
+
+    profile_id: str
+    collection_id: str
+    profile_version: int = Field(default=1, ge=1)
+    profile_hash: str = ""
+    bm25_weight: float = 0.5
+    vector_weight: float = 0.5
+    candidate_top_k: int = Field(default=20, gt=0)
+    similarity_threshold: float = 0.0
+    rerank_enabled: bool = True
+    rerank_model: str = ""
+    fail_policy: str = "fail_closed"
+    expansion_policy: dict[str, Any] = Field(default_factory=dict)
+    pack_budget: int = Field(default=1200, gt=0)
+    enabled: bool = True
+    updated_at: Optional[datetime] = None
+    updated_by: str = "system"
+
+
+class RetrievalProfileProjectionSync(BaseModel):
+    """Command envelope for syncing a retrieval profile projection to retrieval runtime."""
+
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    target_type: str = Field(default="retrieval_profile_projection")
+    target_id: str
+    payload: RetrievalProfileProjection
+
+
+class CollectionProfileBinding(BaseModel):
+    """Versioned collection-to-profile binding managed by admin."""
+
+    binding_id: str
+    tenant_id: str
+    collection_id: str
+    parser_profile_id: str = ""
+    retrieval_profile_id: str = ""
+    approval_policy_id: str = ""
+    effective_from: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    effective_to: Optional[datetime] = None
+    binding_version: int = Field(default=1, ge=1)
+    config_hash: str = ""
+    created_by: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CommandEnvelope(BaseModel):
+    """Stable command envelope for all admin control actions."""
+
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    collection_id: Optional[str] = None
+    target_type: str
+    target_id: str
+    reason: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class OpsAuditLogEntry(BaseModel):
+    """Operations audit log entry for admin actions."""
+
+    audit_id: str
+    command_id: str = ""
+    trace_id: str = ""
+    idempotency_key: str = ""
+    actor_id: str
+    tenant_id: str = ""
+    collection_id: Optional[str] = None
+    action: str
+    target_type: str
+    target_id: str
+    before_state: Optional[str] = None
+    after_state: Optional[str] = None
+    reason: Optional[str] = None
+    payload_hash: str = ""
+    created_at: Optional[datetime] = None
+
+
+# ── Workbench Contracts ───────────────────────────────────────────────
+
+
+class WorkbenchUploadSession(BaseModel):
+    """Upload session projection maintained by workbench. Status is derived from owner states."""
+
+    upload_id: str
+    user_id: str
+    tenant_id: str
+    collection_id: str
+    source_file_id: Optional[str] = None
+    intake_job_id: Optional[str] = None
+    parse_snapshot_id: Optional[str] = None
+    ticket_id: Optional[str] = None
+    selected_parser_profile_id: Optional[str] = None
+    parser_override_json: Optional[dict[str, Any]] = None
+    status: str = "uploading"
+    progress_pct: int = Field(default=0, ge=0, le=100)
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(default=0, ge=0)
+    error_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WorkbenchUserPreference(BaseModel):
+    """User preference stored locally by workbench."""
+
+    preference_id: str
+    user_id: str
+    preference_type: str = Field(default="default_collection", description="default_parser_profile | default_collection | view_mode")
+    preference_value: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WorkbenchChunkEdit(BaseModel):
+    """Chunk edit intent recorded by workbench. Uses canonical wire fields."""
+
+    chunk_edit_id: str
+    tenant_id: str
+    collection_id: str
+    source_file_id: str
+    parse_snapshot_id: Optional[str] = None
+    base_evidence_id: str
+    edit_scope: str = Field(default="pre_publish", description="pre_publish | post_publish")
+    operation: str = Field(default="update", description="update | split | merge | delete | create | hide")
+    content: Optional[str] = None
+    vector_text: Optional[str] = None
+    section_path: Optional[list[str]] = None
+    metadata_patch: Optional[dict[str, Any]] = None
+    citation_payload: Optional[dict[str, Any]] = None
+    source_block_ids: Optional[list[str]] = None
+    edit_reason: Optional[str] = None
+    edited_by: str
+    status: str = Field(default="draft", description="draft | submitted | materialized | active | rejected | failed")
+    downstream_revision_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WorkbenchTaskView(BaseModel):
+    """Aggregated task view derived from multiple downstream owner states."""
+
+    upload_id: str
+    status: str = "uploading"
+    progress_pct: int = Field(default=0, ge=0, le=100)
+    source_file_state: Optional[str] = None
+    intake_job_state: Optional[str] = None
+    parse_snapshot_state: Optional[str] = None
+    ticket_state: Optional[str] = None
+    published_document_state: Optional[str] = None
+    index_build_state: Optional[str] = None
+    active_index_version: Optional[str] = None
+    filename: str
+    collection_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WorkbenchParsePreviewRequest(BaseModel):
+    """Request to trigger a parse preview via indexing."""
+
+    upload_id: str
+    source_file_id: str
+    collection_id: str
+    tenant_id: str
+    parser_profile_id: str
+    parser_override_json: Optional[dict[str, Any]] = None
+    actor: str
+
+
+class WorkbenchTicketDecision(BaseModel):
+    """Request to decide an approval ticket."""
+
+    decision_request_id: str
+    action: str = Field(description="APPROVE | REJECT | RETURN")
+    reason: Optional[str] = None
+    actor: str
+    tenant_id: str
+    collection_id: str
+
+
+class AgentReviewView(BaseModel):
+    """Read-only view of AgentReview artifact for workbench display."""
+
+    ticket_id: str
+    decision: str = Field(default="REVIEW", description="PASS | FAIL | REVIEW | DEGRADED")
+    quality_findings: list[dict[str, Any]] = Field(default_factory=list)
+    risk_flags: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_anchors: list[dict[str, Any]] = Field(default_factory=list)
+    model: Optional[str] = None
+    version: Optional[str] = None
+    prompt_hash: Optional[str] = None
+    suggested_fixes: list[dict[str, Any]] = Field(default_factory=list)
+    degraded_reason: Optional[str] = None
+    failure_reason: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ChunkRevisionRequest(BaseModel):
+    """Command envelope for chunk revision. Must include stable idempotency_key."""
+
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    collection_id: str
+    target_type: str = Field(description="chunk | parse_snapshot")
+    target_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChunkRevisionView(BaseModel):
+    """Read-only view of a chunk revision. Owner: indexing service."""
+
+    revision_id: str
+    base_evidence_id: str
+    doc_id: str
+    collection_id: str
+    tenant_id: str
+    operation: str = Field(default="update", description="update | split | merge | delete | create | hide")
+    content: Optional[str] = None
+    vector_text: Optional[str] = None
+    section_path: Optional[list[str]] = None
+    metadata_patch: Optional[dict[str, Any]] = None
+    citation_payload: Optional[dict[str, Any]] = None
+    status: str = Field(default="draft", description="draft | materializing | active | failed | superseded")
+    superseded_evidence_id: Optional[str] = None
+    superseded_by: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    trace_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ChunkRevisionMaterializeRequest(BaseModel):
+    """Command envelope to materialize a chunk revision."""
+
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    collection_id: str
+    target_type: str = Field(default="chunk_revision")
+    target_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalCachePurgeRequest(BaseModel):
+    """Request to purge retrieval cache by scope."""
+
+    scope: "RetrievalCachePurgeScope"
+
+
+class RetrievalCachePurgeScope(BaseModel):
+    """Scope for cache purge. At least tenant_id is required."""
+
+    tenant_id: str
+    collection_id: Optional[str] = None
+    doc_id: Optional[str] = None
+    evidence_id: Optional[str] = None
+
+
+class RetrievalCachePurgeResponse(BaseModel):
+    """Result of cache purge operation."""
+
+    purged_count: int = 0
+    scope: dict[str, Any] = Field(default_factory=dict)
+

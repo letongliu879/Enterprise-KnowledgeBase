@@ -35,6 +35,89 @@ paths:
             application/json:
               schema:
                 $ref: ../schemas/RetrievalProfile.schema.json
+  /internal/retrieval-profiles/validate:
+    post:
+      operationId: validateRetrievalProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/RetrievalProfileValidateRequest.schema.json
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RetrievalProfileValidateResponse.schema.json
+        "400":
+          description: Invalid request body
+        "500":
+          description: Internal validation error
+  /internal/index-projections/sync:
+    post:
+      operationId: syncIndexProjection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/IndexProjectionSync.schema.json
+      responses:
+        "200":
+          description: Projection synced successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  synced_at:
+                    type: string
+                    format: date-time
+                  chunks_synced:
+                    type: integer
+                    minimum: 0
+                  chunks_removed:
+                    type: integer
+                    minimum: 0
+                required: [synced_at, chunks_synced, chunks_removed]
+        "400":
+          description: Invalid command envelope or payload
+        "409":
+          description: Idempotency conflict or stale projection version
+  /internal/cache/purge:
+    post:
+      operationId: purgeCache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/RetrievalCachePurgeRequest.schema.json
+      responses:
+        "200":
+          description: Cache purge result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purged_count:
+                    type: integer
+                  scope:
+                    type: object
+                    properties:
+                      tenant_id:
+                        type: string
+                      collection_id:
+                        type: string
+                      doc_id:
+                        type: string
+                      evidence_id:
+                        type: string
+                required: [purged_count]
   /health:
     get:
       operationId: retrievalHealth

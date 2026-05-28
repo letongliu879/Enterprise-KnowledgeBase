@@ -15,7 +15,7 @@ public class PermissionPrefilter {
         return chunks.stream()
             .filter(chunk -> scope.collectionIds().contains(chunk.collectionId()))
             .filter(chunk -> allowedStates.contains(chunk.publishedDocumentState()))
-            .filter(chunk -> scope.allowedDocIds().isEmpty() || scope.allowedDocIds().contains(chunk.finalDocId()))
+            .filter(chunk -> scope.allowedDocIds().contains(chunk.finalDocId()))
             .filter(chunk -> hasPrincipalAccess(scope, chunk))
             .filter(chunk -> matchesMetadataFilters(scope.metadataFilters(), chunk))
             .toList();

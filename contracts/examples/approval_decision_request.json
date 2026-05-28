@@ -1,0 +1,14 @@
+{
+  "command_id": "cmd_01HABCDEF123456789",
+  "trace_id": "trc_01HABCDEF123456789",
+  "idempotency_key": "dec_01HABCDEF123456789",
+  "actor": "user-001",
+  "tenant_id": "tenant_acme",
+  "collection_id": "col_default",
+  "target_type": "ticket",
+  "target_id": "ticket_01HABCDEF123456789",
+  "payload": {
+    "action": "approve",
+    "reason": "All quality issues have been addressed."
+  }
+}

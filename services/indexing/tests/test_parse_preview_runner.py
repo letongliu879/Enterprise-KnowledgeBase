@@ -4,14 +4,14 @@ from pathlib import Path
 
 from indexing_service.jobs.parse_preview_runner import ParsePreviewRunner
 from indexing_service.preview_contracts import ParsePreviewRequestedCommand
-from indexing_service.repository import InMemoryIndexingRepository
+from indexing_service.persistent_repository import PersistentIndexingRepository
 
 
-def test_parse_preview_ignores_manual_overrides() -> None:
+def test_parse_preview_accepts_manual_overrides() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-preview-qa.txt")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     runner = ParsePreviewRunner(repository=repo)
     accepted = runner.accept(
         ParsePreviewRequestedCommand(
@@ -28,8 +28,8 @@ def test_parse_preview_ignores_manual_overrides() -> None:
         )
     )
 
-    assert accepted.parser_id == "naive"
-    assert "manual_parser_override_ignored:qa" in accepted.warnings
+    assert accepted.parser_id == "qa"
+    assert "manual_parser_override_accepted:qa" in accepted.warnings
     assert "manual_parser_config_override_ignored" in accepted.warnings
 
 
@@ -37,7 +37,7 @@ def test_parse_snapshot_keeps_upstream_chunks() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-table.csv")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     runner = ParsePreviewRunner(repository=repo)
     accepted = runner.accept(
         ParsePreviewRequestedCommand(
@@ -61,7 +61,7 @@ def test_table_preview_freezes_upstream_table_parser_config() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-table.csv")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     runner = ParsePreviewRunner(repository=repo)
     accepted = runner.accept(
         ParsePreviewRequestedCommand(
@@ -98,7 +98,7 @@ def test_preview_uses_upstream_default_parser_config() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-preview-qa.txt")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     runner = ParsePreviewRunner(repository=repo)
     accepted = runner.accept(
         ParsePreviewRequestedCommand(
@@ -125,7 +125,7 @@ def test_preview_freezes_layout_and_media_context_config() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-preview-qa.txt")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     runner = ParsePreviewRunner(repository=repo)
     accepted = runner.accept(
         ParsePreviewRequestedCommand(

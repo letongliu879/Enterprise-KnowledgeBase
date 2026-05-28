@@ -1,0 +1,8 @@
+{
+  "collection_id": "col_default",
+  "filename": "annual_report_2025.pdf",
+  "mime_type": "application/pdf",
+  "size_bytes": 2457600,
+  "selected_parser_profile_id": "parser_naive_v1",
+  "parser_override_json": {}
+}

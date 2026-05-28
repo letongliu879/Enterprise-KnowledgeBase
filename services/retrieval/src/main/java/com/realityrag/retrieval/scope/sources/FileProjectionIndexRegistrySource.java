@@ -29,6 +29,7 @@ public class FileProjectionIndexRegistrySource implements IndexRegistrySource {
 
     private IndexRegistryRecord toRecord(Map<String, Object> item) {
         return new IndexRegistryRecord(
+            stringValue(item, "tenant_id"),
             stringValue(item, "collection_id"),
             coalesce(item, "index_version_id", "index_version"),
             stringValue(item, "opensearch_index"),

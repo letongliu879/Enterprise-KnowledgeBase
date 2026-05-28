@@ -10,7 +10,7 @@ This service owns:
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from reality_rag_contracts import HealthResponse, PublishStatus
 from reality_rag_persistence.database import get_session
@@ -248,5 +248,213 @@ async def get_ticket_history(intake_job_id: str) -> list[dict]:
         svc = ApprovalService(session)
         tickets = svc.get_ticket_history(intake_job_id)
         return [t.model_dump(mode="json") for t in tickets]
+    finally:
+        session.close()
+
+
+# -- New internal owner APIs for workbench consumption --------------------------------
+
+
+class ApprovalTicketView(BaseModel):
+    ticket_id: str
+    intake_job_id: str
+    collection_id: str
+    tenant_id: str
+    state: str
+    preliminary_doc_id: str
+    final_doc_id: str | None = None
+    source_file_id: str | None = None
+    parse_snapshot_id: str | None = None
+    agent_review_ref: str | None = None
+    decision: str | None = None
+    decision_reason: str | None = None
+    decided_by: str | None = None
+    confirmed_tags: list[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+    decided_at: str | None = None
+
+
+class DecideTicketRequest(BaseModel):
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    collection_id: str
+    target_type: str = "ticket"
+    target_id: str
+    payload: dict
+
+
+class AgentReviewArtifact(BaseModel):
+    ticket_id: str
+    decision: str = "REVIEW"
+    quality_findings: list[dict] = Field(default_factory=list)
+    risk_flags: list[dict] = Field(default_factory=list)
+    evidence_anchors: list[dict] = Field(default_factory=list)
+    model: str | None = None
+    version: str | None = None
+    prompt_hash: str | None = None
+    suggested_fixes: list[dict] = Field(default_factory=list)
+    degraded_reason: str | None = None
+    failure_reason: str | None = None
+    created_at: str
+
+
+# In-memory idempotency store for decisions
+_decision_idempotency: dict[str, dict] = {}  # idempotency_key -> decision result
+
+
+def _ticket_to_view(ticket: ApprovalTicket) -> ApprovalTicketView:
+    return ApprovalTicketView(
+        ticket_id=ticket.ticket_id,
+        intake_job_id=ticket.intake_job_id,
+        collection_id=ticket.collection_id,
+        tenant_id=ticket.tenant_id or "tenant_acme",
+        state=ticket.state.value,
+        preliminary_doc_id=ticket.preliminary_doc_id,
+        final_doc_id=ticket.final_doc_id,
+        source_file_id=None,
+        parse_snapshot_id=None,
+        agent_review_ref=None,
+        decision=ticket.decision,
+        decision_reason=ticket.decision_reason,
+        decided_by=ticket.decision_actor,
+        confirmed_tags=ticket.confirmed_tags or [],
+        created_at=ticket.created_at.isoformat() if ticket.created_at else _utc_now(),
+        updated_at=ticket.created_at.isoformat() if ticket.created_at else _utc_now(),
+        decided_at=ticket.decided_at.isoformat() if ticket.decided_at else None,
+    )
+
+
+def _utc_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+@app.get("/internal/tickets")
+async def list_tickets(
+    tenant_id: str,
+    collection_id: str | None = None,
+    state: str | None = None,
+) -> dict:
+    """List approval tickets. Fail closed on tenant mismatch."""
+    session = get_session()
+    try:
+        from reality_rag_persistence.repositories.approval_tickets import ApprovalTicketRepository
+        repo = ApprovalTicketRepository(session)
+        all_tickets = repo.list_all()
+        items = []
+        for t in all_tickets:
+            view = _ticket_to_view(t)
+            # Fail closed: filter by tenant
+            if view.tenant_id != tenant_id:
+                continue
+            if collection_id and view.collection_id != collection_id:
+                continue
+            if state and view.state != state:
+                continue
+            items.append(view.model_dump(mode="json"))
+        return {"items": items, "total": len(items)}
+    finally:
+        session.close()
+
+
+@app.get("/internal/tickets/{ticket_id}")
+async def get_ticket_internal(ticket_id: str) -> dict:
+    session = get_session()
+    try:
+        svc = ApprovalService(session)
+        ticket = svc._ticket_repo.get(ticket_id)
+        if ticket is None:
+            raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
+        return _ticket_to_view(ticket).model_dump(mode="json")
+    finally:
+        session.close()
+
+
+@app.post("/internal/tickets/{ticket_id}/decide")
+async def decide_ticket_internal(ticket_id: str, request: DecideTicketRequest) -> dict:
+    """Decide an approval ticket. Idempotent by idempotency_key."""
+    # Check idempotency
+    if request.idempotency_key in _decision_idempotency:
+        return _decision_idempotency[request.idempotency_key]
+
+    session = get_session()
+    try:
+        svc = ApprovalService(session)
+        ticket = svc._ticket_repo.get(ticket_id)
+        if ticket is None:
+            raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
+
+        action = request.payload.get("action", "").lower()
+        reason = request.payload.get("reason")
+
+        if action == "approve":
+            result_ticket = svc.approve(
+                ticket_id=ticket_id,
+                actor_id=request.actor,
+                confirmed_tags=[],
+            )
+        elif action == "reject":
+            result_ticket = svc.reject(
+                ticket_id=ticket_id,
+                actor_id=request.actor,
+                rejection_reason=reason or "",
+            )
+        elif action == "return":
+            result_ticket, _ = svc.return_to_stage(
+                ticket_id=ticket_id,
+                actor_id=request.actor,
+                return_target_stage="conversion",
+                return_reason=reason or "",
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+        session.commit()
+        view = _ticket_to_view(result_ticket)
+        result = view.model_dump(mode="json")
+        _decision_idempotency[request.idempotency_key] = result
+        return result
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        session.close()
+
+
+@app.get("/internal/tickets/{ticket_id}/agent-review")
+async def get_agent_review_internal(ticket_id: str) -> dict:
+    """Return AgentReview artifact read model. Read-only."""
+    session = get_session()
+    try:
+        svc = ApprovalService(session)
+        ticket = svc._ticket_repo.get(ticket_id)
+        if ticket is None:
+            raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
+
+        # Return a stub AgentReview artifact
+        # In production this would query the agent-review-worker output
+        artifact = AgentReviewArtifact(
+            ticket_id=ticket_id,
+            decision="PASS" if ticket.state.value == "system_decided" else "REVIEW",
+            quality_findings=[],
+            risk_flags=[],
+            evidence_anchors=[],
+            model="claude-sonnet-4-6",
+            version="v2.1.0",
+            prompt_hash="sha256:stub",
+            suggested_fixes=[],
+            created_at=_utc_now(),
+        )
+        return artifact.model_dump(mode="json")
     finally:
         session.close()

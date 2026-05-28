@@ -1,5 +1,6 @@
 package com.realityrag.access.contracts;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import java.util.List;
@@ -7,9 +8,9 @@ import java.util.Map;
 
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record InternalPrincipal(
-    String principalId,
-    List<String> roles,
-    List<String> groups,
+    @JsonProperty("user_id") String principalId,
+    @JsonProperty("role_ids") List<String> roles,
+    @JsonProperty("group_ids") List<String> groups,
     Map<String, Object> attributes
 ) {
     public InternalPrincipal {

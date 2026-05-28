@@ -27,7 +27,7 @@
             "document_index_revision_id": {
               "type": "string"
             },
-            "final_doc_id": {
+            "doc_id": {
               "$ref": "../schemas/common.schema.json#/$defs/final_doc_id"
             },
             "collection_id": {
@@ -55,7 +55,7 @@
           "required": [
             "index_version_id",
             "document_index_revision_id",
-            "final_doc_id",
+            "doc_id",
             "collection_id",
             "chunk_count",
             "opensearch_record_count",

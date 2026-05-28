@@ -1,5 +1,6 @@
 package com.realityrag.access.security;
 
+import com.realityrag.access.support.AccessException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,7 @@ public class McpSessionPrincipalBindingStore {
             return;
         }
         if (!samePrincipal(bound, context)) {
-            throw new com.realityrag.access.support.AccessForbiddenException(
+            throw new AccessException.Forbidden(
                 "MCP session principal does not match the authenticated bearer token"
             );
         }

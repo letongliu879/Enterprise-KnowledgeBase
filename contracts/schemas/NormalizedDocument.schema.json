@@ -15,7 +15,7 @@
         "collection_id": {
           "$ref": "./common.schema.json#/$defs/collection_id"
         },
-        "final_doc_id": {
+        "doc_id": {
           "$ref": "./common.schema.json#/$defs/final_doc_id"
         },
         "document_version": {
@@ -28,7 +28,7 @@
       "required": [
         "tenant_id",
         "collection_id",
-        "final_doc_id",
+        "doc_id",
         "document_version",
         "publish_version"
       ]

@@ -32,6 +32,7 @@ class ApprovalTicketRepository:
         row = ApprovalTicketModel(
             ticket_id=ticket.ticket_id,
             intake_job_id=ticket.intake_job_id,
+            tenant_id=ticket.tenant_id,
             approval_round=ticket.approval_round,
             preliminary_doc_id=ticket.preliminary_doc_id,
             collection_id=ticket.collection_id,
@@ -66,11 +67,16 @@ class ApprovalTicketRepository:
         self._session.flush()
         return self._to_contract(row)
 
+    def list_all(self) -> list[ApprovalTicket]:
+        rows = self._session.query(ApprovalTicketModel).all()
+        return [self._to_contract(r) for r in rows]
+
     @staticmethod
     def _to_contract(row: ApprovalTicketModel) -> ApprovalTicket:
         return ApprovalTicket(
             ticket_id=row.ticket_id,
             intake_job_id=row.intake_job_id,
+            tenant_id=row.tenant_id,
             approval_round=row.approval_round,
             preliminary_doc_id=row.preliminary_doc_id,
             collection_id=row.collection_id,

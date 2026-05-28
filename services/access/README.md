@@ -1,56 +1,73 @@
-﻿# Access
+# access
 
-`services/access` 是 `Enterprise KnowledgeBase` 的 Java Spring Boot 在线入口服务。
+`services/access` 是当前知识库的在线入口服务，基于 Spring Boot。
 
-它负责：
+详细设计见 [access.md](./access.md)。
+
+## 核心职责
 
 - 对外 REST 入口
-- 对外 MCP 入口
-- 识别 `X-API-Key` 和 `X-Agent-Instance-Id`
-- 根据 `api_key` 查询服务端登记的调用方身份、权限、知识域和 collection 访问范围
+- 对外 MCP SSE 入口
+- 读取 `X-API-Key` 与 `X-Agent-Instance-Id`
+- 从 `api_key_projection` 缓存表解析调用方身份和可访问 scope（通过 `/internal/api-key-projections/sync` 消费 admin 投影）
 - 把外部请求翻译成内部 retrieval 请求
 - 调用 `services/retrieval`
-- 记录 `query_id` / `trace_id` / `api_key_id` / `agent_instance_id` 审计日志
+- 把 `query_id` / `trace_id` / 调用信息写入 `run_traces`、`run_steps`
 
-它不负责：
+以下职责**不属于** access：
 
 - 检索算法
 - OpenSearch / Qdrant 直接访问
-- `KnowledgeContext` 内部组装
-- 文档治理、发布、索引写入
-- 让客户端自己传 tenant / platform / 签名信息
+- 文档发布、索引写入、生命周期治理
+- 让客户端自己上传 tenant / platform / HMAC 签名
 
-当前服务面：
+## 当前服务面
 
-- REST：`POST /v1/retrieve`
-- Health：`GET /health`
-- MCP SSE：`GET /sse`
-- MCP messages：`POST /mcp/messages?sessionId=...`
+对外：
 
-当前认证模型：
+- `GET /health`
+- `POST /v1/retrieve`
+- `GET /sse`
+- `POST /mcp/messages?sessionId=...`
 
-- 客户端只需要：`X-API-Key`、`X-Agent-Instance-Id`
-- `api_key` 在服务端数据库或注册表中绑定：
-  - 调用方是谁
-  - 能调用哪些能力
-  - 能访问哪些 `knowledge_scopes` / `collection_scope`
-  - debug 权限
-  - max context tokens
-- 不再使用：
-  - `X-Tenant-Id`
-  - `X-Platform-Id`
-  - `X-Reality-Timestamp`
-  - `X-Reality-Nonce`
-  - `X-Reality-Signature`
-  - `api_secret`
+内部（admin → access projection sync）：
 
-相关文档：
+- `POST /internal/api-key-projections/sync`
 
-- [../../docs/architecture.md](../../docs/architecture.md)
-- [../../docs/project-overview.md](../../docs/project-overview.md)
-- [../retrieval/retrieval.md](../retrieval/retrieval.md)
-- [./access.md](./access.md)
-- [./agent-platform-mcp-integration.md](./agent-platform-mcp-integration.md)
-- [./mcp-service-surface-refactor.md](./mcp-service-surface-refactor.md)
-- [../../contracts/openapi/access.yaml](../../contracts/openapi/access.yaml)
-- [../../contracts/openapi/retrieval-internal.yaml](../../contracts/openapi/retrieval-internal.yaml)
+## 当前客户端输入
+
+- Header: `X-API-Key`
+- Header: `X-Agent-Instance-Id`
+
+access 根据 `X-API-Key` 查 `api_key_projection` 缓存表，校验 `state`、`expires_at`、`last_updated_at` TTL，fail-closed。
+
+## REST 与 MCP
+
+REST 请求体当前使用：
+
+- `query`
+- `collection_scope`
+- `retrieval_profile_id`
+- `token_budget`
+- `debug`
+
+MCP 当前只暴露一个 tool：
+
+- `search_enterprise_knowledge`
+
+tool 参数当前使用：
+
+- `query`
+- `knowledge_scope`
+- `retrieval_profile_id`
+- `token_budget`
+- `debug`
+
+## 运行时依赖
+
+- 默认端口：`18081`
+- 下游 retrieval 默认地址：`http://127.0.0.1:18082`
+- 数据库连接来自 `spring.datasource.*`
+- `api_key_projection`、`api_key_projection_idempotency`、`run_traces`、`run_steps` 在 access 本地数据库
+- admin 通过 `/internal/api-key-projections/sync` 推送投影，access 不做 admin 表直连
+- `retrieval_profile_id` 由 access 转发至 retrieval 校验，access 不本地缓存 profile

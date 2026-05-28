@@ -41,6 +41,14 @@ def ctx_to_conversion_input(ctx: StageContext) -> ConversionStageInput:
         ),
         index_version=ctx.index_version,
         source_hash=ctx.source_hash,
+        source_file_id=ctx.source_file_id,
+        trace_id=ctx.job_id,
+        source_metadata={
+            "source_file_id": ctx.source_file_id,
+            "object_id": ctx.object_id,
+            "content_hash": ctx.content_hash,
+            "filename": ctx.source_file_path,
+        },
     )
 
 
@@ -57,6 +65,7 @@ def conversion_output_to_ctx(
     ctx.skip_reason = output.skip_reason or ""
     # Legacy field mapping: preliminary_doc_id -> doc_id
     ctx.doc_id = output.preliminary_doc_id
+    ctx.parse_snapshot_id = output.parse_snapshot_id
     return ctx
 
 
@@ -94,6 +103,11 @@ def ctx_to_conversion_output(ctx: StageContext) -> ConversionStageOutput:
         version_conflict=version_conflict,
         dedup_skipped=ctx.skipped,
         skip_reason=ctx.skip_reason or None,
+        parse_snapshot_id=(
+            str((ctx.result.metadata or {}).get("parse_snapshot_id") or getattr(ctx, "parse_snapshot_id", "")).strip()
+            if ctx.result is not None
+            else getattr(ctx, "parse_snapshot_id", "")
+        ),
     )
     output.result_hash = compute_result_hash(output)
     return output

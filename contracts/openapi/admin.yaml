@@ -2,10 +2,94 @@ openapi: 3.1.0
 info:
   title: Reality-RAG Admin API
   version: 0.1.0
+
 paths:
+  # ── Auth ──────────────────────────────────────────────────────────────
+
+  /admin/auth/login:
+    post:
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+              required: [email, password]
+      responses:
+        "200":
+          description: JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+        "401":
+          description: Invalid credentials
+
+  /admin/auth/logout:
+    post:
+      operationId: adminLogout
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Logged out
+
+  /admin/auth/me:
+    get:
+      operationId: adminMe
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current admin user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  email:
+                    type: string
+                  display_name:
+                    type: string
+                  roles:
+                    type: array
+                    items:
+                      type: string
+                  allowed_tenants:
+                    type: array
+                    items:
+                      type: string
+                  allowed_collections:
+                    type: array
+                    items:
+                      type: string
+
+  # ── Collections ───────────────────────────────────────────────────────
+
   /admin/collections:
     get:
       operationId: listCollections
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant_id
+          in: query
+          schema:
+            type: string
       responses:
         "200":
           description: Collections
@@ -17,6 +101,8 @@ paths:
                   $ref: ../schemas/AdminCollection.schema.json
     post:
       operationId: createCollection
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -26,9 +112,335 @@ paths:
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AdminCollection.schema.json
+
+  /admin/collections/{id}:
+    get:
+      operationId: getCollection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Collection
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AdminCollection.schema.json
+    put:
+      operationId: updateCollection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/AdminCollection.schema.json
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AdminCollection.schema.json
+    delete:
+      operationId: deleteCollection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/collections/{id}/archive:
+    post:
+      operationId: archiveCollection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AdminCollection.schema.json
+
+  /admin/collections/{id}/disable:
+    post:
+      operationId: disableCollection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Disabled
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AdminCollection.schema.json
+
+  /admin/collections/{id}/bindings:
+    get:
+      operationId: listCollectionBindings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Collection profile bindings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/CollectionProfileBinding.schema.json
+    post:
+      operationId: createCollectionBinding
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                command:
+                  $ref: ../schemas/CommandEnvelope.schema.json
+                parser_profile_id:
+                  type: string
+                retrieval_profile_id:
+                  type: string
+                approval_policy_id:
+                  type: string
+              required: [command]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/CollectionProfileBinding.schema.json
+
+  # ── Parser Profiles ───────────────────────────────────────────────────
+
+  /admin/parser-profiles:
+    get:
+      operationId: listParserProfiles
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [draft, published, retired]
+      responses:
+        "200":
+          description: Parser profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/ParserProfile.schema.json
+    post:
+      operationId: createParserProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ParserProfile.schema.json
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParserProfile.schema.json
+
+  /admin/parser-profiles/{id}:
+    get:
+      operationId: getParserProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Parser profile
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParserProfile.schema.json
+    put:
+      operationId: updateParserProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ParserProfile.schema.json
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParserProfile.schema.json
+    delete:
+      operationId: deleteParserProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/parser-profiles/{id}/publish:
+    post:
+      operationId: publishParserProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParserProfile.schema.json
+        "409":
+          description: Validation conflict or downstream error
+        "501":
+          description: Downstream validation API not implemented
+        "503":
+          description: Downstream service unavailable
+
+  /admin/parser-profiles/{id}/retire:
+    post:
+      operationId: retireParserProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Retired
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParserProfile.schema.json
+
+  # ── Retrieval Profiles ────────────────────────────────────────────────
+
   /admin/retrieval-profiles:
     get:
       operationId: listRetrievalProfiles
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [draft, published, retired]
       responses:
         "200":
           description: Retrieval profiles
@@ -37,33 +449,30 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: ../schemas/RetrievalProfile.schema.json
+                  $ref: ../schemas/RetrievalProfileAdmin.schema.json
     post:
       operationId: createRetrievalProfile
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: ../schemas/RetrievalProfile.schema.json
+              $ref: ../schemas/RetrievalProfileAdmin.schema.json
       responses:
         "201":
           description: Created
-  /admin/index-versions:
-    get:
-      operationId: listIndexVersions
-      responses:
-        "200":
-          description: Index versions
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: ../schemas/IndexVersion.schema.json
-  /admin/index-versions/{id}/activate:
-    post:
-      operationId: adminActivateIndexVersion
+                $ref: ../schemas/RetrievalProfileAdmin.schema.json
+
+  /admin/retrieval-profiles/{id}:
+    get:
+      operationId: getRetrievalProfile
+      security:
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -71,11 +480,39 @@ paths:
           schema:
             type: string
       responses:
-        "202":
-          description: Accepted
-  /admin/index-versions/{id}/rollback:
-    post:
-      operationId: adminRollbackIndexVersion
+        "200":
+          description: Retrieval profile
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RetrievalProfileAdmin.schema.json
+    put:
+      operationId: updateRetrievalProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/RetrievalProfileAdmin.schema.json
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RetrievalProfileAdmin.schema.json
+    delete:
+      operationId: deleteRetrievalProfile
+      security:
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -83,122 +520,380 @@ paths:
           schema:
             type: string
       responses:
-        "202":
-          description: Accepted
-  /admin/retrieval-logs:
-    get:
-      operationId: listRetrievalLogs
-      responses:
-        "200":
-          description: Retrieval logs
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-  /admin/runs:
-    get:
-      operationId: listRuns
-      responses:
-        "200":
-          description: Run traces
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: ../schemas/RunTrace.schema.json
-  /admin/runs/{trace_id}:
-    get:
-      operationId: getRun
-      parameters:
-        - name: trace_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Run trace
-          content:
-            application/json:
-              schema:
-                $ref: ../schemas/RunTrace.schema.json
-  /admin/runs/{trace_id}/steps:
-    get:
-      operationId: listRunSteps
-      parameters:
-        - name: trace_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Run steps
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: ../schemas/RunStep.schema.json
-  /admin/runs/{trace_id}/artifacts/{artifact_ref}:
-    get:
-      operationId: getRunArtifact
-      parameters:
-        - name: trace_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: artifact_ref
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Run artifact
-          content:
-            application/json:
-              schema:
-                $ref: ../schemas/TraceArtifact.schema.json
-  /admin/runs/compare:
+        "204":
+          description: Deleted
+
+  /admin/retrieval-profiles/{id}/publish:
     post:
-      operationId: compareRuns
+      operationId: publishRetrievalProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
       responses:
         "200":
-          description: Run comparison
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RetrievalProfileAdmin.schema.json
+        "409":
+          description: Validation conflict or downstream error
+        "501":
+          description: Downstream validation API not implemented
+        "503":
+          description: Downstream service unavailable
+
+  /admin/retrieval-profiles/{id}/retire:
+    post:
+      operationId: retireRetrievalProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Retired
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/RetrievalProfileAdmin.schema.json
+
+  # ── API Keys ──────────────────────────────────────────────────────────
+
+  /admin/api-keys:
+    get:
+      operationId: listApiKeys
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenant_id
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [active, disabled, revoked, expired]
+      responses:
+        "200":
+          description: API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ../schemas/ApiKeyRegistry.schema.json
+    post:
+      operationId: createApiKey
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                tenant_id:
+                  type: string
+                display_name:
+                  type: string
+                knowledge_scopes:
+                  type: array
+                  items:
+                    type: string
+                roles:
+                  type: array
+                  items:
+                    type: string
+                debug_permission:
+                  type: boolean
+                token_budget_limit:
+                  type: integer
+                  minimum: 1
+                expires_at:
+                  type: string
+                  format: date-time
+              required: [tenant_id, display_name]
+      responses:
+        "201":
+          description: Created
           content:
             application/json:
               schema:
                 type: object
-  /admin/bad-cases:
+                properties:
+                  api_key:
+                    $ref: ../schemas/ApiKeyRegistry.schema.json
+                  plaintext_key:
+                    type: string
+
+  /admin/api-keys/{id}:
     get:
-      operationId: listBadCases
+      operationId: getApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         "200":
-          description: Bad cases
-    post:
-      operationId: createBadCase
-      responses:
-        "201":
-          description: Created
-  /admin/eval-runs:
-    get:
-      operationId: listEvalRuns
+          description: API key
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ApiKeyRegistry.schema.json
+    put:
+      operationId: updateApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                display_name:
+                  type: string
+                knowledge_scopes:
+                  type: array
+                  items:
+                    type: string
+                roles:
+                  type: array
+                  items:
+                    type: string
+                debug_permission:
+                  type: boolean
+                token_budget_limit:
+                  type: integer
+                  minimum: 1
+                expires_at:
+                  type: string
+                  format: date-time
       responses:
         "200":
-          description: Eval runs
-    post:
-      operationId: createEvalRun
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ApiKeyRegistry.schema.json
+    delete:
+      operationId: deleteApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        "201":
-          description: Created
+        "204":
+          description: Deleted
+
+  /admin/api-keys/{id}/disable:
+    post:
+      operationId: disableApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Disabled
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ApiKeyRegistry.schema.json
+
+  /admin/api-keys/{id}/revoke:
+    post:
+      operationId: revokeApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ApiKeyRegistry.schema.json
+
+  /admin/api-keys/{id}/rotate:
+    post:
+      operationId: rotateApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/CommandEnvelope.schema.json
+      responses:
+        "200":
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    $ref: ../schemas/ApiKeyRegistry.schema.json
+                  plaintext_key:
+                    type: string
+        "501":
+          description: Downstream projection sync not implemented
+        "503":
+          description: Downstream service unavailable
+
+  # ── Ops Audit Log ─────────────────────────────────────────────────────
+
+  /admin/ops/audit-log:
+    get:
+      operationId: listOpsAuditLog
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+        - name: target_type
+          in: query
+          schema:
+            type: string
+        - name: target_id
+          in: query
+          schema:
+            type: string
+        - name: tenant_id
+          in: query
+          schema:
+            type: string
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: ../schemas/OpsAuditLog.schema.json
+
+  # ── Health ────────────────────────────────────────────────────────────
+
   /health:
     get:
       operationId: adminHealth
       responses:
         "200":
           description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,5 +1,6 @@
 package com.realityrag.access.contracts;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import jakarta.validation.constraints.NotBlank;
@@ -20,7 +21,7 @@ public record ExternalRetrieveRequest(
     Map<String, Object> metaDataFilter,
     String retrievalProfileId,
     String profile,
-    @Positive Integer maxContextTokens,
+    @JsonProperty("token_budget") @Positive Integer maxContextTokens,
     @Pattern(regexp = "none|basic|full", message = "debug must be one of: none, basic, full")
     String debug
 ) {

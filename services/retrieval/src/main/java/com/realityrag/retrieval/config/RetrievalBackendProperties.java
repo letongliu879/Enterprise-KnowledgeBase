@@ -19,6 +19,7 @@ public class RetrievalBackendProperties {
     private String promptModelApiKey;
     private String promptModelName;
     private boolean livePromptStrategiesEnabled = false;
+    private boolean requireLiveBackends = false;
 
     public String getOpensearchBaseUrl() {
         return opensearchBaseUrl;
@@ -138,5 +139,13 @@ public class RetrievalBackendProperties {
 
     public void setLivePromptStrategiesEnabled(boolean livePromptStrategiesEnabled) {
         this.livePromptStrategiesEnabled = livePromptStrategiesEnabled;
+    }
+
+    public boolean isRequireLiveBackends() {
+        return requireLiveBackends;
+    }
+
+    public void setRequireLiveBackends(boolean requireLiveBackends) {
+        this.requireLiveBackends = requireLiveBackends;
     }
 }

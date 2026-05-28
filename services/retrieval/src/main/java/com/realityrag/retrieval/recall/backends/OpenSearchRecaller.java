@@ -12,6 +12,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -23,6 +25,8 @@ import org.springframework.web.client.RestTemplate;
 
 @Component
 public class OpenSearchRecaller implements RecallerBackend {
+    private static final Logger LOG = LoggerFactory.getLogger(OpenSearchRecaller.class);
+
     private final RetrievalBackendProperties backendProperties;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
@@ -38,16 +42,40 @@ public class OpenSearchRecaller implements RecallerBackend {
 
     @Override
     public List<BackendRecallHit> recall(CollectionRetrievalPlan plan, List<IndexedChunk> chunks, String queryText) {
-        if (backendProperties.isLiveRecallEnabled() && hasBaseUrl(backendProperties.getOpensearchBaseUrl())) {
+        boolean liveConfigured = backendProperties.isLiveRecallEnabled()
+            && hasBaseUrl(backendProperties.getOpensearchBaseUrl());
+
+        if (liveConfigured) {
             try {
                 List<BackendRecallHit> hits = recallLive(plan, queryText);
                 if (!hits.isEmpty()) {
+                    LOG.info("OpenSearch live recall returned {} hits for collection={}", hits.size(), plan.collectionId());
                     return hits;
                 }
+                LOG.warn("OpenSearch live recall returned empty results for collection={}", plan.collectionId());
+                if (backendProperties.isRequireLiveBackends()) {
+                    throw new IllegalStateException(
+                        "OpenSearch live recall required but returned empty results for collection=" + plan.collectionId());
+                }
+            } catch (IllegalStateException strictError) {
+                throw strictError;
             } catch (RuntimeException error) {
-                // Fall back to stub scoring until the backend is fully wired in every environment.
+                LOG.warn("OpenSearch live recall failed: {} — falling back to stub", error.getMessage());
+                if (backendProperties.isRequireLiveBackends()) {
+                    throw new IllegalStateException(
+                        "OpenSearch live recall required but failed: " + error.getMessage(), error);
+                }
             }
+        } else {
+            if (backendProperties.isRequireLiveBackends()) {
+                throw new IllegalStateException(
+                    "OpenSearch live recall required but not configured (live-recall-enabled="
+                    + backendProperties.isLiveRecallEnabled()
+                    + ", opensearch-base-url=" + backendProperties.getOpensearchBaseUrl() + ")");
+            }
+            LOG.debug("OpenSearch using stub recall for collection={}", plan.collectionId());
         }
+
         return recallStub(chunks, queryText);
     }
 

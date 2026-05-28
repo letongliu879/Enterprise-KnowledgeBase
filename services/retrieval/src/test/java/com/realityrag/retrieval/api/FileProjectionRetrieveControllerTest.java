@@ -5,21 +5,25 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.realityrag.retrieval.support.FileFixtureRetrievalTestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(FileFixtureRetrievalTestConfig.class)
 @TestPropertySource(properties = {
     "retrieval.data.published-documents-file=src/test/resources/projections/published_documents.jsonl",
     "retrieval.data.index-registry-file=src/test/resources/projections/index_registry.jsonl",
     "retrieval.data.retrieval-profiles-file=src/test/resources/projections/retrieval_profiles.jsonl",
-    "retrieval.data.indexed-chunks-file=src/test/resources/projections/indexed_chunks.jsonl"
+    "retrieval.data.indexed-chunks-file=src/test/resources/projections/indexed_chunks.jsonl",
+    "retrieval.data.document-toc-file=src/test/resources/projections-ragflow/document_toc.jsonl"
 })
 class FileProjectionRetrieveControllerTest {
     @Autowired
@@ -32,22 +36,22 @@ class FileProjectionRetrieveControllerTest {
               "query_id": "qry_file_01",
               "trace_id": "trc_file_01",
               "principal": {
-                "principal_id": "usr_finance_01",
-                  "roles": ["employee"],
-                "groups": ["finance"],
+                "user_id": "usr_finance_01",
+                  "role_ids": ["employee"],
+                "group_ids": ["finance"],
                 "attributes": {
                   "region": "apac"
                 }
               },
               "collection_scope": ["col_policy", "col_handbook"],
-              "query_text": "Which expenses are reimbursable?",
+              "query": "Which expenses are reimbursable?",
               "language": "en",
               "retrieval_profile_id": "ret_file",
               "filters": {
                 "visibility": "internal"
               },
               "include_deprecated": false,
-              "max_context_tokens": 900,
+              "token_budget": 900,
               "debug_level": "basic"
             }
             """;
@@ -59,8 +63,8 @@ class FileProjectionRetrieveControllerTest {
             .andExpect(jsonPath("$.collection_plans_used[0].active_index_version_id").value("idxv_col_policy_file"))
             .andExpect(jsonPath("$.collection_plans_used[0].profile_id").value("ret_file"))
             .andExpect(jsonPath("$.collection_plans_used[0].chunk_profile_id").value("chunk_file"))
-            .andExpect(jsonPath("$.result_chunks.length()").value(2))
-            .andExpect(jsonPath("$.result_chunks[0].chunk_id").exists())
+            .andExpect(jsonPath("$.evidence_items.length()").value(2))
+            .andExpect(jsonPath("$.evidence_items[0].evidence_id").exists())
             .andExpect(jsonPath("$.retrieval_debug.debug_ref").value("dbg://retrieval/qry_file_01"));
     }
 

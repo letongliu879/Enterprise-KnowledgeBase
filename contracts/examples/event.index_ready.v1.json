@@ -13,7 +13,7 @@
   "payload": {
     "index_version_id": "idxv_col_policy_active",
     "document_index_revision_id": "dir_doc_expense_policy_01",
-    "final_doc_id": "doc_expense_policy",
+    "doc_id": "doc_expense_policy",
     "collection_id": "col_policy",
     "chunk_count": 1,
     "opensearch_record_count": 1,

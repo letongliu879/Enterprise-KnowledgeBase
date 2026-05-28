@@ -4,16 +4,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.realityrag.retrieval.support.FileFixtureRetrievalTestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(FileFixtureRetrievalTestConfig.class)
 @TestPropertySource(properties = {
     "retrieval.data.published-documents-file=src/test/resources/projections-metadata/published_documents.jsonl",
     "retrieval.data.index-registry-file=src/test/resources/projections-metadata/index_registry.jsonl",
@@ -33,15 +36,15 @@ class MetadataFilterRetrieveControllerTest {
               "query_id": "qry_metadata_01",
               "trace_id": "trc_metadata_01",
               "principal": {
-                "principal_id": "usr_finance_01",
-                  "roles": ["employee"],
-                "groups": ["finance"],
+                "user_id": "usr_finance_01",
+                  "role_ids": ["employee"],
+                "group_ids": ["finance"],
                 "attributes": {
                   "region": "apac"
                 }
               },
               "collection_scope": ["col_policy"],
-              "query_text": "approved expenses",
+              "query": "approved expenses",
               "language": "en",
               "retrieval_profile_id": "ret_metadata",
               "meta_data_filter": {
@@ -55,7 +58,7 @@ class MetadataFilterRetrieveControllerTest {
                 "visibility": "internal"
               },
               "include_deprecated": false,
-              "max_context_tokens": 1200,
+              "token_budget": 1200,
               "debug_level": "basic"
             }
             """;
@@ -64,8 +67,8 @@ class MetadataFilterRetrieveControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.result_chunks.length()").value(1))
-            .andExpect(jsonPath("$.result_chunks[0].final_doc_id").value("doc_apac_policy"));
+            .andExpect(jsonPath("$.evidence_items.length()").value(1))
+            .andExpect(jsonPath("$.evidence_items[0].doc_id").value("doc_apac_policy"));
     }
 }
 

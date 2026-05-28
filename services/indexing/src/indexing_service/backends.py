@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from itertools import zip_longest
@@ -7,8 +8,10 @@ from itertools import zip_longest
 import httpx
 from indexing_service.config import load_indexing_config, normalize_embedding_model
 
+logger = logging.getLogger(__name__)
 
-async def embed_texts(texts: list[str], *, config: dict[str, object] | None = None) -> list[list[float]]:
+
+async def embed_texts(texts: list[str], *, config: dict[str, object] | None = None, require_live: bool = False) -> list[list[float]]:
     indexing_config = load_indexing_config()
     cfg = config or {}
     base_url = str(
@@ -23,29 +26,51 @@ async def embed_texts(texts: list[str], *, config: dict[str, object] | None = No
     ).strip()
     model = str(cfg.get("model") or indexing_config.models.embedding_model or "text-embedding-3-large")
     model = normalize_embedding_model(model, base_url=base_url)
+    batch_size = int(cfg.get("batch_size") or indexing_config.models.embedding_batch_size or 16)
+    batch_size = max(1, batch_size)
+
     if base_url and api_key:
+        if require_live:
+            logger.info("embedding source: siliconflow, model=%s, batch_size=%d, text_count=%d", model, batch_size, len(texts))
         url = f"{base_url}/embeddings"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        all_vectors: list[list[float]] = []
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                json={
-                    "model": model,
-                    "input": [str(text or "None") for text in texts],
-                },
-                headers=headers,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        data = payload.get("data", [])
-        vectors = [item.get("embedding", []) for item in data]
-        if len(vectors) != len(texts):
-            raise RuntimeError("embedding response size mismatch")
-        return vectors
+            for offset in range(0, len(texts), batch_size):
+                batch = [str(text or "None") for text in texts[offset:offset + batch_size]]
+                response = await client.post(
+                    url,
+                    json={
+                        "model": model,
+                        "input": batch,
+                    },
+                    headers=headers,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                data = payload.get("data", [])
+                batch_vectors = [item.get("embedding", []) for item in data]
+                if len(batch_vectors) != len(batch):
+                    raise RuntimeError(
+                        f"embedding response size mismatch: expected {len(batch)}, got {len(batch_vectors)}"
+                    )
+                all_vectors.extend(batch_vectors)
+        if len(all_vectors) != len(texts):
+            raise RuntimeError("embedding total response size mismatch")
+        if require_live:
+            logger.info("siliconflow embedding complete: %d vectors of dimension %d", len(all_vectors), len(all_vectors[0]) if all_vectors else 0)
+        return all_vectors
 
+    if require_live:
+        raise RuntimeError(
+            f"Live embedding required but not configured "
+            f"(base_url={'present' if base_url else 'missing'}, api_key={'present' if api_key else 'missing'})"
+        )
+
+    logger.debug("embedding source: deterministic_stub (16-dim hash), model=%s, text_count=%d", model, len(texts))
     dimension = int(cfg.get("dimension", 16))
     vectors: list[list[float]] = []
     for text in texts:
@@ -79,6 +104,13 @@ class OpenSearchIndexWriter:
                     json={},
                 )
                 if response.status_code not in (200, 201):
+                    if response.status_code == 400:
+                        try:
+                            error_body = response.json()
+                            if error_body.get("error", {}).get("type") == "resource_already_exists_exception":
+                                continue
+                        except Exception:
+                            pass
                     response.raise_for_status()
             payload_lines: list[str] = []
             for record in records:
@@ -99,9 +131,10 @@ class OpenSearchIndexWriter:
 
 
 class QdrantPointWriter:
-    def __init__(self, *, base_url: str, timeout: float = 15.0) -> None:
+    def __init__(self, *, base_url: str, timeout: float = 15.0, require_live: bool = False) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.require_live = require_live
 
     async def write_points(self, collection_name: str, points: list[dict[str, object]]) -> int:
         if not points:
@@ -115,10 +148,12 @@ class QdrantPointWriter:
         title_vectors = await embed_texts(
             title_texts,
             config={"model": load_indexing_config().models.embedding_model},
+            require_live=self.require_live,
         )
         body_vectors = await embed_texts(
             body_texts,
             config={"model": load_indexing_config().models.embedding_model},
+            require_live=self.require_live,
         )
         vectors = [
             _mix_vectors(title_vector, body_vector, title_weight)
@@ -130,7 +165,10 @@ class QdrantPointWriter:
                 json={"vectors": {"size": len(vectors[0]) if vectors else 16, "distance": "Cosine"}},
             )
             if response.status_code not in (200, 201):
-                response.raise_for_status()
+                if response.status_code == 409:
+                    pass
+                else:
+                    response.raise_for_status()
             response = await client.put(
                 f"{self.base_url}/collections/{collection_name}/points",
                 json={
@@ -175,6 +213,7 @@ class HybridIndexBackend:
 def get_index_backend():
     config = load_indexing_config()
     mode = config.backend.mode
+    require_live = config.backend.require_live_backends
     if mode == "hybrid":
         opensearch_url = config.backend.opensearch_url
         qdrant_url = config.backend.qdrant_url
@@ -182,7 +221,12 @@ def get_index_backend():
             raise RuntimeError("hybrid backend requires INDEXING_OPENSEARCH_URL and INDEXING_QDRANT_URL")
         return HybridIndexBackend(
             opensearch_writer=OpenSearchIndexWriter(base_url=opensearch_url),
-            qdrant_writer=QdrantPointWriter(base_url=qdrant_url),
+            qdrant_writer=QdrantPointWriter(base_url=qdrant_url, require_live=require_live),
+        )
+    if require_live:
+        raise RuntimeError(
+            f"Live indexing backend required but backend mode is '{mode}' (need 'hybrid'). "
+            f"Set INDEXING_BACKEND_MODE=hybrid and configure INDEXING_OPENSEARCH_URL / INDEXING_QDRANT_URL."
         )
     return NoopIndexBackend()
 

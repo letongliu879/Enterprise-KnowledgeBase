@@ -1,0 +1,19 @@
+{
+  "ticket_id": "ticket_01HABCDEF123456789",
+  "intake_job_id": "job_01HABCDEF123456789",
+  "collection_id": "col_default",
+  "tenant_id": "tenant_acme",
+  "state": "PENDING",
+  "preliminary_doc_id": "doc_annual_report_2025",
+  "doc_id": null,
+  "source_file_id": "sf_01HABCDEF123456789",
+  "parse_snapshot_id": "ps_01HABCDEF123456789",
+  "agent_review_ref": "review_01HABCDEF123456789",
+  "decision": null,
+  "decision_reason": null,
+  "decided_by": null,
+  "confirmed_tags": ["finance", "annual_report"],
+  "created_at": "2026-05-27T10:10:00Z",
+  "updated_at": "2026-05-27T10:10:00Z",
+  "decided_at": null
+}

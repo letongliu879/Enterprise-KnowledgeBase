@@ -25,16 +25,24 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(
     classes = AccessApplication.class,
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
+        "spring.datasource.url=jdbc:h2:mem:access-mcp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password=",
         "server.shutdown=immediate",
         "spring.lifecycle.timeout-per-shutdown-phase=1s"
     }
@@ -46,11 +54,59 @@ class SpringAiMcpServerTest {
     @MockBean
     private AccessGatewayService accessGatewayService;
 
+    @Autowired
+    private DataSource dataSource;
+
     private HttpClient httpClient;
+
+    @BeforeAll
+    static void beforeAll() {
+        System.setProperty("file.encoding", "UTF-8");
+    }
 
     @BeforeEach
     void setUp() {
         this.httpClient = HttpClient.newHttpClient();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS api_key_projection (
+                api_key_id VARCHAR(128) PRIMARY KEY,
+                tenant_id VARCHAR(64) NOT NULL,
+                agent_type_id VARCHAR(128) NOT NULL,
+                knowledge_scopes VARCHAR(2048),
+                roles VARCHAR(2048),
+                debug_permission BOOLEAN NOT NULL DEFAULT FALSE,
+                token_budget_limit INTEGER NOT NULL DEFAULT 4096,
+                state VARCHAR(32) NOT NULL DEFAULT 'active',
+                expires_at TIMESTAMP,
+                projection_version INTEGER NOT NULL DEFAULT 1,
+                last_updated_at TIMESTAMP NOT NULL,
+                synced_at TIMESTAMP,
+                runtime_synced BOOLEAN NOT NULL DEFAULT FALSE
+            )
+            """);
+        jdbcTemplate.update("DELETE FROM api_key_projection");
+        jdbcTemplate.update(
+            """
+                INSERT INTO api_key_projection (
+                    api_key_id, tenant_id, agent_type_id, knowledge_scopes, roles,
+                    debug_permission, token_budget_limit, state, expires_at,
+                    projection_version, last_updated_at, runtime_synced
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+            TestAgentAuthFactory.API_KEY,
+            "tnt_default",
+            "kb_assistant",
+            "[\"col_policy\",\"col_handbook\"]",
+            "[\"agent\"]",
+            false,
+            4096,
+            "active",
+            null,
+            1,
+            java.time.Instant.now(),
+            true
+        );
     }
 
     @Test

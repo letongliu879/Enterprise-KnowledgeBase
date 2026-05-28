@@ -1,13 +1,14 @@
 package com.realityrag.retrieval.contracts;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
 
 public record PrincipalRef(
-    @NotBlank String principalId,
-    List<String> roles,
-    List<String> groups,
+    @NotBlank @JsonProperty("user_id") String principalId,
+    @JsonProperty("role_ids") List<String> roles,
+    @JsonProperty("group_ids") List<String> groups,
     Map<String, Object> attributes
 ) {
     public PrincipalRef {

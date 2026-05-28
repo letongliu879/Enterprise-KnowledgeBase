@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: access
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://127.0.0.1:5432/reality_rag}
+    username: ${DATABASE_USERNAME:reality}
+    password: ${DATABASE_PASSWORD:reality}
+    driver-class-name: ${DATABASE_DRIVER:org.postgresql.Driver}
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: non_null
@@ -28,20 +33,6 @@ management:
 
 access:
   default-retrieval-profile-id: ret_default
-  security:
-    api-keys:
-      rr-agent-platform-dev:
-        agent-type-id: kb_assistant
-        knowledge-scopes: [col_policy, col_finance]
-        roles: [agent]
-        debug-permission: false
-        max-context-tokens: 4096
-      rr-agent-platform-ops:
-        agent-type-id: ops_assistant
-        knowledge-scopes: [col_policy, col_finance, col_runbook]
-        roles: [agent, ops]
-        debug-permission: true
-        max-context-tokens: 8192
   retrieval:
     base-url: http://127.0.0.1:18082
     connect-timeout: 1s

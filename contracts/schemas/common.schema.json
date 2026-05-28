@@ -11,6 +11,10 @@
       "type": "string",
       "minLength": 1
     },
+    "doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "final_doc_id": {
       "type": "string",
       "minLength": 1
@@ -36,6 +40,10 @@
       "minLength": 1
     },
     "profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
       "type": "string",
       "minLength": 1
     },
@@ -157,6 +165,11 @@
         "DISCARDED",
         "ROLLED_BACK"
       ]
+    },
+    "chunk_edit_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to a workbench chunk edit to be applied as an overlay during index materialization"
     },
     "page_span": {
       "type": "object",

@@ -1,6 +1,7 @@
 package com.realityrag.retrieval.scope.sources;
 
 public record IndexRegistryRecord(
+    String tenantId,
     String collectionId,
     String indexVersionId,
     String opensearchIndex,

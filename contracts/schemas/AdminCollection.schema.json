@@ -17,22 +17,40 @@
     "description": {
       "type": "string"
     },
-    "status": {
+    "lifecycle_state": {
       "type": "string",
       "enum": [
-        "ACTIVE",
-        "INACTIVE"
+        "active",
+        "archived",
+        "disabled"
       ]
     },
-    "default_index_profile_id": {
-      "$ref": "./common.schema.json#/$defs/profile_id"
+    "authority_level": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "access_policy": {
+      "type": "object"
+    },
+    "default_parser_profile_id": {
+      "type": "string"
     },
     "default_retrieval_profile_id": {
-      "$ref": "./common.schema.json#/$defs/profile_id"
+      "type": "string"
+    },
+    "default_approval_policy_id": {
+      "type": "string"
+    },
+    "created_by": {
+      "type": "string"
     },
     "created_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "updated_by": {
+      "type": "string"
     },
     "updated_at": {
       "type": "string",
@@ -43,11 +61,10 @@
     "collection_id",
     "tenant_id",
     "name",
-    "description",
-    "status",
-    "default_index_profile_id",
-    "default_retrieval_profile_id",
+    "lifecycle_state",
+    "created_by",
     "created_at",
+    "updated_by",
     "updated_at"
   ]
 }

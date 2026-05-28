@@ -3,9 +3,14 @@
   "tenant_id": "tnt_default",
   "name": "Policy Collection",
   "description": "Policy and handbook corpus.",
-  "status": "ACTIVE",
-  "default_index_profile_id": "idx_default",
-  "default_retrieval_profile_id": "ret_default",
+  "lifecycle_state": "active",
+  "authority_level": 2,
+  "access_policy": {"default_visibility": "internal"},
+  "default_parser_profile_id": "parser_naive_v1",
+  "default_retrieval_profile_id": "retrieval_default_v1",
+  "default_approval_policy_id": "approval_auto",
+  "created_by": "admin_001",
   "created_at": "2026-05-23T00:00:00Z",
+  "updated_by": "admin_001",
   "updated_at": "2026-05-23T00:00:00Z"
 }

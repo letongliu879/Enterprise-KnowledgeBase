@@ -37,7 +37,7 @@ paths:
                 profile:
                   type: string
                   deprecated: true
-                max_context_tokens:
+                token_budget:
                   type: integer
                 debug:
                   type: string
@@ -50,6 +50,34 @@ paths:
             application/json:
               schema:
                 $ref: ../schemas/KnowledgeContext.schema.json
+  /internal/api-key-projections/sync:
+    post:
+      operationId: syncApiKeyProjection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ApiKeyProjectionSync.schema.json
+      responses:
+        "200":
+          description: Projection synced successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  synced_at:
+                    type: string
+                    format: date-time
+                  runtime_synced:
+                    type: boolean
+                required: [synced_at, runtime_synced]
+        "400":
+          description: Invalid command envelope or payload
+        "409":
+          description: Idempotency conflict or stale projection version
   /health:
     get:
       operationId: accessHealth

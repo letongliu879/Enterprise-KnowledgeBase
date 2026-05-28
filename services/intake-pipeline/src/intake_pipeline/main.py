@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,6 +82,20 @@ class EnterDocumentRequest(BaseModel):
     scan_engine_version: str = "1.0"
 
 
+class EnterBinaryDocumentRequest(BaseModel):
+    tenant_id: str
+    collection_id: str
+    filename: str
+    source_binary_ref: str
+    document_version: str = "v1"
+    publish_version: str = "pub_001"
+    visibility: str = "internal"
+    source_metadata: dict[str, str] = Field(default_factory=dict)
+    scan_verdict: str = "clean"
+    scan_engine: str = "stub-av"
+    scan_engine_version: str = "1.0"
+
+
 class ApproveAndPublishRequest(BaseModel):
     actor_id: str
     final_doc_id: str | None = None
@@ -137,6 +152,8 @@ class IntakeDocumentRecord(BaseModel):
     failure_code: str | None = None
     failure_message: str | None = None
     publish_state: str | None = None
+    published_document_id: str | None = None
+    final_doc_id: str | None = None
 
 
 class ApprovalTicketRecord(BaseModel):
@@ -619,6 +636,33 @@ class IntakeService:
             record.document_version,
             ",".join(request.confirmed_tags),
         )
+        # Persist published_document to DB so downstream archive/retract work
+        from reality_rag_persistence.database import get_session
+        from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
+        from reality_rag_contracts import PublishedDocumentState
+
+        session = get_session()
+        try:
+            pd_repo = PublishedDocumentRepository(session)
+            existing_pd = pd_repo.get_by_final_doc_id(final_doc_id)
+            if existing_pd is None:
+                pd_repo.create(
+                    published_document_id=f"pd_{final_doc_id}",
+                    final_doc_id=final_doc_id,
+                    logical_document_id=final_doc_id,
+                    tenant_id=record.tenant_id,
+                    collection_id=record.collection_id,
+                    version=1,
+                    state=PublishedDocumentState.PUBLISHED,
+                    created_by_ticket_id=ticket.ticket_id,
+                )
+                session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
         record.publish_state = PublishState.PERSISTED.value
         self._write_run_step(
             record.trace_id,
@@ -647,11 +691,11 @@ class IntakeService:
         )
 
         indexing_base_url = os.environ.get("REALITY_RAG_INDEXING_BASE_URL", "http://127.0.0.1:18080")
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=60.0) as client:
             indexing_started_at = datetime.now(timezone.utc)
             response = client.post(
                 f"{indexing_base_url}/internal/index-jobs",
-                json=command.model_dump(mode="json"),
+                json=command.model_dump(mode="json", by_alias=True),
             )
             response.raise_for_status()
             payload = response.json()
@@ -689,6 +733,8 @@ class IntakeService:
         record.source_file_state = SourceFileState.CLEANABLE.value
         record.intake_job_state = IntakeJobState.PUBLISHED.value
         record.publish_state = PublishState.PUBLISH_SUCCEEDED.value
+        record.final_doc_id = final_doc_id
+        record.published_document_id = f"pd_{final_doc_id}"
         self._write_run_trace(
             record,
             root_status="SUCCEEDED",
@@ -947,3 +993,216 @@ def approve_and_publish(source_file_id: str, request: ApproveAndPublishRequest) 
         raise HTTPException(status_code=502, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+# -- New internal owner APIs for workbench consumption --------------------------------
+
+
+class RegisterSourceFileRequest(BaseModel):
+    command_id: str
+    trace_id: str
+    idempotency_key: str
+    actor: str
+    tenant_id: str
+    collection_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=0)
+    selected_parser_profile_id: str | None = None
+    parser_override_json: dict[str, str] | None = None
+
+
+class SourceFileView(BaseModel):
+    source_file_id: str
+    upload_id: str
+    tenant_id: str
+    collection_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    state: str
+    intake_job_id: str
+    scan_verdict: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class IntakeJobView(BaseModel):
+    intake_job_id: str
+    source_file_id: str
+    tenant_id: str
+    collection_id: str
+    state: str
+    current_stage: str | None = None
+    parse_snapshot_id: str | None = None
+    ticket_id: str | None = None
+    published_document_id: str | None = None
+    final_doc_id: str | None = None
+    error_message: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PublishedDocumentView(BaseModel):
+    published_document_id: str
+    final_doc_id: str
+    source_file_id: str
+    intake_job_id: str
+    tenant_id: str
+    collection_id: str
+    state: str
+    version: int
+    created_at: str
+    updated_at: str
+
+
+# In-memory idempotency store for source file registration
+_source_file_idempotency: dict[str, str] = {}  # idempotency_key -> source_file_id
+
+
+@app.post("/internal/source-files")
+def register_source_file(request: RegisterSourceFileRequest) -> SourceFileView:
+    """Register a source file. Idempotent by idempotency_key."""
+    # Check idempotency
+    if request.idempotency_key in _source_file_idempotency:
+        existing_id = _source_file_idempotency[request.idempotency_key]
+        record = service.get(existing_id)
+        return SourceFileView(
+            source_file_id=record.source_file_id,
+            upload_id=record.upload_id,
+            tenant_id=record.tenant_id,
+            collection_id=record.collection_id,
+            filename=record.filename,
+            mime_type="text/markdown",
+            size_bytes=0,
+            state=record.source_file_state,
+            intake_job_id=record.intake_job_id,
+            scan_verdict=record.scan_verdict,
+            created_at=record.source_file_claimed_at or _utc_now(),
+            updated_at=_utc_now(),
+        )
+
+    # Create a lightweight source file record without triggering the full pipeline
+    upload_id = f"upl_{uuid4().hex[:12]}"
+    source_file_id = f"src_{uuid4().hex[:12]}"
+    intake_job_id = f"job_{uuid4().hex[:12]}"
+    trace_id = f"trc_{intake_job_id}"
+    now = _utc_now()
+
+    record = IntakeDocumentRecord(
+        upload_id=upload_id,
+        source_file_id=source_file_id,
+        intake_job_id=intake_job_id,
+        tenant_id=request.tenant_id,
+        collection_id=request.collection_id,
+        filename=request.filename,
+        document_version="v1",
+        publish_version="pub_001",
+        visibility="internal",
+        sanitized_asset_ref="",
+        canonical_asset_ref="",
+        metadata_ref="",
+        source_binary_ref="",
+        parse_snapshot_id="",
+        trace_id=trace_id,
+        source_metadata={"filename": request.filename},
+        state=IntakeJobState.CREATED.value,
+        source_file_state=SourceFileState.READY.value,
+        intake_job_state=IntakeJobState.CREATED.value,
+        scan_result_id=None,
+        scan_verdict="clean",
+        scan_completed_at=now,
+        failure_code=None,
+        failure_message=None,
+        publish_state=None,
+    )
+    service._documents[source_file_id] = record
+    _source_file_idempotency[request.idempotency_key] = source_file_id
+
+    return SourceFileView(
+        source_file_id=record.source_file_id,
+        upload_id=record.upload_id,
+        tenant_id=record.tenant_id,
+        collection_id=record.collection_id,
+        filename=record.filename,
+        mime_type=request.mime_type,
+        size_bytes=request.size_bytes,
+        state=record.source_file_state,
+        intake_job_id=record.intake_job_id,
+        scan_verdict=record.scan_verdict,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@app.get("/internal/source-files/{source_file_id}")
+def get_source_file(source_file_id: str) -> SourceFileView:
+    try:
+        record = service.get(source_file_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return SourceFileView(
+        source_file_id=record.source_file_id,
+        upload_id=record.upload_id,
+        tenant_id=record.tenant_id,
+        collection_id=record.collection_id,
+        filename=record.filename,
+        mime_type="text/markdown",
+        size_bytes=0,
+        state=record.source_file_state,
+        intake_job_id=record.intake_job_id,
+        scan_verdict=record.scan_verdict,
+        created_at=record.source_file_claimed_at or _utc_now(),
+        updated_at=_utc_now(),
+    )
+
+
+@app.get("/internal/intake-jobs/{intake_job_id}")
+def get_intake_job(intake_job_id: str) -> IntakeJobView:
+    # Find the document by intake_job_id
+    record = None
+    for doc in service._documents.values():
+        if doc.intake_job_id == intake_job_id:
+            record = doc
+            break
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unknown intake_job_id: {intake_job_id}")
+    return IntakeJobView(
+        intake_job_id=record.intake_job_id,
+        source_file_id=record.source_file_id,
+        tenant_id=record.tenant_id,
+        collection_id=record.collection_id,
+        state=record.intake_job_state,
+        current_stage=None,
+        parse_snapshot_id=record.parse_snapshot_id or None,
+        ticket_id=record.approval_ticket_id or None,
+        published_document_id=None,
+        final_doc_id=None,
+        error_message=record.failure_message,
+        created_at=record.source_file_claimed_at or _utc_now(),
+        updated_at=_utc_now(),
+    )
+
+
+@app.get("/internal/published-documents/{published_document_id}")
+def get_published_document(published_document_id: str) -> PublishedDocumentView:
+    """Get published document read-only view."""
+    record = None
+    for doc in service._documents.values():
+        if doc.published_document_id == published_document_id:
+            record = doc
+            break
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Published document not found: {published_document_id}")
+    return PublishedDocumentView(
+        published_document_id=record.published_document_id,
+        final_doc_id=record.final_doc_id or "",
+        source_file_id=record.source_file_id,
+        intake_job_id=record.intake_job_id,
+        tenant_id=record.tenant_id,
+        collection_id=record.collection_id,
+        state=record.publish_state or "UNKNOWN",
+        version=1,
+        created_at=record.source_file_claimed_at or _utc_now(),
+        updated_at=_utc_now(),
+    )

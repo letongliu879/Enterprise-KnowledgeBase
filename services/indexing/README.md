@@ -1,22 +1,10 @@
-# Indexing
-Current repository status: `src/` is still under active construction, but lifecycle truth is no longer only in memory.
+# indexing
 
-Current status update:
+`services/indexing` 负责文档理解与索引构建。
 
-- parse preview / snapshot 主链仍以本地 service 代码驱动
-- chunk materialization / bundle 写出主链已经可用
-- governance assets 已正式进入 materialization 主线
-- index build job / active index registry / indexed document 状态现在已可落到 shared persistence layer
-- parse snapshot registry 现在也已可落到 shared persistence layer
-- chunk registry 本体现在也已可落到 shared persistence layer
-- 在持久化模式下，version/document/snapshot/chunk registry 不再依赖 JSONL projection 作为真相来源
+详细设计见 [indexing.md](./indexing.md)。
 
-仍未完成的部分主要是：
-
-- 当前仍保留少量 service runtime cache 作为进程内加速层
-- 但持久化模式下，数据库已经是 lifecycle 真相来源
-
-负责解析与索引全链路的核心运行时：
+## 核心链路
 
 1. 预解析
 2. ParseSnapshot
@@ -24,7 +12,7 @@ Current status update:
 4. embedding
 5. 索引写入
 
-技术基调：
+## 技术基调
 
 - Python + FastAPI/worker
 - 以 `packages/ragflow_runtime` 为受控运行时
@@ -33,41 +21,39 @@ Current status update:
 - 写入 OpenSearch + Qdrant
 - 维护 index version
 
-本模块不负责文档准入、权限审批、最终发布可见性和在线检索组装。
-
-职责边界再强调一次：
+## 职责边界
 
 - `packages/ragflow_runtime` 只负责文档解析、分块和结构提取
 - `services/indexing` 负责承接治理字段，并把解析结果写成正式索引记录
 - 治理字段 owner 不是 `ragflow_runtime`
 
-关于 embedding，再补一条硬边界：
+关于 embedding：
 
 - `embedding` 请求由 `services/indexing` 执行
-- 但 `embedding` 之前的文本组织语义，应继续对齐上游 `RAGFlow` 各 parser 的真实行为
+- 但 `embedding` 之前的文本组织语义，应继续对齐上游 RAGFlow 各 parser 的真实行为
 - 这样既保留上游效果，也保留后续人工或 agent 修 chunk 后重算 embedding 的控制权
 
-详细设计见 [indexing.md](./indexing.md)。
+## 约束
 
-当前仓库已经开始接入受控的 `packages/ragflow_runtime`，并以 `ParseSnapshot` 作为 intake/workbench 与正式索引之间的核心接缝。
+- `services/indexing` 不只是不能自建本地 parser profile/策略层，而是整条解析链都不得发明本地替代实现
+- parser 选择、parser_config 语义、解析编排、chunk 语义、结构抽取语义，原则上都应直接承接上游 RAGFlow 真实链路
+- 本地层只允许做宿主适配、运行时隔离、快照冻结、索引物化与可观测性承接，不允许把上游解析链"翻译"成另一套平台自定义语义
 
-补充约束：
+## 服务面
 
-- `services/indexing` 不只是不能自建本地 parser profile/策略层，而是整条解析链都不得发明本地替代实现。
-- parser 选择、parser_config 语义、解析编排、chunk 语义、结构抽取语义，原则上都应直接承接上游 `RAGFlow` 真实链路。
-- 本地层只允许做宿主适配、运行时隔离、快照冻结、索引物化与可观测性承接，不允许把上游解析链“翻译”成另一套平台自定义语义。
+对外：
 
-当前已经落地的 indexing 控制面与链路骨架包括：
+- `GET /health`
+- `POST /internal/parser-profiles/validate` — ParserProfile 运行时校验与 canonicalize
+  - 输入：`parser_profile_id`, `parser_id`, `parser_config`, `chunk_profile_id` (optional), `tenant_id`, `collection_id` (optional), `version` (optional)
+  - 校验：parser_id 支持范围、chunk_token_num 范围、config 类型
+  - 输出：`valid`, `canonical_config`, `profile_hash`, `warnings`, `errors`, `runtime_owner` (= "indexing"), `validator_version`
+  - 无副作用：不写 admin 表、不创建 ParseSnapshot、不触发索引 job
+- `POST /internal/parse-previews` — Parse preview（已有）
+- `GET /internal/parse-snapshots/{id}` — 查询 ParseSnapshot（已有）
+- `POST /internal/index-versions/{id}/activate` — 激活索引版本（已有）
+- `POST /internal/index-versions/{id}/cleanup` — 清理索引版本（已有）
 
-- `DocumentFamily`
-- `ParserProfile`
-- `ParsePolicyResolver`
-- `ParsePreviewRequested -> ParseSnapshot`
-- `IndexBuildRequested -> ParseSnapshot materialization`
-- `RunTrace / RunStep / TraceArtifact` 级别的 indexing 埋点
+外部调用（indexing → retrieval）：
 
-约束：
-
-- `services/indexing` 只通过受控 runtime 使用 RAGFlow 低层能力。
-- 不直接依赖 `upstream/ragflow` 的产品宿主层。
-- 不再保留独立 `services/ragflow-adapter` 作为最终服务形态。
+- `POST /internal/index-projections/sync` — 向 retrieval 同步 index version、index registry、published document、chunk 投影

@@ -17,6 +17,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -27,6 +29,7 @@ import org.springframework.web.client.RestTemplate;
 
 @Component
 public class RerankService {
+    private static final Logger LOG = LoggerFactory.getLogger(RerankService.class);
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("[^\\p{IsAlphabetic}\\p{IsDigit}]+");
     private final RetrievalSearchStrategyProperties strategyProperties;
     private final RetrievalBackendProperties backendProperties;
@@ -116,11 +119,29 @@ public class RerankService {
                     vectorWeight
                 );
                 if (!liveResults.isEmpty()) {
+                    LOG.info("SiliconFlow rerank succeeded, model={}, returned {} results", rerankModel, liveResults.size());
                     return liveResults;
                 }
-            } catch (RuntimeException ignored) {
-                // Fall back to local scoring when the live reranker is unavailable.
+                LOG.warn("SiliconFlow rerank returned empty results for model={}", rerankModel);
+                if (backendProperties.isRequireLiveBackends()) {
+                    throw new IllegalStateException("SiliconFlow rerank required but returned empty results");
+                }
+            } catch (IllegalStateException strictError) {
+                throw strictError;
+            } catch (RuntimeException error) {
+                LOG.warn("SiliconFlow rerank failed: {} — falling back to heuristic", error.getMessage());
+                if (backendProperties.isRequireLiveBackends()) {
+                    throw new IllegalStateException(
+                        "SiliconFlow rerank required but failed: " + error.getMessage(), error);
+                }
             }
+        } else if (profileRerankEnabled(plan) && backendProperties.isRequireLiveBackends()) {
+            throw new IllegalStateException(
+                "SiliconFlow rerank required but not configured (live-rerank-enabled="
+                + backendProperties.isLiveRerankEnabled()
+                + ", reranker-base-url=" + backendProperties.getRerankerBaseUrl()
+                + ", reranker-api-key-present=" + hasText(backendProperties.getRerankerApiKey())
+                + ", rerank-model=" + rerankModel + ")");
         }
 
         return rerankFallback(queryTokens, queryRankFeatures, rerankWindow, tokenWeight, vectorWeight);

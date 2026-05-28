@@ -24,7 +24,7 @@ from reality_rag_persistence.outbox import OutboxDispatcher
 
 from ingestion_worker.stages.schemas import ConversionStageInput, ConversionStageOutput
 from ingestion_worker.stages.pure_stages import run_conversion_stage
-from ingestion_worker.converters.markitdown_converter import MarkItDownConverter
+from ingestion_worker.converters.ragflow_converter import RAGFlowConverter
 from ingestion_worker.stage_runtime import execute_conversion_task
 from ingestion_worker.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
 from reality_rag_contracts import StageName
@@ -38,7 +38,7 @@ app = FastAPI(
 )
 
 # Service-local converter instance
-_converter = MarkItDownConverter()
+_converter = RAGFlowConverter()
 _outbox_dispatcher_task: asyncio.Task[None] | None = None
 
 

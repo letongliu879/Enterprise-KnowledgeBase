@@ -16,8 +16,8 @@ from reality_rag_persistence.repositories.tenants import TenantRepository
 
 class TestPipelineCreatesDocumentPolicy:
     def test_pipeline_creates_document_policy(self, monkeypatch, tmp_path):
-        from ingestion_worker.converters.markitdown_converter import MarkItDownConverter
         from ingestion_worker.pipeline import IngestionPipeline
+        from tests.fake_converter import FakeConverter
 
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", str(tmp_path))
 
@@ -37,7 +37,7 @@ class TestPipelineCreatesDocumentPolicy:
         finally:
             session.close()
 
-        converter = MarkItDownConverter()
+        converter = FakeConverter(canonical_md="D" * 240)
         reviewer = MagicMock()
         reviewer.review.return_value = AgentReview(
             doc_id="doc",
@@ -60,37 +60,32 @@ class TestPipelineCreatesDocumentPolicy:
             source_path = f.name
 
         try:
-            with patch.object(converter._markitdown, "convert") as mock_convert:
-                mock_result = MagicMock()
-                mock_result.text_content = "D" * 240
-                mock_convert.return_value = mock_result
+            job = pipeline.run("col-gov", [source_path])
+            detail = job.conversion_report.details[0]
+            doc_id = detail.doc_id
 
-                job = pipeline.run("col-gov", [source_path])
-                detail = job.conversion_report.details[0]
-                doc_id = detail.doc_id
+            session = get_session()
+            try:
+                policy = DocumentPolicyRepository(session).get_by_doc_id(doc_id)
+            finally:
+                session.close()
 
-                session = get_session()
-                try:
-                    policy = DocumentPolicyRepository(session).get_by_doc_id(doc_id)
-                finally:
-                    session.close()
-
-                assert policy is not None
-                assert policy.policy_id == f"dp-{doc_id}"
-                assert policy.effect == "allow"
-                assert policy.subjects[0].subject_type == "tenant"
-                assert policy.subjects[0].subject_id == "default"
-                assert policy.conditions[0].field == "clearance_level"
-                assert policy.conditions[0].operator == "gte"
-                assert policy.conditions[0].value == 5
-                assert policy.priority == 100
-                assert policy.policy_version == "v1"
+            assert policy is not None
+            assert policy.policy_id == f"dp-{doc_id}"
+            assert policy.effect == "allow"
+            assert policy.subjects[0].subject_type == "tenant"
+            assert policy.subjects[0].subject_id == "default"
+            assert policy.conditions[0].field == "clearance_level"
+            assert policy.conditions[0].operator == "gte"
+            assert policy.conditions[0].value == 5
+            assert policy.priority == 100
+            assert policy.policy_version == "v1"
         finally:
             Path(source_path).unlink()
 
     def test_pipeline_no_duplicate_policy(self, monkeypatch, tmp_path):
-        from ingestion_worker.converters.markitdown_converter import MarkItDownConverter
         from ingestion_worker.pipeline import IngestionPipeline
+        from tests.fake_converter import FakeConverter
 
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", str(tmp_path))
 
@@ -109,7 +104,7 @@ class TestPipelineCreatesDocumentPolicy:
         finally:
             session.close()
 
-        converter = MarkItDownConverter()
+        converter = FakeConverter(canonical_md="E" * 240)
         reviewer = MagicMock()
         reviewer.review.return_value = AgentReview(
             doc_id="doc",
@@ -132,44 +127,39 @@ class TestPipelineCreatesDocumentPolicy:
             source_path = f.name
 
         try:
-            with patch.object(converter._markitdown, "convert") as mock_convert:
-                mock_result = MagicMock()
-                mock_result.text_content = "E" * 240
-                mock_convert.return_value = mock_result
+            job1 = pipeline.run("col-dedup", [source_path])
+            doc_id = job1.conversion_report.details[0].doc_id
 
-                job1 = pipeline.run("col-dedup", [source_path])
-                doc_id = job1.conversion_report.details[0].doc_id
+            # Re-run with same source file (same doc_id because same path)
+            job2 = pipeline.run("col-dedup", [source_path])
 
-                # Re-run with same source file (same doc_id because same path)
-                job2 = pipeline.run("col-dedup", [source_path])
-
-                session = get_session()
-                try:
-                    policies = (
-                        session.query(
-                            __import__(
-                                "reality_rag_persistence.models", fromlist=["DocumentPolicyModel"]
-                            ).DocumentPolicyModel
-                        )
-                        .filter_by(doc_id=doc_id)
-                        .all()
+            session = get_session()
+            try:
+                policies = (
+                    session.query(
+                        __import__(
+                            "reality_rag_persistence.models", fromlist=["DocumentPolicyModel"]
+                        ).DocumentPolicyModel
                     )
-                finally:
-                    session.close()
+                    .filter_by(doc_id=doc_id)
+                    .all()
+                )
+            finally:
+                session.close()
 
-                assert len(policies) == 1
+            assert len(policies) == 1
         finally:
             Path(source_path).unlink()
 
 
 class TestPipelineRejectsMissingCollection:
     def test_pipeline_rejects_missing_collection(self, monkeypatch, tmp_path):
-        from ingestion_worker.converters.markitdown_converter import MarkItDownConverter
+        from tests.fake_converter import FakeConverter
         from ingestion_worker.pipeline import IngestionPipeline
 
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", str(tmp_path))
 
-        converter = MarkItDownConverter()
+        converter = FakeConverter(canonical_md="test")
         reviewer = MagicMock()
         pipeline = IngestionPipeline(converters=[converter], agent_reviewer=reviewer)
 
@@ -186,7 +176,7 @@ class TestPipelineRejectsMissingCollection:
 
 class TestPipelineRejectsDefaultAuthorityLevel:
     def test_pipeline_rejects_default_authority_level(self, monkeypatch, tmp_path):
-        from ingestion_worker.converters.markitdown_converter import MarkItDownConverter
+        from tests.fake_converter import FakeConverter
         from ingestion_worker.pipeline import IngestionPipeline
 
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", str(tmp_path))
@@ -207,7 +197,7 @@ class TestPipelineRejectsDefaultAuthorityLevel:
         finally:
             session.close()
 
-        converter = MarkItDownConverter()
+        converter = FakeConverter(canonical_md="test")
         reviewer = MagicMock()
         pipeline = IngestionPipeline(converters=[converter], agent_reviewer=reviewer)
 

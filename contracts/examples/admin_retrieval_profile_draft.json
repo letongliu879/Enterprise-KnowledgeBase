@@ -1,0 +1,13 @@
+{
+  "retrieval_profile_id": "retrieval_hybrid_v2",
+  "name": "Hybrid Retrieval v2",
+  "description": "BM25 + vector hybrid with rerank.",
+  "profile_config": {"bm25_weight": 0.4, "vector_weight": 0.6, "rerank_enabled": true, "rerank_model": "cross-encoder", "pack_budget": 1200, "fail_policy": "fail_closed"},
+  "runtime_canonical_config": null,
+  "version": 2,
+  "state": "draft",
+  "created_by": "admin_001",
+  "created_at": "2026-05-23T11:00:00Z",
+  "updated_by": "admin_001",
+  "updated_at": "2026-05-23T11:00:00Z"
+}

@@ -5,7 +5,7 @@ import com.realityrag.access.security.AccessRequestContext;
 import com.realityrag.access.security.AccessRequestContextHolder;
 import com.realityrag.access.security.McpSessionPrincipalBindingStore;
 import com.realityrag.access.service.AccessGatewayService;
-import com.realityrag.access.support.AccessUnauthenticatedException;
+import com.realityrag.access.support.AccessException;
 import io.modelcontextprotocol.spec.McpServerSession;
 import java.lang.reflect.Field;
 import java.util.Optional;
@@ -40,16 +40,16 @@ public class McpAccessTools {
         @ToolParam(description = "User question to search in enterprise knowledge.", required = true) String query,
         @ToolParam(description = "Allowed knowledge scope / collection id to search.", required = true) String knowledge_scope,
         @ToolParam(description = "Optional retrieval profile id.") String retrieval_profile_id,
-        @ToolParam(description = "Optional max context tokens.") Integer max_context_tokens,
+        @ToolParam(description = "Optional token budget.") Integer token_budget,
         @ToolParam(description = "Debug level: none, basic, or full.") String debug,
         ToolContext toolContext
     ) {
         AccessRequestContext context = resolveContext(toolContext);
         if (context == null) {
-            throw new AccessUnauthenticatedException("Missing MCP access context");
+            throw new AccessException.Unauthenticated("Missing MCP access context");
         }
         return accessGatewayService.retrieveWithContext(
-            knowledgeScopeMapper.map(query, knowledge_scope, retrieval_profile_id, max_context_tokens, debug, context),
+            knowledgeScopeMapper.map(query, knowledge_scope, retrieval_profile_id, token_budget, debug, context),
             context
         );
     }

@@ -18,7 +18,7 @@
     "collection_id": {
       "$ref": "./common.schema.json#/$defs/collection_id"
     },
-    "final_doc_id": {
+    "doc_id": {
       "$ref": "./common.schema.json#/$defs/final_doc_id"
     },
     "document_version": {
@@ -104,6 +104,13 @@
     },
     "trace_id": {
       "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "chunk_edit_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/chunk_edit_ref"
+      },
+      "default": []
     }
   },
   "required": [
@@ -111,7 +118,7 @@
     "request_type",
     "tenant_id",
     "collection_id",
-    "final_doc_id",
+    "doc_id",
     "document_version",
     "publish_version",
     "source_file_id",

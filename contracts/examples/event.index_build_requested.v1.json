@@ -15,7 +15,7 @@
     "request_type": "publish",
     "tenant_id": "tnt_default",
     "collection_id": "col_policy",
-    "final_doc_id": "doc_expense_policy",
+    "doc_id": "doc_expense_policy",
     "document_version": "v3",
     "publish_version": "pub_20260523_01",
     "source_file_id": "src_20260523_01",

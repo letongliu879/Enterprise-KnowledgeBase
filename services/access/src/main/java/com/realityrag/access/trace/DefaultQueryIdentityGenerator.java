@@ -4,8 +4,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 @Component
-public class DefaultQueryIdentityGenerator implements QueryIdentityGenerator {
-    @Override
+public class DefaultQueryIdentityGenerator {
     public QueryIdentity next() {
         return new QueryIdentity(
             "qry_" + UUID.randomUUID(),

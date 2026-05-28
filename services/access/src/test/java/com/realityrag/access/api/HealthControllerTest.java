@@ -5,7 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.realityrag.access.health.RetrievalHealthProbe;
+import com.realityrag.access.clients.RetrievalClient;
 import com.realityrag.access.security.AccessRequestContextFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,11 +25,11 @@ class HealthControllerTest {
     private MockMvc mockMvc;
 
     @MockBean
-    private RetrievalHealthProbe retrievalHealthProbe;
+    private RetrievalClient retrievalClient;
 
     @Test
     void healthReflectsRetrievalStatus() throws Exception {
-        given(retrievalHealthProbe.probe()).willReturn("ok");
+        given(retrievalClient.healthStatus()).willReturn("ok");
 
         mockMvc.perform(get("/health"))
             .andExpect(status().isOk())

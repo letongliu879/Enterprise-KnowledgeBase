@@ -1,0 +1,24 @@
+{
+  "chunk_edit_id": "ce_01HABCDEF123456789",
+  "tenant_id": "tenant_acme",
+  "collection_id": "col_default",
+  "source_file_id": "sf_01HABCDEF123456789",
+  "parse_snapshot_id": "ps_01HABCDEF123456789",
+  "base_evidence_id": "ev_001_section_3_2",
+  "edit_scope": "pre_publish",
+  "operation": "update",
+  "content": "Updated content for section 3.2 with corrected figures.",
+  "vector_text": "updated content section 3.2 corrected figures",
+  "section_path": ["Section 3", "3.2 Financial Summary"],
+  "metadata_patch": {
+    "confidence": 0.95
+  },
+  "citation_payload": {},
+  "source_block_ids": ["block_001", "block_002"],
+  "edit_reason": "Corrected revenue figures per finance team review",
+  "edited_by": "user-001",
+  "status": "draft",
+  "downstream_revision_id": null,
+  "created_at": "2026-05-27T11:00:00Z",
+  "updated_at": "2026-05-27T11:00:00Z"
+}

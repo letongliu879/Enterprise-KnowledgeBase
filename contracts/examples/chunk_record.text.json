@@ -2,7 +2,7 @@
   "chunk_id": "chk_doc_expense_policy_idxv_col_policy_active_0001",
   "tenant_id": "tnt_default",
   "collection_id": "col_policy",
-  "final_doc_id": "doc_expense_policy",
+  "doc_id": "doc_expense_policy",
   "index_version_id": "idxv_col_policy_active",
   "document_index_revision_id": "dir_doc_expense_policy_pub_20260523_01",
   "chunk_type": "text",
@@ -41,7 +41,7 @@
   },
   "citation_payload": {
     "collection_id": "col_policy",
-    "final_doc_id": "doc_expense_policy",
+    "doc_id": "doc_expense_policy",
     "anchor": "page:1:span:0-36"
   },
   "lexical_payload": {

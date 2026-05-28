@@ -4,7 +4,6 @@
   "tenant_id": "tnt_default",
   "principal": {
     "principal_id": "usr_finance_01",
-    "tenant_id": "tnt_default",
     "roles": [
       "employee"
     ],
@@ -19,7 +18,7 @@
     "col_policy",
     "col_handbook"
   ],
-  "query_text": "What expenses are reimbursable?",
+  "query": "What expenses are reimbursable?",
   "language": "en",
   "cross_languages": [
     "zh"
@@ -40,6 +39,6 @@
     "visibility": "internal"
   },
   "include_deprecated": false,
-  "max_context_tokens": 1200,
+  "token_budget": 1200,
   "debug_level": "basic"
 }

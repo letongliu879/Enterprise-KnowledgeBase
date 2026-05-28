@@ -73,6 +73,12 @@ def run_conversion_stage(
             ConversionRequest(
                 source_file_path=inp.source_file_path,
                 collection_id=inp.collection_id,
+                options={
+                    "source_file_id": inp.source_file_id,
+                    "tenant_id": inp.tenant_id,
+                    "trace_id": inp.trace_id,
+                    "metadata": dict(inp.source_metadata),
+                },
             )
         )
     else:
@@ -131,6 +137,7 @@ def run_conversion_stage(
         version_conflict=version_conflict,
         dedup_skipped=dedup_skipped,
         skip_reason=skip_reason,
+        parse_snapshot_id=str((result.metadata or {}).get("parse_snapshot_id") or "").strip(),
     )
     output.result_hash = compute_result_hash(output)
     return output
@@ -207,10 +214,7 @@ def _build_quality_report(doc_id: str, result: ConversionResult) -> QualityRepor
         canonical_md, result.metadata.get("file_size", 0)
     )
     image_density = result.metadata.get("image_count", 0) / max(paragraph_count, 1)
-    ocr_used = (
-        result.metadata.get("converter", "") == "markitdown_ocr"
-        or "ocr" in result.metadata.get("tool_chain", [])
-    )
+    ocr_used = "ocr" in result.metadata.get("tool_chain", [])
 
     blocking_reasons: list[str] = []
     if length == 0:

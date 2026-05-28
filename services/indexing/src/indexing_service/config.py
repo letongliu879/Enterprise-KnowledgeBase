@@ -24,6 +24,7 @@ class IndexBackendConfig:
     mode: str
     opensearch_url: str
     qdrant_url: str
+    require_live_backends: bool
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ def load_indexing_config() -> IndexingConfig:
     backend_mode = _first_non_empty("INDEXING_BACKEND_MODE", "INDEX_BACKEND_MODE", default="noop").lower()
     opensearch_url = _first_non_empty("INDEXING_OPENSEARCH_URL", "OPENSEARCH_URL")
     qdrant_url = _first_non_empty("INDEXING_QDRANT_URL", "QDRANT_URL")
+    require_live_backends = os.environ.get("INDEXING_REQUIRE_LIVE_BACKENDS", "").lower() in ("1", "true", "yes")
     return IndexingConfig(
         models=IndexingModelConfig(
             chat_api_key=chat_api_key,
@@ -89,6 +91,7 @@ def load_indexing_config() -> IndexingConfig:
             mode=backend_mode,
             opensearch_url=opensearch_url,
             qdrant_url=qdrant_url,
+            require_live_backends=require_live_backends,
         ),
     )
 

@@ -1,0 +1,12 @@
+{
+  "command_id": "cmd_20260527_001",
+  "trace_id": "trc_admin_001",
+  "idempotency_key": "col_policy:binding:2",
+  "actor": "admin_001",
+  "tenant_id": "tnt_default",
+  "collection_id": "col_policy",
+  "target_type": "collection_profile_binding",
+  "target_id": "bind_col_policy_v2",
+  "reason": "Switch to new parser profile",
+  "payload": {"parser_profile_id": "parser_presentation_v1"}
+}

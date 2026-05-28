@@ -8,9 +8,7 @@
 - `intake-pipeline` 是治理/审批 owner
 - 审批前预览不再依赖 intake 自己维护第二套解析主链
 
-为此，引入一个新的中间对象：
-
-- `ParseSnapshot`
+为此，引入一个新的中间对象：`ParseSnapshot`。
 
 ## 2. 为什么需要 ParseSnapshot
 
@@ -40,7 +38,7 @@ source file
 
 补充约束：
 
-- 这里的“解析一次”指的是承接上游 `RAGFlow` 真实解析链一次，而不是本地先重写一套解析语义再冻结结果。
+- 这里的"解析一次"指的是承接上游 `RAGFlow` 真实解析链一次，而不是本地先重写一套解析语义再冻结结果。
 - `ParseSnapshot` 冻结的应该是上游真实 `parser_id + parser_config + chunk/structure` 结果，而不是平台自创的中间解释层结果。
 
 ## 3. 新的全链路
@@ -60,9 +58,9 @@ source file
 
 ## 4. 核心对象
 
-### 4.1 `SourceAsset`
+### 4.1 SourceAsset
 
-owner: `intake-pipeline`
+owner：`intake-pipeline`
 
 字段至少包括：
 
@@ -74,11 +72,11 @@ owner: `intake-pipeline`
 - `mime_type`
 - `content_hash`
 
-### 4.2 `ParseSnapshot`
+### 4.2 ParseSnapshot
 
-owner: `indexing`
+owner：`indexing`
 
-字段至少包括：
+**契约模型**（`reality_rag_contracts.ParseSnapshot`）字段：
 
 - `parse_snapshot_id`
 - `source_file_id`
@@ -94,15 +92,40 @@ owner: `indexing`
 - `warnings`
 - `created_at`
 
+**实际持久化模型**（`ParseSnapshotModel` / `ParseSnapshotRecord`）字段：
+
+- `parse_snapshot_id`
+- `request_id`
+- `tenant_id`
+- `collection_id`
+- `source_file_id`
+- `source_binary_ref`
+- `source_filename`
+- `source_suffix`
+- `parser_id`
+- `parser_backend`
+- `collection_parser_config`
+- `parser_config`
+- `input_hash`
+- `preview_text`
+- `upstream_chunks`
+- `outline`
+- `document_metadata`
+- `chunk_preview`
+- `warnings`
+- `decision_reason`
+- `created_at`
+
 说明：
 
-- 它表示某份文件在某套 parser/chunker 配置下的解析快照
-- 它不是正式索引结果
-- 也不等于已发布内容
+- 契约模型使用 `_ref` 语义，是因为跨服务通信时推荐传递引用而不是全文。
+- 实际持久化时，`preview_text`、`upstream_chunks`、`outline`、`document_metadata`、`chunk_preview` 等字段直接以 JSON / Text 形式存入 PostgreSQL `parse_snapshots` 表。
+- 它表示某份文件在某套 parser/chunker 配置下的解析快照。
+- 它不是正式索引结果，也不等于已发布内容。
 
-### 4.3 `GovernanceDecision`
+### 4.3 GovernanceDecision
 
-owner: `intake-pipeline`
+owner：`intake-pipeline`
 
 字段至少包括：
 
@@ -113,9 +136,9 @@ owner: `intake-pipeline`
 - `publish_version`
 - `governance_overlay_ref`
 
-### 4.4 `IndexMaterialization`
+### 4.4 IndexMaterialization
 
-owner: `indexing`
+owner：`indexing`
 
 字段至少包括：
 
@@ -156,6 +179,23 @@ owner: `indexing`
 - 索引写入
 - activate / rollback
 
+当前已实现：
+
+- `ParsePreviewRunner` 执行真实上游 `rag.app.*.chunk()` 路径
+- `ParseSnapshot` 冻结 `parser_id`、`parser_config`、`upstream_chunks`、`outline`、`document_metadata`
+- 请求级手动 parser override 不再作为执行真相
+- 正式物化已消费 `ParseSnapshot.upstream_chunks`
+- chunk records 可转换为 `IndexAssetBundle` 及 OpenSearch/Qdrant payload
+- `auto_keywords`、`auto_questions` 后处理路径已工作
+- `IndexJobRunner` 负责完整索引构建流程
+- `ActivationService`、`RollbackService`、`CleanupService` 管理索引版本生命周期
+
+尚未高质量完成：
+
+- `auto_metadata` — 已稳定但不 consistently 产出高质量结果
+- `content_tagging` — 已稳定但不 consistently 产出高质量结果
+- `toc_extraction` — 已稳定但不 consistently 产出高质量结果
+
 ### 5.3 workbench
 
 只负责：
@@ -189,13 +229,11 @@ owner: `indexing`
 
 ## 7. 新契约
 
-### 7.1 `ParsePreviewRequested`
+### 7.1 ParsePreviewRequested
 
-方向：
+方向：`intake-pipeline -> indexing`
 
-- `intake-pipeline -> indexing`
-
-字段至少包括：
+**契约模型**字段（`ParsePreviewRequested`）：
 
 - `request_id`
 - `source_file_id`
@@ -207,19 +245,36 @@ owner: `indexing`
 - `parser_profile_id`
 - `trace_id`
 
+**实际命令模型**字段（`ParsePreviewRequestedCommand`）：
+
+- `request_id`
+- `tenant_id`
+- `collection_id`
+- `source_file_id`
+- `source_binary_ref`
+- `filename`
+- `mime_type`
+- `parser_id`（可选，手动覆盖）
+- `collection_parser_id`（collection 默认 parser）
+- `collection_parser_config`
+- `parser_config`
+- `content_class_hint`
+- `source_system`
+- `metadata`
+- `trace_id`
+
 补充规则：
 
-- `parser_profile_id` 是平台控制面字段，不是上游内部实现细节名
-- 如果请求没有显式指定 `parser_profile_id`，则由 indexing 内部的 `ParsePolicyResolver` 按 RAGFlow 原有默认解析族做保守决策，平台只做封装与记录
-- 一旦生成 `ParseSnapshot`，本次解析决策必须被冻结并被后续正式索引复用
+- `parser_profile_id` / `collection_parser_id` 是平台控制面字段，不是上游内部实现细节名。
+- 如果请求没有显式指定 parser，则由 indexing 内部的解析策略按 RAGFlow 原有默认解析族做保守决策，平台只做封装与记录。
+- 一旦生成 `ParseSnapshot`，本次解析决策必须被冻结并被后续正式索引复用。
+- 手动 parser override 当前会被忽略并记录警告。
 
-### 7.2 `ParseSnapshotReady`
+### 7.2 ParseSnapshotReady
 
-方向：
+方向：`indexing -> intake-pipeline / workbench`
 
-- `indexing -> intake-pipeline / workbench`
-
-字段至少包括：
+**契约模型**字段：
 
 - `parse_snapshot_id`
 - `source_file_id`
@@ -232,13 +287,23 @@ owner: `indexing`
 - `warnings`
 - `trace_id`
 
-### 7.3 `IndexBuildRequested`
+**实际运行时**通过 `ParsePreviewAccepted` 返回：
 
-方向：
+- `request_id`
+- `source_file_id`
+- `parse_snapshot_id`
+- `parser_id`
+- `decision_reason`
+- `preview_text_ref`
+- `chunk_preview_ref`
+- `warnings`
+- `trace_id`
 
-- `publishing-worker -> indexing`
+### 7.3 IndexBuildRequested
 
-它应升级为至少包含：
+方向：`publishing-worker -> indexing`
+
+**契约模型**字段：
 
 - `source_binary_ref`
 - `parse_snapshot_id`
@@ -248,10 +313,36 @@ owner: `indexing`
 - `index_profile_id`
 - `trace_id`
 
+**实际命令模型**字段（`IndexBuildRequestedCommand`）：
+
+- `build_request_id`
+- `request_type`（`publish` | `reindex` | `lifecycle_tombstone`）
+- `tenant_id`
+- `collection_id`
+- `source_file_id`
+- `final_doc_id`
+- `document_version`
+- `publish_version`
+- `visibility`
+- `source_binary_ref`
+- `parse_snapshot_id`
+- `governance_overlay_ref`
+- `sanitized_asset_ref`
+- `canonical_asset_ref`
+- `metadata_ref`
+- `quality_report_ref`
+- `approval_decision_ref`
+- `confirmed_tags`
+- `source_metadata`
+- `index_profile_id`
+- `target_index_version_id`
+- `idempotency_key`
+- `trace_id`
+
 规则：
 
-- `parse_snapshot_id` 是正式索引构建的主输入之一
-- 默认情况下，indexing 复用 ParseSnapshot，不重新走第二套独立解析主链
+- `parse_snapshot_id` 是正式索引构建的主输入之一。
+- 默认情况下，indexing 复用 ParseSnapshot，不重新走第二套独立解析主链。
 
 ## 8. 过渡约束
 
@@ -265,31 +356,33 @@ owner: `indexing`
 
 禁止继续默认假设：
 
-- “intake 先解析成 markdown，indexing 再消费 markdown” 就是最终态
+- "intake 先解析成 markdown，indexing 再消费 markdown" 就是最终态
 
-## 9. 一句话
+## 9. 当前实现状态
 
-`ParseSnapshot` 的意义，是让 `indexing` 成为正式解析 owner，同时让 `intake-pipeline` 继续拥有审批与发布 owner，而不是让两边各自维护一套文档理解主链。
+截至 2026-05-26：
 
-## Current Implementation Status
+- `services/indexing` preview 已执行真实上游 `rag.app.*.chunk()` 路径
+- `ParseSnapshot` 已冻结 `parser_id`、`parser_config`、`upstream_chunks`、`outline`、`document_metadata`
+- 请求级手动 parser override 不再作为执行真相
+- 正式物化已消费 `ParseSnapshot.upstream_chunks`
+- chunk records 可转换为 `IndexAssetBundle` 及 OpenSearch/Qdrant payload
+- `IndexJobRunner` 负责完整索引构建流程（chunk 生成、embedding text 构建、registry 写入、backend 写入、activation）
+- `ActivationService`、`RollbackService`、`CleanupService` 管理索引版本生命周期
 
-As of 2026-05-25, the current implementation status is:
-
-- `services/indexing` preview now executes real upstream `rag.app.*.chunk()` paths
-- `ParseSnapshot` now freezes `parser_id`, `parser_config`, `upstream_chunks`, `outline`, and `document_metadata`
-- request-level manual parser override is no longer used as the execution truth
-- formal materialization already consumes `ParseSnapshot.upstream_chunks`
-- chunk records can already be transformed into `IndexAssetBundle` plus OpenSearch/Qdrant payloads
-
-What is already working in the post-processing path:
+已工作的后处理路径：
 
 - `auto_keywords`
 - `auto_questions`
 
-What is not yet high-quality complete:
+尚未高质量完成：
 
-- `auto_metadata`
-- `content_tagging`
-- `toc_extraction`
+- `auto_metadata` — 已稳定，但无法 consistently 产出高质量结果
+- `content_tagging` — 已稳定，但无法 consistently 产出高质量结果
+- `toc_extraction` — 已稳定，但无法 consistently 产出高质量结果
 
-Those three paths are now stabilized enough not to break the main flow, but they still do not consistently produce high-quality output and should be treated as unfinished.
+这三条路径现已足够稳定，不会破坏主流程，但仍应视为未完成。
+
+## 10. 一句话
+
+`ParseSnapshot` 的意义，是让 `indexing` 成为正式解析 owner，同时让 `intake-pipeline` 继续拥有审批与发布 owner，而不是让两边各自维护一套文档理解主链。

@@ -6,9 +6,12 @@ from fastapi.testclient import TestClient
 
 from reality_rag_contracts import AgentReview, IndexJobRequest, IndexStatus, PublishStatus, ReviewDecision
 from reality_rag_persistence.database import get_session
+from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.index_registry import IndexRegistryRepository
 from reality_rag_persistence.repositories.jobs import JobRepository
+from reality_rag_persistence.repositories.tenants import TenantRepository
+from reality_rag_contracts import Collection, Tenant
 
 from ingestion_worker.domains.indexing_domain import IndexBuildInput, PerDocumentIndexResult
 from ingestion_worker.main import app
@@ -45,23 +48,37 @@ def _approving_reviewer():
 
 
 def _build_success_job(monkeypatch, tmp_path):
-    from ingestion_worker.converters.markitdown_converter import MarkItDownConverter
+    from tests.fake_converter import FakeConverter
     from ingestion_worker.pipeline import IngestionPipeline
 
     monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", str(tmp_path))
-    converter = MarkItDownConverter()
+
+    # Seed tenant + collection with authority_level > 0
+    session = get_session()
+    try:
+        TenantRepository(session).save(Tenant(tenant_id="default", name="Default Tenant"))
+        CollectionRepository(session).save(
+            Collection(
+                collection_id="col-1",
+                tenant_id="default",
+                name="Test Collection",
+                authority_level=5,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    canonical = "# Travel Policy\n\n" + ("Employees may reimburse travel and keep receipts. " * 8)
+    converter = FakeConverter(canonical_md=canonical)
     pipeline = IngestionPipeline(converters=[converter], agent_reviewer=_approving_reviewer())
 
     with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
-        f.write("# Travel Policy\n\n" + ("Employees may reimburse travel and keep receipts. " * 8))
+        f.write(canonical)
         source_path = f.name
 
     try:
-        with patch.object(converter._markitdown, "convert") as mock_convert:
-            mock_result = MagicMock()
-            mock_result.text_content = "# Travel Policy\n\n" + ("Employees may reimburse travel and keep receipts. " * 8)
-            mock_convert.return_value = mock_result
-            job = pipeline.run("col-1", [source_path])
+        job = pipeline.run("col-1", [source_path])
     finally:
         Path(source_path).unlink()
 

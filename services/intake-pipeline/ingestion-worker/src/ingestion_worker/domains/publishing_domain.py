@@ -11,9 +11,11 @@ API contract (request/response models) is unchanged.
 from __future__ import annotations
 
 import os
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
-from reality_rag_contracts import CanonicalMetadata
+from reality_rag_contracts import CanonicalMetadata, PublishedDocumentState
 
 __all__ = ["persist_document_and_policy"]
 
@@ -87,6 +89,7 @@ def persist_document_and_policy(
 
     if document_repo is not None:
         document_repo.save(canonical_metadata)
+        _upsert_published_document(canonical_metadata, document_repo=document_repo)
         document_persisted = True
 
     if policy_repo is not None and canonical_metadata.publish_status.value == "published":
@@ -121,3 +124,46 @@ def persist_document_and_policy(
             policy_persisted = True
 
     return document_persisted, policy_persisted
+
+
+def _upsert_published_document(
+    canonical_metadata: CanonicalMetadata,
+    *,
+    document_repo,
+) -> None:
+    if canonical_metadata.publish_status.value != "published":
+        return
+    session = getattr(document_repo, "_session", None)
+    if session is None:
+        return
+    from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
+
+    repo = PublishedDocumentRepository(session)
+    existing = repo.get_by_final_doc_id(canonical_metadata.doc_id)
+    if existing is not None:
+        return
+    canonical_hash = _canonical_asset_hash(canonical_metadata.asset_paths.get("canonical_md", ""))
+    repo.create(
+        published_document_id=f"pub_{_stable_suffix(canonical_metadata.doc_id)}",
+        final_doc_id=canonical_metadata.doc_id,
+        logical_document_id=canonical_metadata.logical_document_id,
+        tenant_id=canonical_metadata.tenant_id,
+        collection_id=canonical_metadata.collection_id,
+        version=canonical_metadata.version,
+        source_content_hash=canonical_metadata.source_content_hash or canonical_metadata.source_hash,
+        canonical_hash=canonical_hash,
+        state=PublishedDocumentState.PUBLISHED,
+        active_index_version="",
+        asset_paths=dict(canonical_metadata.asset_paths or {}),
+    )
+
+
+def _stable_suffix(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()[:20]
+
+
+def _canonical_asset_hash(asset_ref: str) -> str:
+    path = Path(asset_ref)
+    if not asset_ref or not path.exists() or not path.is_file():
+        return ""
+    return "sha256:" + sha256(path.read_bytes()).hexdigest()

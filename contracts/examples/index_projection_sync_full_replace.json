@@ -1,0 +1,60 @@
+{
+  "command_id": "cmd_idxproj_001",
+  "trace_id": "trace_pub_001",
+  "idempotency_key": "idemp_idxproj_col_default_idxv_default_001",
+  "actor": "indexing-service",
+  "tenant_id": "tenant_default",
+  "target_type": "index_projection",
+  "target_id": "col_default:idxv_col_default_active",
+  "payload": {
+    "collection_id": "col_default",
+    "index_version_id": "idxv_col_default_active",
+    "sync_mode": "full_replace",
+    "chunks": [
+      {
+        "chunk_id": "chk_doc_001_idxv_default_0001",
+        "tenant_id": "tenant_default",
+        "collection_id": "col_default",
+        "doc_id": "doc_001",
+        "index_version_id": "idxv_col_default_active",
+        "document_index_revision_id": "dir_doc_001_v1",
+        "chunk_type": "text",
+        "display_text": "This is the first chunk of the document.",
+        "vector_text": "This is the first chunk of the document.",
+        "section_path": ["Introduction"],
+        "page_spans": [{"page_from": 1, "page_to": 1}],
+        "source_block_ids": ["chk_doc_001_idxv_default_0001"],
+        "keyword_terms": ["introduction", "first", "chunk"],
+        "confirmed_tags": [],
+        "visibility": "internal",
+        "published_document_state": "PUBLISHED",
+        "access_control": {
+          "allowed_principal_ids": [],
+          "allowed_groups": []
+        },
+        "citation_payload": {
+          "collection_id": "col_default",
+          "doc_id": "doc_001",
+          "section_path": ["Introduction"],
+          "anchor": "page:1:chunk:1"
+        },
+        "lexical_payload": {
+          "lexical_text": "This is the first chunk of the document.",
+          "title": "Introduction",
+          "section_path": ["Introduction"],
+          "keyword_terms": ["introduction", "first", "chunk"]
+        },
+        "vector_payload": {
+          "embedding_model": "BAAI/bge-m3",
+          "parser_id": "naive",
+          "source_suffix": "pdf",
+          "title_text": "Introduction",
+          "embedding_text": "This is the first chunk of the document.",
+          "embedding_title_weight": 0.1,
+          "docnm_kwd": "Introduction"
+        },
+        "chunk_hash": "sha256:abc123"
+      }
+    ]
+  }
+}

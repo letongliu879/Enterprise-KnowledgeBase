@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 from indexing_service.contracts import IndexBuildRequestedCommand, IndexRequestType
-from indexing_service.domain import IndexVersionStatus
+from indexing_service.domain import ChunkRevisionRecord, IndexVersionStatus
 from indexing_service.jobs.index_job_runner import IndexJobRunner
 from indexing_service.jobs.parse_preview_runner import ParsePreviewRunner
+from indexing_service.persistent_repository import PersistentIndexingRepository
 from indexing_service.preview_contracts import ParsePreviewRequestedCommand
-from indexing_service.repository import InMemoryIndexingRepository
 from indexing_service.versioning.cleanup import CleanupService
 from indexing_service.versioning.rollback import RollbackService
 from indexing_service.domain import ParseSnapshotRecord
@@ -19,7 +19,7 @@ def test_index_job_builds_index_asset_bundle() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-preview-qa.txt")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     preview_runner = ParsePreviewRunner(repository=repo)
     accepted = preview_runner.accept(
         ParsePreviewRequestedCommand(
@@ -109,7 +109,7 @@ def test_publish_activation_rollback_and_cleanup() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-preview-qa.txt")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     preview_runner = ParsePreviewRunner(repository=repo)
     accepted = preview_runner.accept(
         ParsePreviewRequestedCommand(
@@ -214,7 +214,7 @@ def test_publish_activation_rollback_and_cleanup() -> None:
 
 
 def test_presentation_chunks_preserve_slide_semantics() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_presentation_01",
@@ -296,7 +296,7 @@ def test_presentation_chunks_preserve_slide_semantics() -> None:
 
 
 def test_paper_chunks_preserve_authors_and_keywords() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_paper_01",
@@ -386,7 +386,7 @@ def test_paper_chunks_preserve_authors_and_keywords() -> None:
 
 
 def test_manual_chunks_prefer_section_paths_from_upstream() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_manual_01",
@@ -462,7 +462,7 @@ def test_manual_chunks_prefer_section_paths_from_upstream() -> None:
 
 
 def test_qa_chunks_preserve_question_semantics() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_qa_01",
@@ -543,7 +543,7 @@ def test_qa_chunks_preserve_question_semantics() -> None:
 
 
 def test_hidden_parent_and_toc_chunks_are_materialized_but_not_query_visible() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_hidden_01",
@@ -634,7 +634,7 @@ def test_hidden_parent_and_toc_chunks_are_materialized_but_not_query_visible() -
 
 
 def test_table_document_metadata_is_promoted_to_bundle() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_table_01",
@@ -723,7 +723,7 @@ def test_table_document_metadata_is_promoted_to_bundle() -> None:
 
 
 def test_indexed_document_flags_hidden_record_kinds() -> None:
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     repo.save_parse_snapshot(
         ParseSnapshotRecord(
             parse_snapshot_id="pss_flags_01",
@@ -844,7 +844,7 @@ def test_governance_assets_are_projected_into_formal_indexing() -> None:
         encoding="utf-8",
     )
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     preview_runner = ParsePreviewRunner(repository=repo)
     accepted = preview_runner.accept(
         ParsePreviewRequestedCommand(
@@ -913,3 +913,190 @@ def test_governance_assets_are_projected_into_formal_indexing() -> None:
     assert indexed_document.final_doc_id == "doc_governed_final"
     assert indexed_document.document_metadata["governance_overlay"]["publish_version"] == "pub_governed_02"
     assert indexed_document.document_metadata["approval"]["ticket_id"] == "apt_01"
+
+
+def test_pre_publish_chunk_edits_are_applied_during_build() -> None:
+    repo = PersistentIndexingRepository()
+    repo.save_parse_snapshot(
+        ParseSnapshotRecord(
+            parse_snapshot_id="pss_pre_edit_01",
+            request_id="req_pre_edit_01",
+            tenant_id="tnt_default",
+            collection_id="col_default",
+            source_file_id="src_pre_edit_01",
+            source_binary_ref="asset://pre_edit",
+            source_filename="policy.txt",
+            source_suffix="txt",
+            parser_id="naive",
+            parser_backend="ragflow_app",
+            collection_parser_config={},
+            parser_config={},
+            input_hash="sha256:pre_edit",
+            preview_text="Policy\nOld content here.",
+            upstream_chunks=[
+                {
+                    "id": "upstream_chunk_001",
+                    "docnm_kwd": "policy.txt",
+                    "title_tks": "policy",
+                    "content_with_weight": "Old content here.",
+                    "content_ltks": "old content here",
+                    "content_sm_ltks": "old content here",
+                    "page_num_int": [1],
+                    "top_int": [1],
+                    "position_int": [(1, 0, 100, 1, 20)],
+                },
+                {
+                    "id": "upstream_chunk_002",
+                    "docnm_kwd": "policy.txt",
+                    "title_tks": "policy",
+                    "content_with_weight": "Second chunk content.",
+                    "content_ltks": "second chunk content",
+                    "content_sm_ltks": "second chunk content",
+                    "page_num_int": [2],
+                    "top_int": [1],
+                    "position_int": [(2, 0, 100, 1, 20)],
+                },
+            ],
+            outline=["Policy"],
+            document_metadata={"title": "Policy"},
+            chunk_preview=[],
+            warnings=[],
+            decision_reason="upstream:file_service.get_parser:naive",
+        )
+    )
+
+    # Create draft chunk revisions directly (pre-publish: base chunks don't exist yet)
+    repo.chunk_revisions_by_id["rev_pre_edit_001"] = ChunkRevisionRecord(
+        revision_id="rev_pre_edit_001",
+        base_evidence_id="upstream_chunk_001",
+        doc_id="doc_pre_edit_01",
+        collection_id="col_default",
+        tenant_id="tnt_default",
+        operation="update",
+        content="Updated content here.",
+        status="draft",
+    )
+    repo.chunk_revisions_by_id["rev_pre_edit_002"] = ChunkRevisionRecord(
+        revision_id="rev_pre_edit_002",
+        base_evidence_id="upstream_chunk_002",
+        doc_id="doc_pre_edit_01",
+        collection_id="col_default",
+        tenant_id="tnt_default",
+        operation="delete",
+        status="draft",
+    )
+
+    result = IndexJobRunner(repo).accept(
+        IndexBuildRequestedCommand(
+            build_request_id="bld_pre_edit_01",
+            request_type=IndexRequestType.PUBLISH,
+            tenant_id="tnt_default",
+            collection_id="col_default",
+            source_file_id="src_pre_edit_01",
+            final_doc_id="doc_pre_edit_01",
+            document_version="v1",
+            publish_version="p1",
+            visibility="internal",
+            source_binary_ref="asset://pre_edit",
+            parse_snapshot_id="pss_pre_edit_01",
+            governance_overlay_ref="gov://pre_edit",
+            sanitized_asset_ref="asset://sanitized",
+            canonical_asset_ref="asset://canonical",
+            metadata_ref="meta://pre_edit",
+            approval_decision_ref="approval://pre_edit",
+            source_metadata={
+                "tenant_id": "tnt_default",
+                "collection_id": "col_default",
+                "filename": "policy.txt",
+            },
+            index_profile_id="ragflow",
+            target_index_version_id="idxv_pre_edit_01",
+            idempotency_key="idem_pre_edit_01",
+            trace_id="trc_pre_edit_01",
+        )
+    )
+
+    assert result["status"] == "READY"
+    active_chunks = repo.list_active_chunks()
+    # One chunk deleted, so only 1 visible chunk + 1 parent (from first chunk) + 1 TOC
+    visible_chunks = [c for c in active_chunks if c.available_int == 1]
+    assert len(visible_chunks) == 1
+    assert visible_chunks[0].display_text == "Updated content here."
+    assert visible_chunks[0].final_doc_id == "doc_pre_edit_01"
+
+
+def test_pre_publish_edits_no_match_passthrough() -> None:
+    """When no draft revisions match, upstream chunks pass through unchanged."""
+    repo = PersistentIndexingRepository()
+    repo.save_parse_snapshot(
+        ParseSnapshotRecord(
+            parse_snapshot_id="pss_no_edit_01",
+            request_id="req_no_edit_01",
+            tenant_id="tnt_default",
+            collection_id="col_default",
+            source_file_id="src_no_edit_01",
+            source_binary_ref="asset://no_edit",
+            source_filename="plain.txt",
+            source_suffix="txt",
+            parser_id="naive",
+            parser_backend="ragflow_app",
+            collection_parser_config={},
+            parser_config={},
+            input_hash="sha256:no_edit",
+            preview_text="Plain text.",
+            upstream_chunks=[
+                {
+                    "id": "upstream_chunk_no_edit",
+                    "docnm_kwd": "plain.txt",
+                    "title_tks": "plain",
+                    "content_with_weight": "Plain text.",
+                    "content_ltks": "plain text",
+                    "content_sm_ltks": "plain text",
+                    "page_num_int": [1],
+                    "top_int": [1],
+                    "position_int": [(1, 0, 100, 1, 20)],
+                }
+            ],
+            outline=["Plain"],
+            document_metadata={"title": "Plain"},
+            chunk_preview=[],
+            warnings=[],
+            decision_reason="upstream:file_service.get_parser:naive",
+        )
+    )
+
+    result = IndexJobRunner(repo).accept(
+        IndexBuildRequestedCommand(
+            build_request_id="bld_no_edit_01",
+            request_type=IndexRequestType.PUBLISH,
+            tenant_id="tnt_default",
+            collection_id="col_default",
+            source_file_id="src_no_edit_01",
+            final_doc_id="doc_no_edit_01",
+            document_version="v1",
+            publish_version="p1",
+            visibility="internal",
+            source_binary_ref="asset://no_edit",
+            parse_snapshot_id="pss_no_edit_01",
+            governance_overlay_ref="gov://no_edit",
+            sanitized_asset_ref="asset://sanitized",
+            canonical_asset_ref="asset://canonical",
+            metadata_ref="meta://no_edit",
+            approval_decision_ref="approval://no_edit",
+            source_metadata={
+                "tenant_id": "tnt_default",
+                "collection_id": "col_default",
+                "filename": "plain.txt",
+            },
+            index_profile_id="ragflow",
+            target_index_version_id="idxv_no_edit_01",
+            idempotency_key="idem_no_edit_01",
+            trace_id="trc_no_edit_01",
+        )
+    )
+
+    assert result["status"] == "READY"
+    active_chunks = repo.list_active_chunks()
+    visible_chunks = [c for c in active_chunks if c.available_int == 1]
+    assert len(visible_chunks) == 1
+    assert visible_chunks[0].display_text == "Plain text."

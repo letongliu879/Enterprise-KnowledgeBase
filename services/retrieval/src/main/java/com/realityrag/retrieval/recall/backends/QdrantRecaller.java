@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -21,6 +23,8 @@ import org.springframework.web.client.RestTemplate;
 
 @Component
 public class QdrantRecaller implements RecallerBackend {
+    private static final Logger LOG = LoggerFactory.getLogger(QdrantRecaller.class);
+
     private final RetrievalBackendProperties backendProperties;
     private final QueryEmbeddingClient queryEmbeddingClient;
     private final RestTemplate restTemplate;
@@ -39,16 +43,40 @@ public class QdrantRecaller implements RecallerBackend {
 
     @Override
     public List<BackendRecallHit> recall(CollectionRetrievalPlan plan, List<IndexedChunk> chunks, String queryText) {
-        if (backendProperties.isLiveRecallEnabled() && hasBaseUrl(backendProperties.getQdrantBaseUrl())) {
+        boolean liveConfigured = backendProperties.isLiveRecallEnabled()
+            && hasBaseUrl(backendProperties.getQdrantBaseUrl());
+
+        if (liveConfigured) {
             try {
                 List<BackendRecallHit> hits = recallLive(plan, queryText);
                 if (!hits.isEmpty()) {
+                    LOG.info("Qdrant live recall returned {} hits for collection={}", hits.size(), plan.collectionId());
                     return hits;
                 }
+                LOG.warn("Qdrant live recall returned empty results for collection={}", plan.collectionId());
+                if (backendProperties.isRequireLiveBackends()) {
+                    throw new IllegalStateException(
+                        "Qdrant live recall required but returned empty results for collection=" + plan.collectionId());
+                }
+            } catch (IllegalStateException strictError) {
+                throw strictError;
             } catch (RuntimeException error) {
-                // Fall back to stub scoring until live infrastructure is available everywhere.
+                LOG.warn("Qdrant live recall failed: {} — falling back to stub", error.getMessage());
+                if (backendProperties.isRequireLiveBackends()) {
+                    throw new IllegalStateException(
+                        "Qdrant live recall required but failed: " + error.getMessage(), error);
+                }
             }
+        } else {
+            if (backendProperties.isRequireLiveBackends()) {
+                throw new IllegalStateException(
+                    "Qdrant live recall required but not configured (live-recall-enabled="
+                    + backendProperties.isLiveRecallEnabled()
+                    + ", qdrant-base-url=" + backendProperties.getQdrantBaseUrl() + ")");
+            }
+            LOG.debug("Qdrant using stub recall for collection={}", plan.collectionId());
         }
+
         return recallStub(chunks, queryText);
     }
 

@@ -3,7 +3,7 @@
   "request_type": "publish",
   "tenant_id": "tnt_default",
   "collection_id": "col_policy",
-  "final_doc_id": "doc_expense_policy",
+  "doc_id": "doc_expense_policy",
   "document_version": "v3",
   "publish_version": "pub_20260523_01",
   "source_file_id": "src_20260523_01",
@@ -28,5 +28,9 @@
   "index_profile_id": "idx_default",
   "target_index_version_id": "idxv_col_policy_active",
   "idempotency_key": "doc_expense_policy:pub_20260523_01:idxv_col_policy_active",
-  "trace_id": "trc_20260523_01"
+  "trace_id": "trc_20260523_01",
+  "chunk_edit_refs": [
+    "wce_doc_expense_policy_001",
+    "wce_doc_expense_policy_002"
+  ]
 }

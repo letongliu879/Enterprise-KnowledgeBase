@@ -15,3 +15,7 @@ Thumbs.db
 *.log
 .env
 .env.*
+源码/
+.run-logs/
+.verify/runtime/
+.verify/logs/

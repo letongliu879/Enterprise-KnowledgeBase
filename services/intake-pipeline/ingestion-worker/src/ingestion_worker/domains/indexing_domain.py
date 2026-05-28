@@ -1,13 +1,12 @@
-"""Indexing domain — re-exported from reality-rag-indexing shared package.
+"""Indexing domain compatibility shim.
 
-In phase 8 the core logic moved to packages/indexing so it can be shared
-between ingestion-worker (same-process fallback) and indexing-service
-(remote process).  This module remains as a thin compatibility shim.
+Re-export through ingestion_worker.indexing_service so remote-only deployments
+do not require the local reality_rag_indexing package at import time.
 """
 
 from __future__ import annotations
 
-from reality_rag_indexing import (
+from ..indexing_service import (
     IndexBuildInput,
     IndexBuildOutput,
     IndexJobError,

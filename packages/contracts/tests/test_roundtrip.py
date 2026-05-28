@@ -8,6 +8,8 @@ import pytest
 from reality_rag_contracts import (
     AccessRetrieveRequest,
     AccessRetrieveResponse,
+    ApiKeyProjection,
+    ApiKeyProjectionSync,
     ApplicationProfile,
     CanonicalMetadata,
     Collection,
@@ -28,12 +30,16 @@ from reality_rag_contracts import (
     JobInfo,
     KnowledgeContext,
     OpenSearchIndexRecord,
+    ParserProfileValidateRequest,
+    ParserProfileValidateResponse,
     PermissionContext,
     ProcessingRecord,
     QdrantPointRecord,
     PublishStatus,
     QualityReport,
     RetrievalMetadata,
+    RetrievalProfileValidateRequest,
+    RetrievalProfileValidateResponse,
     RetrievalRequest,
     RetrievalResponse,
     Tenant,
@@ -366,3 +372,193 @@ class TestJobInfo:
         data = _roundtrip(JobInfo, job.model_dump())
         assert data["job_id"] == "job-001"
         assert data["status"] == "running"
+
+
+class TestApiKeyProjection:
+    def test_roundtrip(self):
+        projection = ApiKeyProjection(
+            api_key_id="key_agent_platform_dev",
+            tenant_id="tnt_default",
+            agent_type_id="kb_assistant",
+            knowledge_scopes=["col_policy", "col_handbook"],
+            roles=["agent", "developer"],
+            debug_permission=True,
+            token_budget_limit=4096,
+            state="active",
+            projection_version=3,
+            last_updated_at="2026-05-27T12:00:00Z",
+        )
+        data = _roundtrip(ApiKeyProjection, projection.model_dump(mode="json"))
+        assert data["api_key_id"] == "key_agent_platform_dev"
+        assert data["token_budget_limit"] == 4096
+        assert data["state"] == "active"
+        assert data["projection_version"] == 3
+        assert "key_hash" not in data
+
+    def test_uses_token_budget_limit_not_max_context_tokens(self):
+        projection = ApiKeyProjection(
+            api_key_id="key-1",
+            tenant_id="tnt_default",
+            token_budget_limit=2048,
+        )
+        dumped = json.loads(projection.model_dump_json())
+        assert "token_budget_limit" in dumped
+        assert "max_context_tokens" not in dumped
+
+
+class TestApiKeyProjectionSync:
+    def test_roundtrip(self):
+        sync = ApiKeyProjectionSync(
+            command_id="cmd_sync_key_001",
+            trace_id="trc_sync_001",
+            idempotency_key="idem_key_agent_platform_dev_v3",
+            actor="admin_service",
+            tenant_id="tnt_default",
+            target_type="api_key_projection",
+            target_id="key_agent_platform_dev",
+            payload=ApiKeyProjection(
+                api_key_id="key_agent_platform_dev",
+                tenant_id="tnt_default",
+                agent_type_id="kb_assistant",
+                knowledge_scopes=["col_policy"],
+                roles=["agent"],
+                debug_permission=False,
+                token_budget_limit=4096,
+                state="active",
+                projection_version=1,
+                last_updated_at="2026-05-27T12:00:00Z",
+            ),
+        )
+        data = _roundtrip(ApiKeyProjectionSync, sync.model_dump(mode="json"))
+        assert data["command_id"] == "cmd_sync_key_001"
+        assert data["idempotency_key"] == "idem_key_agent_platform_dev_v3"
+        assert data["payload"]["api_key_id"] == "key_agent_platform_dev"
+        assert data["payload"]["token_budget_limit"] == 4096
+
+
+# ── Profile Validate Contracts ──────────────────────────────────────────
+
+
+class TestParserProfileValidateRequest:
+    def test_roundtrip(self):
+        req = ParserProfileValidateRequest(
+            parser_profile_id="pp-naive-v2",
+            parser_id="naive",
+            parser_config={"chunk_token_num": 128, "delimiter": "\\n"},
+            chunk_profile_id="cp-default",
+            tenant_id="tnt_default",
+            collection_id="col-finance-policy",
+            version=3,
+        )
+        data = _roundtrip(ParserProfileValidateRequest, req.model_dump(mode="json"))
+        assert data["parser_profile_id"] == "pp-naive-v2"
+        assert data["parser_id"] == "naive"
+        assert data["parser_config"]["chunk_token_num"] == 128
+        assert data["tenant_id"] == "tnt_default"
+        assert data["version"] == 3
+
+    def test_optional_fields_omitted(self):
+        req = ParserProfileValidateRequest(
+            parser_profile_id="pp-1",
+            parser_id="qa",
+            parser_config={},
+            tenant_id="tnt_default",
+        )
+        dumped = json.loads(req.model_dump_json())
+        assert "chunk_profile_id" not in dumped or dumped["chunk_profile_id"] is None
+        assert "collection_id" not in dumped or dumped["collection_id"] is None
+        assert "version" not in dumped or dumped["version"] is None
+
+
+class TestParserProfileValidateResponse:
+    def test_valid_roundtrip(self):
+        resp = ParserProfileValidateResponse(
+            valid=True,
+            canonical_config={"chunk_token_num": 128},
+            profile_hash="sha256:abc123",
+            warnings=[],
+            errors=[],
+            validator_version="indexing-v0.1.0",
+        )
+        data = _roundtrip(ParserProfileValidateResponse, resp.model_dump(mode="json"))
+        assert data["valid"] is True
+        assert data["canonical_config"]["chunk_token_num"] == 128
+        assert data["profile_hash"] == "sha256:abc123"
+        assert data["runtime_owner"] == "indexing"
+        assert data["validator_version"] == "indexing-v0.1.0"
+
+    def test_invalid_with_errors_roundtrip(self):
+        resp = ParserProfileValidateResponse(
+            valid=False,
+            profile_hash="sha256:000000",
+            warnings=["chunk_token_num is below recommended minimum"],
+            errors=[
+                {"code": "INVALID_PARSER_ID", "message": "Parser not recognized"},
+            ],
+            validator_version="indexing-v0.1.0",
+        )
+        data = _roundtrip(ParserProfileValidateResponse, resp.model_dump(mode="json"))
+        assert data["valid"] is False
+        assert "canonical_config" not in data or data["canonical_config"] is None
+        assert len(data["errors"]) == 1
+        assert data["errors"][0]["code"] == "INVALID_PARSER_ID"
+
+
+class TestRetrievalProfileValidateRequest:
+    def test_roundtrip(self):
+        req = RetrievalProfileValidateRequest(
+            retrieval_profile_id="rp-hybrid-v1",
+            profile_config={"bm25_weight": 0.3, "vector_weight": 0.7},
+            tenant_id="tnt_default",
+            collection_id="col-finance-policy",
+            version="v2",
+        )
+        data = _roundtrip(RetrievalProfileValidateRequest, req.model_dump(mode="json"))
+        assert data["retrieval_profile_id"] == "rp-hybrid-v1"
+        assert data["profile_config"]["bm25_weight"] == 0.3
+        assert data["tenant_id"] == "tnt_default"
+        assert data["version"] == "v2"
+
+    def test_optional_fields_omitted(self):
+        req = RetrievalProfileValidateRequest(
+            retrieval_profile_id="rp-1",
+            profile_config={},
+            tenant_id="tnt_default",
+        )
+        dumped = json.loads(req.model_dump_json())
+        assert "collection_id" not in dumped or dumped["collection_id"] is None
+        assert "version" not in dumped or dumped["version"] is None
+
+
+class TestRetrievalProfileValidateResponse:
+    def test_valid_roundtrip(self):
+        resp = RetrievalProfileValidateResponse(
+            valid=True,
+            canonical_config={"bm25_weight": 0.3},
+            profile_hash="sha256:def789",
+            warnings=[],
+            errors=[],
+            validator_version="retrieval-v0.1.0",
+        )
+        data = _roundtrip(RetrievalProfileValidateResponse, resp.model_dump(mode="json"))
+        assert data["valid"] is True
+        assert data["canonical_config"]["bm25_weight"] == 0.3
+        assert data["profile_hash"] == "sha256:def789"
+        assert data["runtime_owner"] == "retrieval"
+        assert data["validator_version"] == "retrieval-v0.1.0"
+
+    def test_invalid_with_errors_roundtrip(self):
+        resp = RetrievalProfileValidateResponse(
+            valid=False,
+            profile_hash="sha256:000000",
+            warnings=["similarity_threshold above 0.9 may reduce recall"],
+            errors=[
+                {"code": "INVALID_RERANK_MODEL", "message": "Model not available"},
+            ],
+            validator_version="retrieval-v0.1.0",
+        )
+        data = _roundtrip(RetrievalProfileValidateResponse, resp.model_dump(mode="json"))
+        assert data["valid"] is False
+        assert "canonical_config" not in data or data["canonical_config"] is None
+        assert len(data["errors"]) == 1
+        assert data["errors"][0]["code"] == "INVALID_RERANK_MODEL"

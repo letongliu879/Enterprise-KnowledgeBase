@@ -1,0 +1,20 @@
+{
+  "revision_id": "crv_01JABC123456",
+  "base_evidence_id": "chunk_01JABC000000",
+  "doc_id": "doc_01JABC999999",
+  "collection_id": "col_default",
+  "tenant_id": "tenant_acme",
+  "operation": "update",
+  "content": "Updated chunk content with corrections.",
+  "vector_text": "Updated chunk content with corrections.",
+  "section_path": ["Section 1", "Subsection A"],
+  "metadata_patch": {"confirmed_tags": ["updated"]},
+  "citation_payload": {"source": "manual_edit"},
+  "status": "active",
+  "superseded_evidence_id": "chunk_01JABC000000",
+  "superseded_by": null,
+  "idempotency_key": "ce_01JABC123456",
+  "trace_id": "trc_01JABC123456",
+  "created_at": "2026-05-28T00:00:00Z",
+  "updated_at": "2026-05-28T00:00:00Z"
+}

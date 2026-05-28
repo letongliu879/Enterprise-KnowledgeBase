@@ -1,0 +1,19 @@
+{
+  "valid": false,
+  "profile_hash": "sha256:000000000000",
+  "warnings": [
+    "similarity_threshold above 0.9 may severely reduce recall"
+  ],
+  "errors": [
+    {
+      "code": "INVALID_RERANK_MODEL",
+      "message": "Rerank model 'unknown-model' is not available in retrieval runtime"
+    },
+    {
+      "code": "BM25_VECTOR_WEIGHT_SUM",
+      "message": "bm25_weight + vector_weight must equal 1.0, got 1.2"
+    }
+  ],
+  "runtime_owner": "retrieval",
+  "validator_version": "retrieval-v0.1.0"
+}

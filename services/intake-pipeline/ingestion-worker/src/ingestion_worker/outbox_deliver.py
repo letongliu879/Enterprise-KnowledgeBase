@@ -6,11 +6,14 @@ Routes outbox events to orchestrator actions or stage workers.
 from __future__ import annotations
 
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from reality_rag_contracts import EventType, IntakeJobState, OutboxEvent, PublishStatus, StageName
+from reality_rag_contracts import EventType, IndexStatus, IntakeJobState, OutboxEvent, PublishStatus, StageName
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 
@@ -186,7 +189,26 @@ def _deliver_publish_event(event: OutboxEvent) -> bool:
                 row.final_doc_id = event.payload_json.get("final_doc_id")
 
             orch.advance_state(intake_job_id, IntakeJobState.PUBLISHED)
-            idem_repo.record_processed(
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("outbox: failed to process publish event")
+            return False
+        finally:
+            session.close()
+
+        try:
+            _submit_indexing_after_publish(event.payload_json)
+        except Exception as exc:
+            final_doc_id = str(event.payload_json.get("final_doc_id") or "").strip()
+            if final_doc_id:
+                _mark_document_index_failed(final_doc_id)
+            logger.exception("outbox: failed to submit published document to indexing")
+            return False
+
+        session = get_session()
+        try:
+            ConsumerIdempotencyRepository(session).record_processed(
                 _PUBLISH_EVENT_CONSUMER_ID,
                 event.event_id,
                 event.idempotency_key,
@@ -195,12 +217,58 @@ def _deliver_publish_event(event: OutboxEvent) -> bool:
             return True
         except Exception:
             session.rollback()
-            logger.exception("outbox: failed to process publish event")
+            logger.exception("outbox: failed to record publish event idempotency")
             return False
         finally:
             session.close()
     logger.warning("outbox: unexpected publish event type %s", event.event_type)
     return True
+
+
+def _submit_indexing_after_publish(payload: dict[str, Any]) -> None:
+    from .indexing_service import get_indexing_service
+
+    intake_job_id = str(payload.get("intake_job_id") or "").strip()
+    collection_id = str(payload.get("collection_id") or "").strip()
+    index_version = str(payload.get("index_version") or "").strip()
+    if not intake_job_id or not collection_id:
+        raise ValueError("PublishCompleted payload missing intake_job_id or collection_id")
+
+    async def _run():
+        return await get_indexing_service().run_intake_job(
+            intake_job_id=intake_job_id,
+            collection_id=collection_id,
+            index_version=index_version,
+            options={"activate_index_version": True},
+        )
+
+    _run_coroutine_blocking(_run)
+
+
+def _run_coroutine_blocking(coro_factory):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro_factory())
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: asyncio.run(coro_factory()))
+        return future.result()
+
+
+def _mark_document_index_failed(final_doc_id: str) -> None:
+    session = get_session()
+    try:
+        repo = DocumentRepository(session)
+        document = repo.get(final_doc_id)
+        if document is not None:
+            repo.save(document.model_copy(update={"index_status": IndexStatus.FAILED}))
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("outbox: failed to mark document index_status=failed")
+    finally:
+        session.close()
 
 
 def _deliver_file_ready(event: OutboxEvent) -> bool:

@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from reality_rag_contracts import (
+    ApiKeyRegistryEntry,
     ApplicationProfile,
     CanonicalMetadata,
     Collection,
@@ -24,11 +25,13 @@ from reality_rag_contracts import (
     PolicySubject,
     PrincipalProfile,
     PublishStatus,
+    RetrievalProfile,
     Tenant,
 )
 
 from .database import create_all, get_session
 from .repositories.application_profiles import ApplicationProfileRepository
+from .repositories.api_key_registry import ApiKeyRegistryRepository
 from .repositories.collections import CollectionRepository
 from .repositories.documents import DocumentRepository
 from reality_rag_contracts import IndexRegistryStatus
@@ -38,7 +41,11 @@ from .repositories.ingestion import IngestionRepository
 from .repositories.jobs import JobRepository
 from .repositories.document_policies import DocumentPolicyRepository
 from .repositories.principal_profiles import PrincipalProfileRepository
+from .repositories.retrieval_profiles import RetrievalProfileRepository
 from .repositories.tenants import TenantRepository
+
+COL_POLICY = "col_policy"
+COL_HANDBOOK = "col_handbook"
 
 
 def _write_text_asset(asset_path: str, content: str) -> None:
@@ -66,6 +73,8 @@ def seed(session=None) -> None:
         _seed_documents(session)
         _seed_jobs(session)
         _seed_application_profiles(session)
+        _seed_api_key_registry(session)
+        _seed_retrieval_profiles(session)
         _seed_principal_profiles(session)
         _seed_ingestion(session)
         _seed_index_registry(session)
@@ -84,18 +93,18 @@ def _seed_tenants(session):
 
 def _seed_collections(session):
     repo = CollectionRepository(session)
-    if repo.get("col-1") is None:
+    if repo.get(COL_POLICY) is None:
         repo.save(Collection(
-            collection_id="col-1", tenant_id="default",
+            collection_id=COL_POLICY, tenant_id="default",
             name="Financial Compliance",
             description="Primary collection of financial regulatory compliance documents.",
             authority_level=8,
             created_at=datetime(2025, 1, 15, tzinfo=timezone.utc),
             updated_at=datetime(2025, 3, 10, tzinfo=timezone.utc),
         ))
-    if repo.get("col-2") is None:
+    if repo.get(COL_HANDBOOK) is None:
         repo.save(Collection(
-            collection_id="col-2", tenant_id="default",
+            collection_id=COL_HANDBOOK, tenant_id="default",
             name="Legal Contracts",
             description="Legal contracts and agreements requiring compliance review.",
             authority_level=7,
@@ -107,42 +116,42 @@ def _seed_collections(session):
 def _seed_documents(session):
     repo = DocumentRepository(session)
     doc_001_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/quality_report.json",
-        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/agent_review.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/processing_record.json",
+        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.md",
+        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.meta.json",
+        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/quality_report.json",
+        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/agent_review.json",
+        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/processing_record.json",
     }
     doc_002_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-002/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-002/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-002/quality_report.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-002/processing_record.json",
+        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.md",
+        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.meta.json",
+        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/quality_report.json",
+        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/processing_record.json",
     }
     doc_003_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/quality_report.json",
-        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/agent_review.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/processing_record.json",
+        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.md",
+        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.meta.json",
+        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/quality_report.json",
+        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/agent_review.json",
+        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/processing_record.json",
     }
     doc_004_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/quality_report.json",
-        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/agent_review.json",
-        "review_context": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/review_context.json",
-        "human_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/human_review.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/processing_record.json",
-        "chunk_manifest": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/chunk_manifest.json",
-        "opensearch_records": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/opensearch_records.json",
-        "qdrant_points": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/qdrant_points.json",
+        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.md",
+        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.meta.json",
+        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/quality_report.json",
+        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/agent_review.json",
+        "review_context": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/review_context.json",
+        "human_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/human_review.json",
+        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/processing_record.json",
+        "chunk_manifest": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/chunk_manifest.json",
+        "opensearch_records": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/opensearch_records.json",
+        "qdrant_points": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/qdrant_points.json",
     }
 
     if repo.get("doc-001") is None:
         repo.save(CanonicalMetadata(
             doc_id="doc-001", logical_document_id="ld-001",
-            tenant_id="default", collection_id="col-1",
+            tenant_id="default", collection_id=COL_POLICY,
             source_hash="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
             version=3,
             archived=False,
@@ -159,7 +168,7 @@ def _seed_documents(session):
     if repo.get("doc-002") is None:
         repo.save(CanonicalMetadata(
             doc_id="doc-002", logical_document_id="ld-002",
-            tenant_id="default", collection_id="col-1",
+            tenant_id="default", collection_id=COL_POLICY,
             source_hash="b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
             version=1,
             archived=False,
@@ -175,7 +184,7 @@ def _seed_documents(session):
     if repo.get("doc-003") is None:
         repo.save(CanonicalMetadata(
             doc_id="doc-003", logical_document_id="ld-003",
-            tenant_id="default", collection_id="col-2",
+            tenant_id="default", collection_id=COL_HANDBOOK,
             source_hash="c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
             version=2,
             archived=False,
@@ -192,7 +201,7 @@ def _seed_documents(session):
     if repo.get("doc-004") is None:
         repo.save(CanonicalMetadata(
             doc_id="doc-004", logical_document_id="ld-004",
-            tenant_id="default", collection_id="col-1",
+            tenant_id="default", collection_id=COL_POLICY,
             source_hash="d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
             version=1,
             archived=False,
@@ -214,7 +223,7 @@ def _seed_documents(session):
         doc_001_asset_paths["canonical_meta"],
         CanonicalMetadata(
             doc_id="doc-001", logical_document_id="ld-001",
-            tenant_id="default", collection_id="col-1",
+            tenant_id="default", collection_id=COL_POLICY,
             source_hash="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
             version=3,
             publish_status=PublishStatus.PUBLISHED,
@@ -264,7 +273,7 @@ def _seed_documents(session):
         {
             "doc_id": "doc-001",
             "job_id": "ingest-001",
-            "collection_id": "col-1",
+            "collection_id": COL_POLICY,
             "source_file_path": "datasets/raw/finance/2025-q1-report.docx",
             "source_hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
             "conversion_status": "success",
@@ -286,7 +295,7 @@ def _seed_documents(session):
         doc_002_asset_paths["canonical_meta"],
         CanonicalMetadata(
             doc_id="doc-002", logical_document_id="ld-002",
-            tenant_id="default", collection_id="col-1",
+            tenant_id="default", collection_id=COL_POLICY,
             source_hash="b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
             version=1,
             publish_status=PublishStatus.DRAFT,
@@ -322,7 +331,7 @@ def _seed_documents(session):
         {
             "doc_id": "doc-002",
             "job_id": "ingest-001",
-            "collection_id": "col-1",
+            "collection_id": COL_POLICY,
             "source_file_path": "datasets/raw/finance/2025-q1-audit-letter.docx",
             "source_hash": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
             "conversion_status": "success",
@@ -344,7 +353,7 @@ def _seed_documents(session):
         doc_003_asset_paths["canonical_meta"],
         CanonicalMetadata(
             doc_id="doc-003", logical_document_id="ld-003",
-            tenant_id="default", collection_id="col-2",
+            tenant_id="default", collection_id=COL_HANDBOOK,
             source_hash="c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
             version=2,
             publish_status=PublishStatus.PUBLISHED,
@@ -394,7 +403,7 @@ def _seed_documents(session):
         {
             "doc_id": "doc-003",
             "job_id": "ingest-002",
-            "collection_id": "col-2",
+            "collection_id": COL_HANDBOOK,
             "source_file_path": "datasets/raw/legal/contract-v3-scanned.pdf",
             "source_hash": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
             "conversion_status": "failed",
@@ -426,7 +435,7 @@ def _seed_documents(session):
         doc_004_asset_paths["canonical_meta"],
         CanonicalMetadata(
             doc_id="doc-004", logical_document_id="ld-004",
-            tenant_id="default", collection_id="col-1",
+            tenant_id="default", collection_id=COL_POLICY,
             source_hash="d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
             version=1,
             publish_status=PublishStatus.PENDING_REVIEW,
@@ -502,7 +511,7 @@ def _seed_documents(session):
         {
             "doc_id": "doc-004",
             "job_id": "ingest-004",
-            "collection_id": "col-1",
+            "collection_id": COL_POLICY,
             "source_file_path": str(source_doc_004),
             "source_hash": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
             "conversion_status": "success",
@@ -522,14 +531,14 @@ def _seed_jobs(session):
     if repo.get("job-001") is None:
         repo.save(JobInfo(
             job_id="job-001", job_type="index", status=JobStatus.COMPLETED,
-            collection_id="col-1", doc_id="doc-001",
+            collection_id=COL_POLICY, doc_id="doc-001",
             created_at=datetime(2025, 3, 15, tzinfo=timezone.utc),
             updated_at=datetime(2025, 3, 15, tzinfo=timezone.utc),
         ))
     if repo.get("job-002") is None:
         repo.save(JobInfo(
             job_id="job-002", job_type="index", status=JobStatus.FAILED,
-            collection_id="col-2", doc_id="doc-003",
+            collection_id=COL_HANDBOOK, doc_id="doc-003",
             created_at=datetime(2025, 2, 28, tzinfo=timezone.utc),
             updated_at=datetime(2025, 2, 28, tzinfo=timezone.utc),
             error_message="Indexing failed: OCR text extraction threshold not met on page 2",
@@ -542,30 +551,30 @@ def _seed_application_profiles(session):
         repo.save(ApplicationProfile(
             application_profile_id="ap-finance", tenant_id="default",
             name="Finance Profile",
-            allowed_collections=["col-1"],
-            default_collections=["col-1"],
+            allowed_collections=[COL_POLICY],
+            default_collections=[COL_POLICY],
         ))
     if repo.get("ap-privacy") is None:
         repo.save(ApplicationProfile(
             application_profile_id="ap-privacy", tenant_id="default",
             name="Privacy Profile",
-            allowed_collections=["col-2"],
-            default_collections=["col-2"],
+            allowed_collections=[COL_HANDBOOK],
+            default_collections=[COL_HANDBOOK],
         ))
     if repo.get("ap-cross") is None:
         repo.save(ApplicationProfile(
             application_profile_id="ap-cross", tenant_id="default",
             name="Cross-Domain Profile",
-            allowed_collections=["col-1", "col-2"],
-            default_collections=["col-1"],
+            allowed_collections=[COL_POLICY, COL_HANDBOOK],
+            default_collections=[COL_POLICY],
             allow_cross_collection=True,
         ))
     if repo.get("default") is None:
         repo.save(ApplicationProfile(
             application_profile_id="default", tenant_id="default",
             name="Default Profile",
-            allowed_collections=["col-1"],
-            default_collections=["col-1"],
+            allowed_collections=[COL_POLICY],
+            default_collections=[COL_POLICY],
             default_token_budget=4096,
             metadata_policy="minimal",
         ))
@@ -573,8 +582,8 @@ def _seed_application_profiles(session):
         repo.save(ApplicationProfile(
             application_profile_id="research", tenant_id="default",
             name="Research Profile",
-            allowed_collections=["col-1", "col-2"],
-            default_collections=["col-1"],
+            allowed_collections=[COL_POLICY, COL_HANDBOOK],
+            default_collections=[COL_POLICY],
             allow_cross_collection=True,
             default_token_budget=8192,
             default_budget_policy="comprehensive",
@@ -584,12 +593,62 @@ def _seed_application_profiles(session):
         repo.save(ApplicationProfile(
             application_profile_id="ap-internal-assistant", tenant_id="default",
             name="Internal Assistant",
-            allowed_collections=["col-1", "col-2"],
-            default_collections=["col-1"],
+            allowed_collections=[COL_POLICY, COL_HANDBOOK],
+            default_collections=[COL_POLICY],
             allow_cross_collection=True,
             default_token_budget=4096,
             metadata_policy="minimal",
         ))
+
+
+def _seed_api_key_registry(session):
+    repo = ApiKeyRegistryRepository(session)
+    if repo.get("rr-agent-platform-dev") is None:
+        repo.save(ApiKeyRegistryEntry(
+            api_key_id="rr-agent-platform-dev",
+            display_name="Agent Platform Dev",
+            agent_type_id="kb_assistant",
+            knowledge_scopes=[COL_POLICY, COL_HANDBOOK],
+            roles=["agent"],
+            debug_permission=False,
+            max_context_tokens=4096,
+            enabled=True,
+        ))
+    if repo.get("rr-agent-platform-ops") is None:
+        repo.save(ApiKeyRegistryEntry(
+            api_key_id="rr-agent-platform-ops",
+            display_name="Agent Platform Ops",
+            agent_type_id="ops_assistant",
+            knowledge_scopes=[COL_POLICY, COL_HANDBOOK],
+            roles=["agent", "ops"],
+            debug_permission=True,
+            max_context_tokens=8192,
+            enabled=True,
+        ))
+
+
+def _seed_retrieval_profiles(session):
+    repo = RetrievalProfileRepository(session)
+    for collection_id in (COL_POLICY, COL_HANDBOOK):
+        if repo.get("ret_default", collection_id) is None:
+            repo.save(RetrievalProfile(
+                profile_id="ret_default",
+                collection_id=collection_id,
+                profile_version=1,
+                profile_hash="sha256:ret-default-seed",
+                bm25_weight=0.55,
+                vector_weight=0.45,
+                candidate_top_k=20,
+                similarity_threshold=0.2,
+                rerank_enabled=True,
+                rerank_model="siliconflow-rerank",
+                fail_policy="fail_closed",
+                expansion_policy={"adjacent_window": 1},
+                pack_budget=1200,
+                enabled=True,
+                updated_at=datetime.now(timezone.utc),
+                updated_by="seed",
+            ))
 
 
 def _seed_principal_profiles(session):
@@ -632,7 +691,7 @@ def _seed_document_policies(session):
         repo.save(DocumentPolicy(
             policy_id="policy-doc-001-allow-finance",
             tenant_id="default",
-            collection_id="col-1",
+            collection_id=COL_POLICY,
             doc_id="doc-001",
             effect="allow",
             subjects=[PolicySubject(subject_type="tenant", subject_id="default")],
@@ -644,7 +703,7 @@ def _seed_document_policies(session):
         repo.save(DocumentPolicy(
             policy_id="policy-doc-002-deny-all",
             tenant_id="default",
-            collection_id="col-1",
+            collection_id=COL_POLICY,
             doc_id="doc-002",
             effect="deny",
             subjects=[PolicySubject(subject_type="tenant", subject_id="default")],
@@ -656,7 +715,7 @@ def _seed_document_policies(session):
         repo.save(DocumentPolicy(
             policy_id="policy-doc-003-allow-legal",
             tenant_id="default",
-            collection_id="col-2",
+            collection_id=COL_HANDBOOK,
             doc_id="doc-003",
             effect="allow",
             subjects=[PolicySubject(subject_type="role", subject_id="legal_reviewer")],
@@ -670,7 +729,7 @@ def _seed_document_policies(session):
         repo.save(DocumentPolicy(
             policy_id="policy-doc-004-allow-research",
             tenant_id="default",
-            collection_id="col-1",
+            collection_id=COL_POLICY,
             doc_id="doc-004",
             effect="allow",
             subjects=[PolicySubject(subject_type="role", subject_id="researcher")],
@@ -697,7 +756,7 @@ def _seed_ingestion(session):
                     source_file_path="datasets/raw/finance/2025-q1-report.docx",
                     conversion_status=ConversionStatus.SUCCESS,
                     doc_id="doc-001",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/canonical.md",
+                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.md",
                     canonical_md="## Q1 2025 Financial Report\n\nRevenue: $12.4M (up 8% YoY)\n\n### Highlights\n- Net income grew 12%\n- Operating margin expanded to 24%\n\nFull report follows...",
                     metadata={"pages": 14, "format": "docx"},
                 ),
@@ -713,7 +772,7 @@ def _seed_ingestion(session):
                     source_file_path="datasets/raw/finance/2025-q1-audit-letter.docx",
                     conversion_status=ConversionStatus.SUCCESS,
                     doc_id="doc-002",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-002/canonical.md",
+                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.md",
                     canonical_md="## Independent Auditor's Letter\n\nWe have audited the financial statements of Example Corp for Q1 2025.\n\nOpinion: Unqualified.",
                     metadata={"pages": 3, "format": "docx"},
                 ),
@@ -722,14 +781,14 @@ def _seed_ingestion(session):
         )
         repo.save(IngestionJob(
             job_id="ingest-001", job_type="ingestion",
-            status=JobStatus.COMPLETED, collection_id="col-1",
+            status=JobStatus.COMPLETED, collection_id=COL_POLICY,
             source_files=[
                 "datasets/raw/finance/2025-q1-report.docx",
                 "datasets/raw/finance/2025-q1-appendix.pdf",
                 "datasets/raw/finance/2025-q1-audit-letter.docx",
             ],
             conversion_report=report,
-            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-1/ingest-001/conversion_report.json",
+            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-001/conversion_report.json",
             created_at=now, updated_at=datetime(2025, 5, 10, 9, 35, tzinfo=timezone.utc),
         ))
     if repo.get("ingest-002") is None:
@@ -745,7 +804,7 @@ def _seed_ingestion(session):
                     source_file_path="datasets/raw/legal/contract-v3-scanned.pdf",
                     conversion_status=ConversionStatus.FAILED,
                     doc_id="doc-003",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/canonical.md",
+                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.md",
                     canonical_md="",
                     error_message="Scanned image PDF with no OCR layer — requires manual OCR preprocessing",
                     metadata={"pages": 45, "format": "pdf"},
@@ -755,10 +814,10 @@ def _seed_ingestion(session):
         )
         repo.save(IngestionJob(
             job_id="ingest-002", job_type="ingestion",
-            status=JobStatus.FAILED, collection_id="col-2",
+            status=JobStatus.FAILED, collection_id=COL_HANDBOOK,
             source_files=["datasets/raw/legal/contract-v3-scanned.pdf"],
             conversion_report=report,
-            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-2/ingest-002/conversion_report.json",
+            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/ingest-002/conversion_report.json",
             created_at=now, updated_at=datetime(2025, 5, 11, 14, 2, tzinfo=timezone.utc),
             error_message="Ingestion failed: no convertible files in batch",
         ))
@@ -766,7 +825,7 @@ def _seed_ingestion(session):
         now = datetime(2025, 5, 15, 8, 0, tzinfo=timezone.utc)
         repo.save(IngestionJob(
             job_id="ingest-003", job_type="ingestion",
-            status=JobStatus.PENDING, collection_id="col-1",
+            status=JobStatus.PENDING, collection_id=COL_POLICY,
             source_files=[
                 "datasets/raw/finance/2025-q2-forecast.xlsx",
                 "datasets/raw/finance/2025-q2-notes.md",
@@ -786,7 +845,7 @@ def _seed_ingestion(session):
                     source_file_path="E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md",
                     conversion_status=ConversionStatus.SUCCESS,
                     doc_id="doc-004",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/canonical.md",
+                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.md",
                     canonical_md="## Travel Exception Policy\n\nExpenses over 500 USD require director approval.\n\nA written exception explanation is required before reimbursement.\n",
                     metadata={"pages": 1, "format": "md"},
                 ),
@@ -795,15 +854,15 @@ def _seed_ingestion(session):
         )
         repo.save(IngestionJob(
             job_id="ingest-004", job_type="ingestion",
-            status=JobStatus.COMPLETED, collection_id="col-1",
+            status=JobStatus.COMPLETED, collection_id=COL_POLICY,
             source_files=["E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md"],
             conversion_report=report,
-            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col-1/ingest-004/conversion_report.json",
+            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-004/conversion_report.json",
             created_at=now, updated_at=now,
         ))
 
     ingest_001_created_at = datetime(2025, 5, 10, 9, 30, tzinfo=timezone.utc)
-    ingest_001_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/ingest-001/conversion_report.json"
+    ingest_001_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-001/conversion_report.json"
     _write_json_asset(
         ingest_001_report_asset_path,
         {
@@ -822,7 +881,7 @@ def _seed_ingestion(session):
                     "source_file_path": "datasets/raw/finance/2025-q1-report.docx",
                     "conversion_status": "success",
                     "doc_id": "doc-001",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-001/canonical.md",
+                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.md",
                     "canonical_md": "## Q1 2025 Financial Report\n\nRevenue: $12.4M (up 8% YoY)\n\n### Highlights\n- Net income grew 12%\n- Operating margin expanded to 24%\n\nFull report follows...",
                     "error_message": "",
                     "warnings": [],
@@ -842,7 +901,7 @@ def _seed_ingestion(session):
                     "source_file_path": "datasets/raw/finance/2025-q1-audit-letter.docx",
                     "conversion_status": "success",
                     "doc_id": "doc-002",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-002/canonical.md",
+                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.md",
                     "canonical_md": "## Independent Auditor's Letter\n\nWe have audited the financial statements of Example Corp for Q1 2025.\n\nOpinion: Unqualified.",
                     "error_message": "",
                     "warnings": [],
@@ -854,7 +913,7 @@ def _seed_ingestion(session):
     )
 
     ingest_002_created_at = datetime(2025, 5, 11, 14, 0, tzinfo=timezone.utc)
-    ingest_002_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/ingest-002/conversion_report.json"
+    ingest_002_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/ingest-002/conversion_report.json"
     _write_json_asset(
         ingest_002_report_asset_path,
         {
@@ -873,7 +932,7 @@ def _seed_ingestion(session):
                     "source_file_path": "datasets/raw/legal/contract-v3-scanned.pdf",
                     "conversion_status": "failed",
                     "doc_id": "doc-003",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col-2/doc-003/canonical.md",
+                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.md",
                     "canonical_md": "",
                     "error_message": "Scanned image PDF with no OCR layer — requires manual OCR preprocessing",
                     "warnings": [],
@@ -885,7 +944,7 @@ def _seed_ingestion(session):
     )
 
     ingest_004_created_at = datetime(2025, 5, 12, 11, 0, tzinfo=timezone.utc)
-    ingest_004_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/ingest-004/conversion_report.json"
+    ingest_004_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-004/conversion_report.json"
     _write_json_asset(
         ingest_004_report_asset_path,
         {
@@ -904,7 +963,7 @@ def _seed_ingestion(session):
                     "source_file_path": "E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md",
                     "conversion_status": "success",
                     "doc_id": "doc-004",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col-1/doc-004/canonical.md",
+                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.md",
                     "canonical_md": "## Travel Exception Policy\n\nExpenses over 500 USD require director approval.\n\nA written exception explanation is required before reimbursement.\n",
                     "error_message": "",
                     "warnings": ["Human confirmation required before publication"],
@@ -918,15 +977,15 @@ def _seed_ingestion(session):
 
 def _seed_index_registry(session):
     repo = IndexRegistryRepository(session)
-    if repo.get("col-1") is None:
+    if repo.get(COL_POLICY) is None:
         repo.save(IndexVersionEntry(
-            collection_id="col-1", index_version="col-1-v2",
+            collection_id=COL_POLICY, index_version="idxv_col_policy_seed_v2",
             status=IndexRegistryStatus.INDEXED,
             created_at=datetime(2025, 3, 15, tzinfo=timezone.utc),
         ))
-    if repo.get("col-2") is None:
+    if repo.get(COL_HANDBOOK) is None:
         repo.save(IndexVersionEntry(
-            collection_id="col-2", index_version="col-2-v1",
+            collection_id=COL_HANDBOOK, index_version="idxv_col_handbook_seed_v1",
             status=IndexRegistryStatus.INDEXED,
             created_at=datetime(2025, 2, 28, tzinfo=timezone.utc),
         ))

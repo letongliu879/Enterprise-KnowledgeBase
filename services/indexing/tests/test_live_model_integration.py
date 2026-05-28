@@ -9,7 +9,7 @@ from indexing_service.backends import embed_texts
 from indexing_service.config import load_indexing_config
 from indexing_service.jobs.parse_preview_runner import ParsePreviewRunner
 from indexing_service.preview_contracts import ParsePreviewRequestedCommand
-from indexing_service.repository import InMemoryIndexingRepository
+from indexing_service.persistent_repository import PersistentIndexingRepository
 
 
 pytestmark = pytest.mark.live_model
@@ -37,7 +37,7 @@ def test_live_preview_produces_metadata_tags_and_toc() -> None:
     sample = Path(r"C:\Users\LLT\AppData\Local\Temp\ekb-preview-qa.txt")
     assert sample.exists()
 
-    repo = InMemoryIndexingRepository()
+    repo = PersistentIndexingRepository()
     runner = ParsePreviewRunner(repository=repo)
     accepted = runner.accept(
         ParsePreviewRequestedCommand(

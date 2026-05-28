@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from reality_rag_contracts import (
+    ApiKeyRegistryEntry,
     ApplicationProfile,
     CanonicalMetadata,
     Collection,
@@ -23,6 +24,7 @@ from reality_rag_contracts import (
 )
 
 from reality_rag_persistence.repositories.tenants import TenantRepository
+from reality_rag_persistence.repositories.api_key_registry import ApiKeyRegistryRepository
 from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.jobs import JobRepository
@@ -398,6 +400,52 @@ class TestApplicationProfileRepository:
         assert result.allowed_collections == ["col-1", "col-2", "col-3"]
 
 
+class TestApiKeyRegistryRepository:
+    def test_save_and_get(self, session):
+        repo = ApiKeyRegistryRepository(session)
+        repo.save(ApiKeyRegistryEntry(
+            api_key_id="rr-agent-platform-dev",
+            display_name="Agent Platform Dev",
+            agent_type_id="kb_assistant",
+            knowledge_scopes=["col_policy", "col_handbook"],
+            roles=["agent"],
+            debug_permission=False,
+            max_context_tokens=4096,
+            enabled=True,
+        ))
+        session.commit()
+
+        result = repo.get("rr-agent-platform-dev")
+        assert result is not None
+        assert result.agent_type_id == "kb_assistant"
+        assert result.knowledge_scopes == ["col_policy", "col_handbook"]
+        assert result.roles == ["agent"]
+        assert result.enabled is True
+
+    def test_list_enabled_filters_disabled_rows(self, session):
+        repo = ApiKeyRegistryRepository(session)
+        repo.save(ApiKeyRegistryEntry(
+            api_key_id="enabled-key",
+            display_name="Enabled",
+            agent_type_id="kb_assistant",
+            knowledge_scopes=["col_policy"],
+            roles=["agent"],
+            enabled=True,
+        ))
+        repo.save(ApiKeyRegistryEntry(
+            api_key_id="disabled-key",
+            display_name="Disabled",
+            agent_type_id="kb_assistant",
+            knowledge_scopes=["col_policy"],
+            roles=["agent"],
+            enabled=False,
+        ))
+        session.commit()
+
+        enabled = repo.list_enabled()
+        assert [entry.api_key_id for entry in enabled] == ["enabled-key"]
+
+
 class TestPrincipalProfileRepository:
     def test_save_and_get(self, session):
         TenantRepository(session).save(Tenant(tenant_id="default", name="Default"))
@@ -626,6 +674,7 @@ class TestSeed:
         assert len(DocumentRepository(session).list_all()) >= 3
         assert len(JobRepository(session).list_all()) >= 2
         assert len(ApplicationProfileRepository(session).list_all()) >= 3
+        assert len(ApiKeyRegistryRepository(session).list_enabled()) >= 2
         assert len(PrincipalProfileRepository(session).list_by_tenant("default")) >= 3
         assert len(IngestionRepository(session).list_all()) >= 3
         assert len(IndexRegistryRepository(session).list_all()) >= 2

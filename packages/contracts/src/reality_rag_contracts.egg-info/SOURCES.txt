@@ -3,6 +3,7 @@ src/reality_rag_contracts/__init__.py
 src/reality_rag_contracts/enums.py
 src/reality_rag_contracts/index_naming.py
 src/reality_rag_contracts/models.py
+src/reality_rag_contracts/state_machine.py
 src/reality_rag_contracts.egg-info/PKG-INFO
 src/reality_rag_contracts.egg-info/SOURCES.txt
 src/reality_rag_contracts.egg-info/dependency_links.txt
@@ -13,3 +14,5 @@ tests/test_index_naming.py
 tests/test_ingestion_contracts.py
 tests/test_retrieval_constraints.py
 tests/test_roundtrip.py
+tests/test_schema_validation.py
+tests/test_state_machine.py

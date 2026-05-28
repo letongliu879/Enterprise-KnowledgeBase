@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.realityrag.access.contracts.KnowledgeContext;
 import com.realityrag.access.service.AccessGatewayService;
 import com.realityrag.access.security.AccessRequestContextFilter;
-import com.realityrag.access.support.AccessForbiddenException;
+import com.realityrag.access.support.AccessException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -80,7 +80,7 @@ class RetrieveControllerTest {
     @Test
     void forbiddenMapsToExpectedError() throws Exception {
         given(accessGatewayService.retrieve(any(), any()))
-            .willThrow(new AccessForbiddenException("Full debug is not allowed for this principal"));
+            .willThrow(new AccessException.Forbidden("Full debug is not allowed for this principal"));
 
         mockMvc.perform(post("/v1/retrieve")
                 .contentType(MediaType.APPLICATION_JSON)

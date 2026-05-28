@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from reality_rag_contracts import ConversionStatus, IndexJobRequest, PublishStatus
+from reality_rag_contracts import ConversionStatus, IndexJobRequest, IntakeJobState, PublishStatus
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.documents import DocumentRepository
+from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 
 from .monitor_context import MonitorContext
 
@@ -19,6 +20,16 @@ def _counters_for_publish_status(status: PublishStatus) -> dict[str, int]:
         return {"rejected": 1}
     if status == PublishStatus.QUARANTINED:
         return {"quarantined": 1}
+    return {"pending_review": 1}
+
+
+def _counters_for_intake_state(state: str) -> dict[str, int]:
+    if state == IntakeJobState.REJECTED.value:
+        return {"rejected": 1}
+    if state == IntakeJobState.FAILED.value:
+        return {"failed": True}
+    if state == IntakeJobState.CANCELLED.value:
+        return {"failed": True}
     return {"pending_review": 1}
 
 
@@ -77,6 +88,31 @@ class MonitorProcessor:
                     message=f"Conversion failed for {source_name}",
                     level="error",
                     payload={"job_id": job.job_id, "error_message": detail.error_message},
+                )
+                return
+
+            intake_job = await asyncio.to_thread(
+                self._load_intake_job_by_source_file_id,
+                job.source_file_ids[0] if job.source_file_ids else "",
+            )
+            if intake_job is None:
+                raise RuntimeError("Intake job was not persisted before indexing")
+            if intake_job.state != IntakeJobState.PUBLISHED.value:
+                counters = _counters_for_intake_state(intake_job.state)
+                self._bump_run_counts(run_id=context.run_id, **counters)
+                context.emit(
+                    event_type="doc.completed",
+                    phase="approval",
+                    message=f"{source_name} stopped at intake_state={intake_job.state}",
+                    doc_id=detail.doc_id,
+                    payload={
+                        "job_id": job.job_id,
+                        "intake_job_id": intake_job.intake_job_id,
+                        "intake_state": intake_job.state,
+                        "ticket_id": intake_job.ticket_id,
+                        "final_doc_id": intake_job.final_doc_id,
+                        "canonical_asset_path": detail.canonical_asset_path,
+                    },
                 )
                 return
 
@@ -144,6 +180,15 @@ class MonitorProcessor:
         session = get_session()
         try:
             return DocumentRepository(session).get_by_logical_id(logical_document_id)
+        finally:
+            session.close()
+
+    def _load_intake_job_by_source_file_id(self, source_file_id: str):
+        if not source_file_id:
+            return None
+        session = get_session()
+        try:
+            return IntakeJobRepository(session).get_by_source_file_id(source_file_id)
         finally:
             session.close()
 

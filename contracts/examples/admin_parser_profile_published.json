@@ -1,0 +1,14 @@
+{
+  "parser_profile_id": "parser_naive_v1",
+  "name": "Naive Parser",
+  "description": "General-purpose naive parser.",
+  "parser_id": "naive",
+  "parser_config": {"chunk_size": 512, "overlap": 64},
+  "runtime_canonical_config": {"canonical_chunk_size": 512, "canonical_overlap": 64},
+  "version": 1,
+  "state": "published",
+  "created_by": "admin_001",
+  "created_at": "2026-05-20T08:00:00Z",
+  "updated_by": "admin_001",
+  "updated_at": "2026-05-20T08:00:00Z"
+}

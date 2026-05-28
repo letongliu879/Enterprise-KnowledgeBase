@@ -42,6 +42,7 @@ class StageContext:
     doc_id: str = ""
     final_doc_id: str = ""
     logical_document_id: str = ""
+    parse_snapshot_id: str = ""
     source_file_id: str = ""
     object_id: str = ""
     content_hash: str = ""

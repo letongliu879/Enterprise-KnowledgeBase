@@ -1,0 +1,19 @@
+{
+  "api_key_id": "key_agent_platform_dev",
+  "tenant_id": "tnt_default",
+  "agent_type_id": "kb_assistant",
+  "knowledge_scopes": [
+    "col_policy",
+    "col_handbook"
+  ],
+  "roles": [
+    "agent",
+    "developer"
+  ],
+  "debug_permission": true,
+  "token_budget_limit": 4096,
+  "state": "active",
+  "expires_at": "2027-05-27T00:00:00Z",
+  "projection_version": 3,
+  "last_updated_at": "2026-05-27T12:00:00Z"
+}

@@ -1,0 +1,17 @@
+{
+  "command_id": "cmd_idxproj_archive_001",
+  "trace_id": "trace_archive_001",
+  "idempotency_key": "idemp_archive_col_default_doc_001",
+  "actor": "publishing-worker",
+  "tenant_id": "tenant_default",
+  "target_type": "index_projection",
+  "target_id": "col_default:idxv_col_default_active",
+  "payload": {
+    "collection_id": "col_default",
+    "index_version_id": "idxv_col_default_active",
+    "sync_mode": "lifecycle_patch",
+    "doc_id": "doc_001",
+    "lifecycle_state": "ARCHIVED",
+    "available_int": 0
+  }
+}

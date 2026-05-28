@@ -1,0 +1,8 @@
+{
+  "scope": {
+    "tenant_id": "tenant_acme",
+    "collection_id": "col_default",
+    "doc_id": "doc_01JABC999999",
+    "evidence_id": "chunk_01JABC000000"
+  }
+}

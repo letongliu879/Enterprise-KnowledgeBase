@@ -39,6 +39,7 @@ from .pipeline_utils import report_asset_path, write_json_asset
 from .stage_task_worker import make_stage_task_deliver, make_stage_task_filter
 from .stage_runtime import execute_conversion_task, execute_publishing_task, execute_review_task
 from .stage_runtime import json_summary
+from .stages.pure_stages import _logical_document_id
 from .stages.protocol import StageContext
 
 if TYPE_CHECKING:
@@ -162,6 +163,9 @@ class IngestionPipeline:
         finally:
             save_session.close()
         return job
+
+    def _logical_document_id(self, source_file_path: str) -> str:
+        return _logical_document_id(source_file_path)
 
     def _persist_review_telemetry(self, ctx: StageContext, review_task: Any) -> None:
         if self._telemetry_store is None:

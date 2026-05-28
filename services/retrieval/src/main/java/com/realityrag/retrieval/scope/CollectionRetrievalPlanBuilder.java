@@ -49,6 +49,7 @@ public class CollectionRetrievalPlanBuilder {
         List<PublishedDocumentRecord> publishedDocs = publishedDocumentSource.listByCollection(collectionId);
 
         return new CollectionRetrievalPlan(
+            indexRegistry.tenantId(),
             collectionId,
             indexRegistry.indexVersionId(),
             indexRegistry.opensearchIndex(),

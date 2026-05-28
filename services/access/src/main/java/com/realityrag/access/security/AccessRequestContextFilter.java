@@ -39,7 +39,9 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
         if (path == null) {
             return false;
         }
-        return path.equals("/health") || path.startsWith("/actuator");
+        return path.equals("/health")
+            || path.startsWith("/actuator")
+            || path.startsWith("/internal");
     }
 
     @Override

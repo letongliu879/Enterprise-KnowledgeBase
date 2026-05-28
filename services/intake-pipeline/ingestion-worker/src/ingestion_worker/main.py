@@ -26,7 +26,7 @@ from reality_rag_persistence.metrics import intake_metrics
 from reality_rag_persistence.telemetry import TelemetryStore
 
 from .agent_reviewer import AgentReviewError
-from .converters.markitdown_converter import MarkItDownConverter
+from .converters.ragflow_converter import RAGFlowConverter
 from .indexing_service import get_indexing_service, IndexJobError
 from .monitoring import MonitorRunRequest, MonitorRunSummary, MonitoredIngestionService
 from .outbox_deliver import make_deliver_callback
@@ -34,7 +34,7 @@ from .pipeline import IngestionPipeline
 
 logger = logging.getLogger(__name__)
 
-_converter = MarkItDownConverter()
+_converter = RAGFlowConverter()
 _pipeline: IngestionPipeline | None = None
 _monitored_ingestion_service: MonitoredIngestionService | None = None
 _outbox_dispatcher_task: asyncio.Task[None] | None = None
@@ -81,10 +81,6 @@ def get_monitored_ingestion_service() -> MonitoredIngestionService:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     global _outbox_dispatcher_task
-    if os.environ.get("APP_ENV", "development").lower() == "production":
-        from reality_rag_indexing import get_index_backend
-        get_index_backend()
-
     # Phase 7: Start outbox dispatcher background poller
     _outbox_dispatcher_task = asyncio.create_task(_outbox_poll_loop())
     try:

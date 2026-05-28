@@ -1,0 +1,19 @@
+{
+  "valid": false,
+  "profile_hash": "sha256:000000000000",
+  "warnings": [
+    "chunk_token_num is below recommended minimum of 256"
+  ],
+  "errors": [
+    {
+      "code": "INVALID_PARSER_ID",
+      "message": "Parser 'unsupported_parser' is not recognized by indexing runtime"
+    },
+    {
+      "code": "MISSING_REQUIRED_CONFIG",
+      "message": "parser_config.chunk_token_num is required"
+    }
+  ],
+  "runtime_owner": "indexing",
+  "validator_version": "indexing-v0.1.0"
+}

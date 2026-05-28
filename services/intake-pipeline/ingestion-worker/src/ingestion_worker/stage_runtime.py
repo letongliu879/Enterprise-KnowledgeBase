@@ -195,6 +195,7 @@ def run_conversion(session, intake_job_id: str, pipeline) -> None:
     task, attempt = start_stage(session, intake_job_id, StageName.CONVERSION, source_file.content_hash)
     if task is None or attempt is None:
         return
+    session.commit()
     _run_conversion_core(session, job, source_file, document_repo, ctx, task, attempt, pipeline)
 
 
@@ -215,6 +216,7 @@ def execute_conversion_task(
     )
     if attempt is None:
         return should_ack
+    session.commit()
     _run_conversion_core(session, job, source_file, document_repo, ctx, task, attempt, pipeline)
     return True
 
@@ -287,6 +289,7 @@ def run_review(session, intake_job_id: str, pipeline) -> None:
     task, attempt = start_stage(session, intake_job_id, StageName.AGENT_REVIEW, source_file.content_hash)
     if task is None or attempt is None:
         return
+    session.commit()
     _run_review_core(session, job, source_file, ctx, task, attempt, pipeline, conv_row)
 
 
@@ -318,6 +321,7 @@ def execute_review_task(
     )
     if attempt is None:
         return should_ack
+    session.commit()
     _run_review_core(session, job, source_file, ctx, task, attempt, pipeline, conv_row)
     return True
 
@@ -401,6 +405,7 @@ def run_publishing(session, intake_job_id: str) -> None:
     task, attempt = start_stage(session, intake_job_id, StageName.PUBLISHING, ctx.final_doc_id)
     if task is None or attempt is None:
         return
+    session.commit()
     _run_publishing_core(session, job, document_repo, policy_repo, ctx, task, attempt)
 
 
@@ -454,6 +459,7 @@ def execute_publishing_task(
     )
     if attempt is None:
         return should_ack
+    session.commit()
     _run_publishing_core(session, job, document_repo, policy_repo, ctx, task, attempt)
     return True
 

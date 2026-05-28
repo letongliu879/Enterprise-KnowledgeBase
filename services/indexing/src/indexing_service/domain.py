@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from indexing_service._compat import StrEnum, utc_now
 
@@ -21,6 +21,7 @@ class IndexVersionStatus(StrEnum):
     FAILED = "FAILED"
     DISCARDED = "DISCARDED"
     ROLLED_BACK = "ROLLED_BACK"
+    INDEXED = "indexed"  # Java IndexProjectionSyncController legacy value
 
 
 class BuildJobRecord(BaseModel):
@@ -33,7 +34,7 @@ class BuildJobRecord(BaseModel):
     index_version_id: str
     idempotency_key: str
     accepted_command: str = "IndexBuildRequested"
-    failure_reason: str | None = None
+    error_message: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     completed_at: datetime | None = None
 
@@ -67,13 +68,15 @@ class IndexVersionActionReceipt(BaseModel):
     removed_chunk_count: int = 0
 
 
-class ChunkRecordRecord(BaseModel):
+class ChunkRecord(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     chunk_id: str
     record_id: str = ""
     kb_id: str = ""
     tenant_id: str
     collection_id: str
-    final_doc_id: str
+    final_doc_id: str = Field(alias="doc_id")
     index_version_id: str
     document_index_revision_id: str
     chunk_type: str
@@ -124,6 +127,27 @@ class ChunkRecordRecord(BaseModel):
     chunk_hash: str
 
 
+class ChunkRevisionRecord(BaseModel):
+    revision_id: str
+    base_evidence_id: str
+    doc_id: str
+    collection_id: str
+    tenant_id: str
+    operation: str = "update"
+    content: str | None = None
+    vector_text: str | None = None
+    section_path: list[str] | None = None
+    metadata_patch: dict[str, object] | None = None
+    citation_payload: dict[str, object] | None = None
+    status: str = "draft"
+    superseded_evidence_id: str | None = None
+    superseded_by: str | None = None
+    idempotency_key: str | None = None
+    trace_id: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class ParseSnapshotRecord(BaseModel):
     parse_snapshot_id: str
     request_id: str
@@ -135,6 +159,10 @@ class ParseSnapshotRecord(BaseModel):
     source_suffix: str
     parser_id: str
     parser_backend: str
+    parser_profile_id: str = ""
+    chunk_profile_id: str = ""
+    document_family: str = ""
+    effective_policy: str = ""
     collection_parser_config: dict[str, object] = Field(default_factory=dict)
     parser_config: dict[str, object] = Field(default_factory=dict)
     input_hash: str

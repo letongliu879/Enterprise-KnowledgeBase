@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from indexing_service.domain import IndexVersionActionReceipt
-from indexing_service.repository import InMemoryIndexingRepository
+from indexing_service.repository import IndexingRepository
 
 
 class RollbackService:
-    def __init__(self, repository: InMemoryIndexingRepository) -> None:
+    def __init__(self, repository: IndexingRepository) -> None:
         self.repository = repository
 
     def rollback(self, index_version_id: str) -> IndexVersionActionReceipt:

@@ -5,6 +5,7 @@ import java.util.Map;
 
 public record AccessRequestContext(
     String apiKeyId,
+    String tenantId,
     String agentTypeId,
     String agentInstanceId,
     List<String> knowledgeScopes,
@@ -16,6 +17,7 @@ public record AccessRequestContext(
 ) {
     public AccessRequestContext {
         apiKeyId = apiKeyId == null || apiKeyId.isBlank() ? "unknown" : apiKeyId;
+        tenantId = tenantId == null || tenantId.isBlank() ? "" : tenantId;
         agentTypeId = agentTypeId == null || agentTypeId.isBlank() ? "unknown" : agentTypeId;
         agentInstanceId = agentInstanceId == null || agentInstanceId.isBlank() ? "unknown" : agentInstanceId;
         knowledgeScopes = knowledgeScopes == null ? List.of() : List.copyOf(knowledgeScopes);

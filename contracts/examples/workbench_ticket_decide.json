@@ -1,0 +1,8 @@
+{
+  "decision_request_id": "dec_01HABCDEF123456789",
+  "action": "APPROVE",
+  "reason": "All quality issues have been addressed. Table extraction verified manually.",
+  "actor": "user-001",
+  "tenant_id": "tenant_acme",
+  "collection_id": "col_default"
+}

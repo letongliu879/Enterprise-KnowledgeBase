@@ -1,0 +1,50 @@
+{
+  "ticket_id": "ticket_01HABCDEF123456789",
+  "decision": "REVIEW",
+  "quality_findings": [
+    {
+      "category": "table_extraction",
+      "severity": "major",
+      "message": "Table on page 12 may have merged cells incorrectly",
+      "evidence_anchor": "anchor_table_p12"
+    },
+    {
+      "category": "ocr_confidence",
+      "severity": "minor",
+      "message": "Low OCR confidence on scanned page 5",
+      "evidence_anchor": "anchor_ocr_p05"
+    }
+  ],
+  "risk_flags": [
+    {
+      "flag_type": "sensitive_data",
+      "description": "Document contains potential PII in appendix",
+      "confidence": 0.72
+    }
+  ],
+  "evidence_anchors": [
+    {
+      "anchor_id": "anchor_table_p12",
+      "doc_id": "doc_annual_report_2025",
+      "evidence_id": "ev_012_table_01",
+      "content": "Revenue breakdown table",
+      "page_span": {
+        "page_from": 12,
+        "page_to": 12
+      }
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "version": "v2.1.0",
+  "prompt_hash": "sha256:a1b2c3d4...",
+  "suggested_fixes": [
+    {
+      "fix_type": "reparse_table",
+      "description": "Re-parse page 12 with table-aware parser",
+      "target_evidence_id": "ev_012_table_01"
+    }
+  ],
+  "degraded_reason": null,
+  "failure_reason": null,
+  "created_at": "2026-05-27T10:10:00Z"
+}

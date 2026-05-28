@@ -3,16 +3,35 @@ package com.realityrag.access.trace;
 import com.realityrag.access.contracts.InternalRetrieveRequest;
 import com.realityrag.access.contracts.KnowledgeContext;
 import com.realityrag.access.security.AccessRequestContext;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
-public class LoggingAccessTraceRecorder implements AccessTraceRecorder {
+public class LoggingAccessTraceRecorder {
     private static final Logger log = LoggerFactory.getLogger(LoggingAccessTraceRecorder.class);
 
-    @Override
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    public LoggingAccessTraceRecorder(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+    }
+
     public void recordRequestAccepted(String queryId, String traceId, AccessRequestContext context) {
+        try {
+            ensureTablesExist();
+            Map<String, Object> details = contextDetails(queryId, traceId, context);
+            upsertTrace(queryId, traceId, context, "ACCEPTED", "dbg://access/" + queryId, 0, details);
+            insertStep(traceId, "access.request_accepted", "SUCCEEDED", "api_key_id=" + context.apiKeyId(), details);
+        } catch (Exception sqlError) {
+            log.warn("ACCESS_AUDIT trace recording skipped due to SQL error: {}", sqlError.getMessage());
+        }
         log.info(
             "ACCESS_AUDIT event=request_accepted query_id={} trace_id={} api_key_id={} agent_type_id={} agent_instance_id={} client_type={} knowledge_scopes={} max_context_tokens={}",
             queryId,
@@ -26,19 +45,22 @@ public class LoggingAccessTraceRecorder implements AccessTraceRecorder {
         );
     }
 
-    @Override
-    public void recordRateLimitChecked(String queryId, String traceId, AccessRequestContext context) {
-        log.info(
-            "ACCESS_AUDIT event=rate_limit_checked query_id={} trace_id={} agent_instance_id={} client_type={}",
-            queryId,
-            traceId,
-            context.agentInstanceId(),
-            context.clientType()
-        );
-    }
-
-    @Override
     public void recordRetrievalCall(InternalRetrieveRequest request) {
+        try {
+            ensureTablesExist();
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("query_id", request.queryId());
+            details.put("trace_id", request.traceId());
+            details.put("principal_id", request.principal() == null ? "" : request.principal().principalId());
+            details.put("collection_scope", request.collectionScope());
+            details.put("retrieval_profile_id", request.retrievalProfileId());
+            details.put("debug_level", request.debugLevel());
+            details.put("max_context_tokens", request.maxContextTokens());
+            details.put("query_chars", request.queryText() == null ? 0 : request.queryText().length());
+            insertStep(request.traceId(), "access.retrieval_call", "SUCCEEDED", "collections=" + request.collectionScope(), details);
+        } catch (Exception sqlError) {
+            log.warn("ACCESS_AUDIT trace recording skipped due to SQL error: {}", sqlError.getMessage());
+        }
         log.info(
             "ACCESS_AUDIT event=retrieval_call query_id={} trace_id={} principal_id={} collection_scope={} retrieval_profile_id={} debug_level={} max_context_tokens={} query_chars={}",
             request.queryId(),
@@ -52,8 +74,23 @@ public class LoggingAccessTraceRecorder implements AccessTraceRecorder {
         );
     }
 
-    @Override
     public void recordResponse(String queryId, String traceId, KnowledgeContext response) {
+        try {
+            ensureTablesExist();
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("query_id", queryId);
+            details.put("trace_id", traceId);
+            details.put("result_count", response.resultChunks().size());
+            details.put("citation_count", response.citations().size());
+            details.put("index_versions", response.indexVersionUsed());
+            details.put("chunk_ids", response.resultChunks().stream().map(KnowledgeContext.ResultChunk::chunkId).toList());
+            details.put("final_doc_ids", response.resultChunks().stream().map(KnowledgeContext.ResultChunk::finalDocId).distinct().toList());
+            details.put("debug_ref", response.retrievalDebug().getOrDefault("debug_ref", "none"));
+            updateTrace(queryId, "SUCCEEDED", String.valueOf(response.retrievalDebug().getOrDefault("debug_ref", "dbg://access/" + queryId)), response.resultChunks().size(), details);
+            insertStep(traceId, "access.response", "SUCCEEDED", "result_count=" + response.resultChunks().size(), details);
+        } catch (Exception sqlError) {
+            log.warn("ACCESS_AUDIT trace recording skipped due to SQL error: {}", sqlError.getMessage());
+        }
         log.info(
             "ACCESS_AUDIT event=response query_id={} trace_id={} result_count={} citation_count={} token_budget_used={} debug_ref={} index_versions={}",
             queryId,
@@ -66,8 +103,17 @@ public class LoggingAccessTraceRecorder implements AccessTraceRecorder {
         );
     }
 
-    @Override
     public void recordFailure(String queryId, String traceId, AccessRequestContext context, Exception error) {
+        try {
+            ensureTablesExist();
+            Map<String, Object> details = contextDetails(queryId, traceId, context);
+            details.put("error_type", error.getClass().getSimpleName());
+            details.put("error_message", error.getMessage());
+            upsertTrace(queryId, traceId, context, "FAILED", "dbg://access/" + queryId, 0, details);
+            insertStep(traceId, "access.failure", "FAILED", error.getMessage(), details);
+        } catch (Exception sqlError) {
+            log.warn("ACCESS_AUDIT trace recording skipped due to SQL error: {}", sqlError.getMessage());
+        }
         log.warn(
             "ACCESS_AUDIT event=failure query_id={} trace_id={} api_key_id={} agent_type_id={} agent_instance_id={} client_type={} error_type={} error_message={}",
             queryId,
@@ -79,5 +125,142 @@ public class LoggingAccessTraceRecorder implements AccessTraceRecorder {
             error.getClass().getSimpleName(),
             error.getMessage()
         );
+    }
+
+    private void upsertTrace(
+        String queryId,
+        String traceId,
+        AccessRequestContext context,
+        String status,
+        String debugRef,
+        int resultCount,
+        Map<String, Object> details
+    ) {
+        String runTraceId = "access_" + queryId;
+        int updated = jdbcTemplate.update(
+            """
+                UPDATE run_traces
+                SET root_status = ?, debug_ref = ?, result_count = ?, extra_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE run_trace_id = ?
+                """,
+            status,
+            debugRef,
+            resultCount,
+            json(details),
+            runTraceId
+        );
+        if (updated == 0) {
+            jdbcTemplate.update(
+                """
+                    INSERT INTO run_traces (
+                        run_trace_id, trace_id, run_kind, tenant_id, collection_id, principal_id,
+                        query_id, index_version_id, profile_id, root_status, debug_ref, result_count,
+                        extra_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                runTraceId,
+                traceId,
+                "access",
+                "",
+                String.join(",", context.knowledgeScopes()),
+                context.apiKeyId() + "/" + context.agentInstanceId(),
+                queryId,
+                "",
+                "",
+                status,
+                debugRef,
+                resultCount,
+                json(details)
+            );
+        }
+    }
+
+    private void updateTrace(String queryId, String status, String debugRef, int resultCount, Map<String, Object> details) {
+        jdbcTemplate.update(
+            """
+                UPDATE run_traces
+                SET root_status = ?, debug_ref = ?, result_count = ?, extra_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE run_trace_id = ?
+                """,
+            status,
+            debugRef,
+            resultCount,
+            json(details),
+            "access_" + queryId
+        );
+    }
+
+    private void insertStep(String traceId, String stepName, String status, String summary, Map<String, Object> details) {
+        jdbcTemplate.update(
+            """
+                INSERT INTO run_steps (trace_id, step_name, status, summary, details_json, created_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+            traceId,
+            stepName,
+            status,
+            summary == null ? "" : summary,
+            json(details)
+        );
+    }
+
+    private Map<String, Object> contextDetails(String queryId, String traceId, AccessRequestContext context) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("query_id", queryId);
+        details.put("trace_id", traceId);
+        details.put("api_key_id", context.apiKeyId());
+        details.put("agent_type_id", context.agentTypeId());
+        details.put("agent_instance_id", context.agentInstanceId());
+        details.put("client_type", context.clientType());
+        details.put("knowledge_scopes", context.knowledgeScopes());
+        details.put("roles", context.roles());
+        details.put("max_context_tokens", context.maxContextTokens());
+        return details;
+    }
+
+    private String json(Map<String, Object> details) {
+        try {
+            return objectMapper.writeValueAsString(details);
+        }
+        catch (Exception error) {
+            throw new IllegalStateException("Failed to serialize access audit details", error);
+        }
+    }
+
+    private void ensureTablesExist() {
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS run_traces (
+                run_trace_id VARCHAR(128) PRIMARY KEY,
+                trace_id VARCHAR(64) NOT NULL,
+                run_kind VARCHAR(64) NOT NULL,
+                tenant_id VARCHAR(64) NOT NULL,
+                collection_id VARCHAR(64) NOT NULL,
+                principal_id VARCHAR(128) NOT NULL,
+                query_id VARCHAR(128) NOT NULL,
+                index_version_id VARCHAR(64) NOT NULL,
+                profile_id VARCHAR(64) NOT NULL,
+                root_status VARCHAR(32) NOT NULL,
+                debug_ref VARCHAR(1024) NOT NULL,
+                result_count INTEGER NOT NULL,
+                source_file_id VARCHAR(64),
+                intake_job_id VARCHAR(64),
+                doc_id VARCHAR(128),
+                approval_ticket_id VARCHAR(64),
+                extra_json CLOB,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            )
+            """);
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS run_steps (
+                run_step_id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                trace_id VARCHAR(64) NOT NULL,
+                step_name VARCHAR(64) NOT NULL,
+                status VARCHAR(32) NOT NULL,
+                summary VARCHAR(4096) NOT NULL,
+                details_json CLOB,
+                created_at TIMESTAMP
+            )
+            """);
     }
 }

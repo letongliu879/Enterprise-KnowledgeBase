@@ -82,4 +82,9 @@ public class FileProjectionRetrievalProfileStore implements RetrievalProfileStor
         }
         return Instant.parse(String.valueOf(value));
     }
+
+    @Override
+    public void upsert(RetrievalProfile profile) {
+        throw new UnsupportedOperationException("FileProjectionRetrievalProfileStore does not support upsert");
+    }
 }

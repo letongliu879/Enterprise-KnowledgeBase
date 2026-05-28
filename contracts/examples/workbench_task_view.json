@@ -1,0 +1,14 @@
+{
+  "upload_id": "upload_01HABCDEF123456789",
+  "status": "reviewing",
+  "progress_pct": 75,
+  "source_file_state": "READY",
+  "intake_job_state": "REVIEW_SUCCEEDED",
+  "parse_snapshot_state": "PARSED",
+  "ticket_state": "PENDING",
+  "published_document_state": null,
+  "filename": "annual_report_2025.pdf",
+  "collection_id": "col_default",
+  "created_at": "2026-05-27T10:00:00Z",
+  "updated_at": "2026-05-27T10:15:00Z"
+}

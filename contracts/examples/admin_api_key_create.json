@@ -1,0 +1,9 @@
+{
+  "tenant_id": "tnt_default",
+  "display_name": "New Integration",
+  "knowledge_scopes": ["col_policy"],
+  "roles": ["agent"],
+  "debug_permission": false,
+  "token_budget_limit": 2048,
+  "expires_at": "2027-05-27T00:00:00Z"
+}

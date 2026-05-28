@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from indexing_service.domain import ChunkRecordRecord
+from indexing_service.domain import ChunkRecord
 
 from ..models import ChunkRegistryModel
 
@@ -18,7 +18,7 @@ class ChunkRegistryRepository:
         *,
         index_version_id: str,
         final_doc_id: str,
-        chunks: list[ChunkRecordRecord],
+        chunks: list[ChunkRecord],
     ) -> None:
         (
             self._session.query(ChunkRegistryModel)
@@ -46,18 +46,18 @@ class ChunkRegistryRepository:
             )
         self._session.flush()
 
-    def list_by_index_version(self, index_version_id: str) -> list[ChunkRecordRecord]:
+    def list_by_index_version(self, index_version_id: str) -> list[ChunkRecord]:
         rows = (
             self._session.query(ChunkRegistryModel)
             .filter(ChunkRegistryModel.index_version_id == index_version_id)
             .order_by(ChunkRegistryModel.created_at)
             .all()
         )
-        return [ChunkRecordRecord.model_validate(row.payload_json or {}) for row in rows]
+        return [ChunkRecord.model_validate(row.payload_json or {}) for row in rows]
 
-    def list_all(self) -> list[ChunkRecordRecord]:
+    def list_all(self) -> list[ChunkRecord]:
         rows = self._session.query(ChunkRegistryModel).order_by(ChunkRegistryModel.created_at).all()
-        return [ChunkRecordRecord.model_validate(row.payload_json or {}) for row in rows]
+        return [ChunkRecord.model_validate(row.payload_json or {}) for row in rows]
 
     def delete_by_index_version(self, index_version_id: str) -> int:
         deleted = (

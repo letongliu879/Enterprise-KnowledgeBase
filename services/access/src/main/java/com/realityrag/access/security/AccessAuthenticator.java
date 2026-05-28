@@ -1,6 +1,6 @@
 package com.realityrag.access.security;
 
-import com.realityrag.access.support.AccessUnauthenticatedException;
+import com.realityrag.access.support.AccessException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import org.springframework.stereotype.Component;
@@ -18,16 +18,19 @@ public class AccessAuthenticator {
         String agentInstanceId = requiredHeader(request, "X-Agent-Instance-Id");
         var registration = apiKeyRegistry.resolve(apiKey);
         if (registration == null) {
-            throw new AccessUnauthenticatedException("Unknown API key");
+            throw new AccessException.Unauthenticated("Unknown API key");
         }
 
         LinkedHashMap<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("api_key_id", registration.apiKeyId());
+        attributes.put("tenant_id", registration.tenantId());
         attributes.put("agent_type_id", registration.agentTypeId());
         attributes.put("agent_instance_id", agentInstanceId);
+        attributes.put("projection_version", registration.projectionVersion());
 
         return new AccessRequestContext(
             registration.apiKeyId(),
+            registration.tenantId(),
             registration.agentTypeId(),
             agentInstanceId,
             registration.knowledgeScopes(),
@@ -53,7 +56,7 @@ public class AccessAuthenticator {
     private String requiredHeader(HttpServletRequest request, String name) {
         String value = optionalHeader(request, name);
         if (value == null) {
-            throw new AccessUnauthenticatedException("Missing header: " + name);
+            throw new AccessException.Unauthenticated("Missing header: " + name);
         }
         return value;
     }

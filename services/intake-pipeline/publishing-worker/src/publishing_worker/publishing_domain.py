@@ -15,10 +15,12 @@ from reality_rag_contracts import (
     CanonicalMetadata,
     DocumentPolicy,
     PublishStatus,
+    PublishedDocumentState,
 )
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.document_policies import DocumentPolicyRepository
+from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
 
 
 class PublishingService:
@@ -86,3 +88,30 @@ class PublishingService:
             raise
         finally:
             session.close()
+
+
+def update_published_document_state(
+    final_doc_id: str,
+    new_state: PublishedDocumentState,
+    *,
+    actor_id: str = "system",
+    reason: str = "",
+) -> tuple[bool, str]:
+    """Update published document state. Returns (success, previous_state)."""
+    session = get_session()
+    try:
+        repo = PublishedDocumentRepository(session)
+        doc = repo.get_by_final_doc_id(final_doc_id)
+        if doc is None:
+            raise ValueError(f"Published document not found: {final_doc_id}")
+        previous_state = doc.state.value if doc.state else ""
+        if previous_state == new_state.value:
+            return True, previous_state
+        repo.update_state(doc.published_document_id, new_state, previous_state=previous_state)
+        session.commit()
+        return True, previous_state
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

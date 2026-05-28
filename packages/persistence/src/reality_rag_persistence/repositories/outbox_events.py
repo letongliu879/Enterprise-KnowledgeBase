@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from reality_rag_contracts import OutboxEvent, OutboxStatus
@@ -64,7 +65,12 @@ class OutboxEventRepository:
         compare_time = now.replace(tzinfo=None) if now.tzinfo else now
         rows = (
             self._session.query(OutboxEventModel)
-            .filter(OutboxEventModel.status == OutboxStatus.PENDING.value)
+            .filter(
+                or_(
+                    OutboxEventModel.status == OutboxStatus.PENDING.value,
+                    OutboxEventModel.status == OutboxStatus.FAILED.value,
+                )
+            )
             .filter(OutboxEventModel.next_attempt_at <= compare_time)
             .order_by(OutboxEventModel.next_attempt_at)
             .limit(limit)

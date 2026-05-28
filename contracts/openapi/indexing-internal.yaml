@@ -84,11 +84,11 @@ paths:
                     type: string
                   status:
                     type: string
-                  final_doc_id:
+                  doc_id:
                     type: string
                   index_version_id:
                     type: string
-                required: [build_job_id, build_request_id, status, final_doc_id, index_version_id]
+                required: [build_job_id, build_request_id, status, doc_id, index_version_id]
   /internal/parse-snapshots/{parse_snapshot_id}:
     get:
       operationId: getParseSnapshot
@@ -145,6 +145,108 @@ paths:
             application/json:
               schema:
                 $ref: ../schemas/IndexVersion.schema.json
+  /internal/chunks/{evidence_id}/revisions:
+    post:
+      operationId: createChunkRevision
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ChunkRevisionRequest.schema.json
+      responses:
+        "200":
+          description: Chunk revision created or existing (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ChunkRevisionView.schema.json
+        "404":
+          description: Base chunk not found
+        "409":
+          description: Conflict (tenant/collection mismatch)
+  /internal/chunk-revisions/{revision_id}:
+    get:
+      operationId: getChunkRevision
+      parameters:
+        - name: revision_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chunk revision detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ChunkRevisionView.schema.json
+        "404":
+          description: Revision not found
+  /internal/chunk-revisions/{revision_id}/materialize:
+    post:
+      operationId: materializeChunkRevision
+      parameters:
+        - name: revision_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ChunkRevisionMaterializeRequest.schema.json
+      responses:
+        "200":
+          description: Materialization result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revision_id:
+                    type: string
+                  status:
+                    type: string
+                  opensearch_record_count:
+                    type: integer
+                  qdrant_point_count:
+                    type: integer
+                  superseded_evidence_id:
+                    type: string
+                required: [revision_id, status]
+        "404":
+          description: Revision not found
+        "500":
+          description: Materialization failed (revision status set to failed)
+  /internal/parser-profiles/validate:
+    post:
+      operationId: validateParserProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ParserProfileValidateRequest.schema.json
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParserProfileValidateResponse.schema.json
+        "400":
+          description: Invalid request body
+        "500":
+          description: Internal validation error
   /health:
     get:
       operationId: indexingHealth

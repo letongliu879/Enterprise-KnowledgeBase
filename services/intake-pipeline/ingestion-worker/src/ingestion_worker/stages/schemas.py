@@ -55,6 +55,9 @@ class ConversionStageInput:
 
     # Pre-computed source hash (avoids re-reading file in pure executor).
     source_hash: str = ""
+    source_file_id: str = ""
+    trace_id: str = ""
+    source_metadata: dict[str, str] = field(default_factory=dict)
 
     # [TRANSITIONAL] Dedup/version lookups currently hit the DB.
     # In target architecture these come from document-service queries.
@@ -98,6 +101,7 @@ class ConversionStageOutput:
     version: int = 1
     source_hash: str = ""
     version_conflict: VersionConflictInfo | None = None
+    parse_snapshot_id: str = ""
 
     # Control flags
     dedup_skipped: bool = False

@@ -1,0 +1,19 @@
+{
+  "valid": true,
+  "canonical_config": {
+    "bm25_weight": 0.3,
+    "vector_weight": 0.7,
+    "candidate_top_k": 20,
+    "similarity_threshold": 0.75,
+    "rerank_enabled": true,
+    "rerank_model": "bge-reranker-v2-m3",
+    "fail_policy": "fail_closed",
+    "expansion_policy": {},
+    "pack_budget": 1200
+  },
+  "profile_hash": "sha256:def789abc012",
+  "warnings": [],
+  "errors": [],
+  "runtime_owner": "retrieval",
+  "validator_version": "retrieval-v0.1.0"
+}

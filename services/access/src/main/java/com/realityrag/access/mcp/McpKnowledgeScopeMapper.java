@@ -2,7 +2,7 @@ package com.realityrag.access.mcp;
 
 import com.realityrag.access.contracts.ExternalRetrieveRequest;
 import com.realityrag.access.security.AccessRequestContext;
-import com.realityrag.access.support.AccessForbiddenException;
+import com.realityrag.access.support.AccessException;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -12,13 +12,13 @@ public class McpKnowledgeScopeMapper {
         String query,
         String knowledgeScope,
         String retrievalProfileId,
-        Integer maxContextTokens,
+        Integer tokenBudget,
         String debug,
         AccessRequestContext context
     ) {
         String scope = knowledgeScope.trim();
         if (!context.knowledgeScopes().contains(scope)) {
-            throw new AccessForbiddenException("Knowledge scope is not allowed for this agent integration");
+            throw new AccessException.Forbidden("Knowledge scope is not allowed for this agent integration");
         }
         return new ExternalRetrieveRequest(
             query,
@@ -30,7 +30,7 @@ public class McpKnowledgeScopeMapper {
             java.util.Map.of(),
             retrievalProfileId,
             null,
-            maxContextTokens,
+            tokenBudget,
             debug
         );
     }

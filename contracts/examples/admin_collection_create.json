@@ -1,0 +1,12 @@
+{
+  "collection_id": "col_new",
+  "tenant_id": "tnt_default",
+  "name": "New Collection",
+  "description": "A newly created collection.",
+  "lifecycle_state": "active",
+  "authority_level": 0,
+  "access_policy": {},
+  "default_parser_profile_id": "",
+  "default_retrieval_profile_id": "",
+  "default_approval_policy_id": ""
+}

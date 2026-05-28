@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from reality_rag_persistence.database import create_all, drop_all, override_url_for_testing
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "services" / "indexing" / "src"))
@@ -33,6 +34,15 @@ def _disable_live_model_calls(request: pytest.FixtureRequest, monkeypatch: pytes
         "EMBEDDING_API_KEY",
         "EMBEDDING_BASE_URL",
         "EMBEDDING_MODEL",
-    ):
+        ):
         monkeypatch.delenv(key, raising=False)
         os.environ.pop(key, None)
+
+
+@pytest.fixture(autouse=True)
+def _setup_persistent_indexing_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    override_url_for_testing("sqlite:///:memory:")
+    create_all()
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    yield
+    drop_all()

@@ -1,0 +1,22 @@
+{
+  "command_id": "cmd_01HABCDEF123456789",
+  "trace_id": "trc_01HABCDEF123456789",
+  "idempotency_key": "ce_01HABCDEF123456789",
+  "actor": "user-001",
+  "tenant_id": "tenant_acme",
+  "collection_id": "col_default",
+  "target_type": "chunk",
+  "target_id": "ev_001_section_3_2",
+  "payload": {
+    "evidence_id": "ev_001_section_3_2",
+    "doc_id": "doc_annual_report_2025",
+    "content": "Updated content for section 3.2 with corrected figures.",
+    "vector_text": "updated content section 3.2 corrected figures",
+    "section_path": ["Section 3", "3.2 Financial Summary"],
+    "metadata_patch": {
+      "confidence": 0.95
+    },
+    "edit_reason": "Corrected revenue figures per finance team review",
+    "operation": "update"
+  }
+}

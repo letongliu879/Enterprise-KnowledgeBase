@@ -4,7 +4,7 @@ from typing import Any
 
 from reality_rag_contracts import ChunkAsset, IndexAssetBundle, OpenSearchIndexRecord, QdrantPointRecord
 
-from indexing_service.domain import ChunkRecordRecord, IndexVersionRecord
+from indexing_service.domain import ChunkRecord, IndexVersionRecord
 
 
 def build_index_asset_bundle(
@@ -13,7 +13,7 @@ def build_index_asset_bundle(
     index_version: IndexVersionRecord,
     final_doc_id: str,
     canonical_source: str,
-    chunks: list[ChunkRecordRecord],
+    chunks: list[ChunkRecord],
 ) -> IndexAssetBundle:
     chunk_assets: list[ChunkAsset] = []
     opensearch_records: list[OpenSearchIndexRecord] = []
@@ -176,7 +176,7 @@ def build_index_asset_bundle(
     )
 
 
-def _bundle_metadata(chunk: ChunkRecordRecord) -> dict[str, Any]:
+def _bundle_metadata(chunk: ChunkRecord) -> dict[str, Any]:
     return {
         **chunk.metadata,
         "access_control": chunk.access_control,
@@ -193,7 +193,7 @@ def _token_estimate(text: str) -> int:
     return max(1, len(normalized.split()))
 
 
-def _document_metadata(chunks: list[ChunkRecordRecord]) -> dict[str, Any]:
+def _document_metadata(chunks: list[ChunkRecord]) -> dict[str, Any]:
     for chunk in chunks:
         metadata = chunk.metadata.get("doc_metadata")
         if isinstance(metadata, dict) and metadata:

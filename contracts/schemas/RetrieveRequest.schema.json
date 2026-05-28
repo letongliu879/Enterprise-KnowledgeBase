@@ -8,6 +8,9 @@
     "query_id": {
       "$ref": "./common.schema.json#/$defs/query_id"
     },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
     "trace_id": {
       "$ref": "./common.schema.json#/$defs/trace_id"
     },
@@ -21,7 +24,7 @@
       },
       "minItems": 1
     },
-    "query_text": {
+    "query": {
       "type": "string",
       "minLength": 1
     },
@@ -54,7 +57,7 @@
       "type": "boolean",
       "default": false
     },
-    "max_context_tokens": {
+    "token_budget": {
       "type": "integer",
       "minimum": 1
     },
@@ -67,7 +70,7 @@
     "trace_id",
     "principal",
     "collection_scope",
-    "query_text",
+    "query",
     "retrieval_profile_id",
     "debug_level"
   ]

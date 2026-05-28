@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: retrieval
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://127.0.0.1:5432/reality_rag}
+    username: ${DATABASE_USERNAME:reality}
+    password: ${DATABASE_PASSWORD:reality}
+    driver-class-name: ${DATABASE_DRIVER:org.postgresql.Driver}
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: non_null
@@ -15,26 +20,6 @@ management:
         include: health,info
 
 retrieval:
-  agent-access:
-    api-keys:
-      rr-agent-platform-dev:
-        secret: change-this-agent-secret-to-at-least-32-bytes
-        agent-type-id: kb_assistant
-        platform-id: enterprise_platform
-        tenant-id: tnt_default
-        knowledge-scopes: [col_policy, col_finance]
-        roles: [agent]
-        debug-permission: false
-        max-context-tokens: 4096
-      rr-agent-platform-ops:
-        secret: change-this-ops-agent-secret-at-least-32
-        agent-type-id: ops_assistant
-        platform-id: enterprise_platform
-        tenant-id: tnt_default
-        knowledge-scopes: [col_policy, col_finance, col_runbook]
-        roles: [agent, ops]
-        debug-permission: true
-        max-context-tokens: 8192
   backends:
     live-recall-enabled: false
     live-embedding-enabled: false
@@ -46,6 +31,7 @@ retrieval:
     reranker-api-key:
     reranker-model:
     live-prompt-strategies-enabled: false
+    require-live-backends: false
   search:
     fused-top-m: 60
     enable-rerank: true
@@ -84,3 +70,11 @@ retrieval:
     decay-breadcrumb: 0.7
     max-segments-per-file: 3
     max-total-chars: 48000
+  cache:
+    enabled: true
+    provider: noop
+    redis-url: ${REDIS_URL:redis://127.0.0.1:6379/0}
+    key-prefix: reality-rag:retrieval
+    query-embedding-ttl-seconds: 86400
+    recall-ttl-seconds: 60
+    fail-open: true
