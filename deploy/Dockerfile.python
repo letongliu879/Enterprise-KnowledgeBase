@@ -1,0 +1,46 @@
+# =============================================================================
+# Enterprise KnowledgeBase — Python Service Dockerfile (TEMPLATE)
+# =============================================================================
+# Usage:
+#   docker build -t ekb-<service> -f deploy/Dockerfile.python \
+#     --build-arg SERVICE_DIR=services/<name> .
+#
+# Verified: NOT YET — template only. Services currently run via smoke script.
+# =============================================================================
+
+FROM python:3.14-slim
+
+ARG SERVICE_DIR
+ENV SERVICE_DIR=${SERVICE_DIR}
+
+RUN pip install --no-cache-dir uvicorn[standard] pydantic fastapi
+
+WORKDIR /app
+
+# Copy packages (shared Python libs)
+COPY packages/contracts/ ./packages/contracts/
+COPY packages/persistence/ ./packages/persistence/
+COPY packages/documents/ ./packages/documents/
+COPY packages/ragflow_runtime/ ./packages/ragflow_runtime/
+
+# Copy all Python service source dirs (needed for PYTHONPATH imports)
+COPY services/admin/src/ ./services/admin/src/
+COPY services/workbench-api/src/ ./services/workbench-api/src/
+COPY services/indexing/src/ ./services/indexing/src/
+COPY services/intake-pipeline/src/ ./services/intake-pipeline/src/
+COPY services/intake-pipeline/approval-service/src/ ./services/intake-pipeline/approval-service/src/
+COPY services/intake-pipeline/publishing-worker/src/ ./services/intake-pipeline/publishing-worker/src/
+COPY services/intake-pipeline/ingestion-worker/src/ ./services/intake-pipeline/ingestion-worker/src/
+
+# Install the specific service + its deps
+RUN pip install --no-cache-dir -e ./packages/contracts/ && \
+    pip install --no-cache-dir -e ./packages/persistence/ && \
+    pip install --no-cache-dir -e ./packages/documents/
+
+# Build PYTHONPATH from all service src directories
+ENV PYTHONPATH=/app/services/admin/src:/app/services/workbench-api/src:/app/services/indexing/src:/app/services/intake-pipeline/src:/app/services/intake-pipeline/approval-service/src:/app/services/intake-pipeline/publishing-worker/src:/app/services/intake-pipeline/ingestion-worker/src:/app/packages/contracts/src:/app/packages/persistence/src:/app/packages/documents/src:/app/packages/ragflow_runtime/src
+
+EXPOSE 18080 18083 18084 18085 18086
+
+# Entry point: derived from SERVICE_DIR arg (caller must provide full command)
+# Example: CMD ["uvicorn", "admin_service.main:app", "--host", "0.0.0.0", "--port", "18084"]

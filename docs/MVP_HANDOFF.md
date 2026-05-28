@@ -111,7 +111,7 @@ py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-red
 |---|---|---|
 | Redis strict smoke | **PROVEN** — 32/32 PASS (2026-05-28): cache miss → hit → purge (deleted=3) → miss | Done |
 | OAuth/IdP SSO | **NOT IMPLEMENTED** — JWT issuer/audience verification exists, but no SSO login page, no JWKS endpoint, no external IdP integration | Integrate OAuth2/OIDC provider (Keycloak, Auth0, etc.) |
-| Production deployment | **NOT DONE** — all services run locally via `run_real_runtime_smoke.py` | Containerize, configure production profiles, deploy |
+| Production deployment | **TEMPLATES READY** — `deploy/docker-compose.yml`, `Dockerfile.python`, `Dockerfile.java`, `.env.example` created; container images NOT YET BUILT | Build images, test compose, deploy |
 | Concurrent/load testing | **NOT DONE** | Run load tests against retrieval and access endpoints |
 | UI/workbench frontend | **NOT DONE** | Build workbench UI and admin console frontend |
 | Retrieval cache purge granularity | Partial — `POST /internal/cache/purge` flushes ALL keys regardless of request parameters | Implement collection/doc-level purge |

@@ -98,10 +98,22 @@ py -3.14 scripts/run_real_runtime_smoke.py --keep-running
 | access (Java) | 18181 | `GET /health` |
 | retrieval (Java) | 18182 | `GET /health` |
 
+### Deployment
+
+`deploy/` contains docker-compose, Dockerfiles, and `.env.example`. See `deploy/README.md`.
+
+```bash
+cp deploy/.env.example deploy/.env          # edit with real values
+docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
+py -3.14 scripts/run_real_runtime_smoke.py  # services start as local OS processes
+```
+
+Application Docker images: **template only, not yet built**.
+
 ### Pending (next phase)
 
 - Workbench UI integration
-- Published chunk revision flow (requires indexing internal APIs)
+- Build and test application container images
 - OAuth/IdP SSO integration (JWT issuer/audience verification implemented; SSO UI + JWKS endpoint not done)
 - Concurrent/load testing
 
