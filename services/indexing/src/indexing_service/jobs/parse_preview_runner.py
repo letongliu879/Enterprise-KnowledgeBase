@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import urllib.request
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
@@ -8,6 +10,17 @@ from time import perf_counter
 from indexing_service.domain import ParseSnapshotRecord
 from indexing_service.metrics import InMemoryIndexingMetrics
 from indexing_service.parse_detection import ParseHintDetector
+
+
+def _read_bytes(source_binary_ref: str) -> bytes:
+    if source_binary_ref.startswith("s3://"):
+        s3_endpoint = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000").rstrip("/")
+        rest = source_binary_ref[5:]  # strip "s3://"
+        bucket, key = rest.split("/", 1)
+        url = f"{s3_endpoint}/{bucket}/{key}"
+        with urllib.request.urlopen(url) as resp:
+            return resp.read()
+    return Path(source_binary_ref).read_bytes()
 from indexing_service.parse_policy import ParsePolicyResolver
 from indexing_service.preview_contracts import ParsePreviewAccepted, ParsePreviewRequestedCommand
 from indexing_service.repository import IndexingRepository, create_indexing_repository
@@ -67,7 +80,7 @@ class ParsePreviewRunner:
             principal_id=command.source_system or "system",
             source_metadata=command.metadata,
         )
-        binary = Path(command.source_binary_ref).read_bytes()
+        binary = _read_bytes(command.source_binary_ref)
         policy = self._policy_resolver.resolve(
             filename=command.filename,
             mime_type=command.mime_type,

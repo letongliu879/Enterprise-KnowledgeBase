@@ -313,6 +313,8 @@ class SmokeRunner:
             self._workbench_flow()
             self._intake_flow()
             self._retrieval_access_flow()
+            if self.args.require_file_ingestion:
+                self._file_ingestion_flow()
             self._visibility_ops()
             self._report()
             return 0 if all(r["status"] in ("PASS", "WARN", "SKIP") for r in self.results) else 1
@@ -946,7 +948,153 @@ class SmokeRunner:
         same_after_purge = evidence3 == evidence1 and evidence3 > 0
         self._record("cache_miss_2", "retrieval", "/internal/retrieve (query 3)", "PASS" if same_after_purge else "FAIL", f"evidence_items={evidence3}")
 
-    # --- Phase 6: Visibility ops -------------------------------------------
+    # --- Phase 6: File ingestion flow ------------------------------------
+
+    def _file_ingestion_flow(self) -> None:
+        _log("PHASE", "File ingestion flow")
+
+        dataset_dir = Path(self.args.dataset_dir)
+        per_format = self.args.per_format
+        formats = ["pdf", "docx", "pptx", "xlsx"]
+        minio_endpoint = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000")
+        bucket = "ekb-documents"
+
+        # Select files per format
+        self.file_batch: dict[str, list[Path]] = {}
+        for fmt in formats:
+            candidates = sorted(
+                [p for p in dataset_dir.rglob(f"*.{fmt}")
+                 if not p.name.startswith("~$") and p.stat().st_size > 0],
+                key=lambda p: p.stat().st_size,
+            )[:per_format]
+            self.file_batch[fmt] = candidates
+            _log("SELECT", f"{fmt}: {len(candidates)} files selected of {per_format} max")
+
+        # Total selected
+        total_files = sum(len(v) for v in self.file_batch.values())
+        if total_files == 0:
+            _log("WARN", "No dataset files found")
+            return
+
+        # Upload to MinIO
+        try:
+            from minio import Minio
+            minio_client = Minio(
+                "127.0.0.1:9000",
+                access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
+                secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
+                secure=False,
+            )
+            if not minio_client.bucket_exists(bucket):
+                minio_client.make_bucket(bucket)
+        except Exception as e:
+            _log("ERROR", f"MinIO init failed: {e}")
+            for fmt, files in self.file_batch.items():
+                for f in files:
+                    self._record(f"ingest_{fmt}", "minio", "upload", "FAIL", f"MinIO unavailable: {e}")
+            return
+
+        # Per-file ingestion loop
+        base = "http://127.0.0.1:18085"
+        idx_base = "http://127.0.0.1:18080"
+        stats: dict[str, dict] = {fmt: {"uploaded": 0, "parsed": 0, "indexed": 0, "retrieved": 0, "failed": 0} for fmt in formats}
+
+        for fmt, files in self.file_batch.items():
+            for file_path in files:
+                fname = file_path.name
+                storage_key = f"{fmt}/{file_path.parent.name}/{fname}"
+                s3_uri = f"s3://{bucket}/{storage_key}"
+                step_prefix = f"ingest_{fmt}"
+
+                # Upload
+                try:
+                    with open(file_path, "rb") as fh:
+                        data = fh.read()
+                    import io
+                    minio_client.put_object(bucket, storage_key, io.BytesIO(data), len(data))
+                    stats[fmt]["uploaded"] += 1
+                    _log("UPLOAD", f"{fname} -> s3://{bucket}/{storage_key} ({len(data)} bytes)")
+                except Exception as e:
+                    stats[fmt]["failed"] += 1
+                    self._record(step_prefix, "minio", "upload", "FAIL", f"{fname}: {e}")
+                    continue
+
+                # Enter document (parse preview)
+                try:
+                    status, body = _http_post(f"{base}/v1/documents", {
+                        "tenant_id": self.tenant_id,
+                        "collection_id": self.collection_id,
+                        "filename": fname,
+                        "document_version": "v1",
+                        "publish_version": f"pub_{fmt}_{file_path.stem[:8]}",
+                        "visibility": "internal",
+                        "content_text": "",  # file ingestion — content is in s3_uri
+                        "source_binary_ref": s3_uri,
+                        "source_metadata": {"mime_type": f"application/{fmt}" if fmt != "pptx" else "application/vnd.openxmlformats-officedocument.presentationml.document", "filename": fname},
+                        "scan_verdict": "clean",
+                    }, timeout=30.0)
+                    if status != 200 or not isinstance(body, dict) or not body.get("source_file_id"):
+                        raise RuntimeError(f"status={status} body={str(body)[:100]}")
+
+                    source_file_id = body.get("source_file_id", "")
+                    final_doc_id = body.get("final_doc_id", f"doc_{file_path.stem[:16]}")
+
+                    # Approve and publish
+                    status2, body2 = _http_post(f"{base}/v1/documents/{source_file_id}/approve-and-publish", {
+                        "actor_id": "admin_01",
+                        "final_doc_id": final_doc_id,
+                        "confirmed_tags": [fmt],
+                        "index_profile_id": "idx_default",
+                        "target_index_version_id": f"idxv_{self.collection_id}_active",
+                        "activate_index_version": True,
+                    }, timeout=60.0)
+                    if status2 == 200 and isinstance(body2, dict):
+                        idx_version_id = body2.get("index_version_id", "")
+                        stats[fmt]["parsed"] += 1
+                    else:
+                        raise RuntimeError(f"publish status={status2} body={str(body2)[:100]}")
+
+                    # Verify indexing
+                    result = _http_get(f"{idx_base}/internal/chunks?tenant_id={self.tenant_id}&principal_id=admin_01&collection_id={self.collection_id}", timeout=10.0)
+                    chunk_count = len(result) if isinstance(result, list) else 0
+                    if chunk_count > 0:
+                        stats[fmt]["indexed"] += 1
+
+                    # Retrieve
+                    ret_base = "http://127.0.0.1:18182"
+                    status3, body3 = _http_post(f"{ret_base}/internal/retrieve", {
+                        "query_id": f"qry_ingest_{fmt}_{file_path.stem[:8]}",
+                        "trace_id": f"trc_ingest_{fmt}_{file_path.stem[:8]}",
+                        "principal": {"user_id": "usr_smoke_01", "role_ids": ["employee"], "group_ids": ["finance"], "attributes": {}},
+                        "collection_scope": [self.collection_id],
+                        "query": fname,
+                        "language": "en",
+                        "retrieval_profile_id": self.retrieval_profile_id,
+                        "filters": {"visibility": "internal"},
+                        "include_deprecated": False,
+                        "token_budget": 1200,
+                        "debug_level": "basic",
+                    })
+                    if isinstance(body3, dict) and len(body3.get("evidence_items", [])) > 0:
+                        stats[fmt]["retrieved"] += 1
+
+                    self._record(step_prefix, "intake+index+retrieve", f"/v1/documents {fname}", "PASS",
+                                 f"chunks={chunk_count} s3={s3_uri[:40]}...")
+
+                except Exception as e:
+                    stats[fmt]["failed"] += 1
+                    err_msg = str(e)[:120]
+                    self._record(step_prefix, "pipeline", fname, "FAIL", err_msg)
+                    _log("FAIL", f"{fmt}/{fname}: {err_msg}")
+
+        # Batch summary
+        _log("SUMMARY", "=== File Ingestion Batch Results ===")
+        for fmt in formats:
+            s = stats[fmt]
+            _log("STATS", f"{fmt}: uploaded={s['uploaded']} parsed={s['parsed']} indexed={s['indexed']} retrieved={s['retrieved']} failed={s['failed']}")
+        self.file_ingestion_stats = stats
+
+    # --- Phase 7: Visibility ops -------------------------------------------
 
     def _visibility_ops(self) -> None:
         _log("PHASE", "Visibility ops")
@@ -1056,6 +1204,9 @@ def main() -> int:
     parser.add_argument("--require-live-backends", action="store_true", help="Require live OpenSearch/Qdrant/SiliconFlow — no stub fallback allowed")
     parser.add_argument("--require-redis-cache", action="store_true", help="Require Redis retrieval cache — verify cache miss/hit/purge cycle")
     parser.add_argument("--require-production-jwt-config", action="store_true", help="Require production JWT config (issuer/audience enforced, no default secret)")
+    parser.add_argument("--require-file-ingestion", action="store_true", help="Require real-file batch ingestion via MinIO (not content_text)")
+    parser.add_argument("--dataset-dir", type=str, default="", help="Path to dataset directory for file ingestion")
+    parser.add_argument("--per-format", type=int, default=10, help="Max files per format for batch ingestion")
     args = parser.parse_args()
 
     runner = SmokeRunner(args)

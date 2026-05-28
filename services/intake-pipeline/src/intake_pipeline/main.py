@@ -75,7 +75,8 @@ class EnterDocumentRequest(BaseModel):
     document_version: str = "v1"
     publish_version: str = "pub_001"
     visibility: str = "internal"
-    content_text: str
+    content_text: str = ""
+    source_binary_ref: str = ""
     source_metadata: dict[str, str] = Field(default_factory=dict)
     scan_verdict: str = "clean"
     scan_engine: str = "stub-av"
@@ -210,9 +211,19 @@ class IntakeService:
         canonical_asset_ref = doc_dir / "canonical.md"
         metadata_ref = doc_dir / "metadata.json"
         source_binary_ref = doc_dir / request.filename
-        sanitized_asset_ref.write_text(request.content_text, encoding="utf-8")
-        canonical_asset_ref.write_text(request.content_text, encoding="utf-8")
-        source_binary_ref.write_text(request.content_text, encoding="utf-8")
+        if request.source_binary_ref and request.source_binary_ref.startswith("s3://"):
+            import urllib.request as _ur
+            s3_ep = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000").rstrip("/")
+            _rest = request.source_binary_ref[5:]
+            _bucket, _key = _rest.split("/", 1)
+            _data = _ur.urlopen(f"{s3_ep}/{_bucket}/{_key}").read()
+            source_binary_ref.write_bytes(_data)
+            sanitized_asset_ref.write_bytes(_data)
+            canonical_asset_ref.write_bytes(_data)
+        else:
+            sanitized_asset_ref.write_text(request.content_text, encoding="utf-8")
+            canonical_asset_ref.write_text(request.content_text, encoding="utf-8")
+            source_binary_ref.write_text(request.content_text, encoding="utf-8")
         metadata_ref.write_text(
             json.dumps(
                 {
