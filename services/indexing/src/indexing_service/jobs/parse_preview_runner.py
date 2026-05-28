@@ -12,6 +12,19 @@ from indexing_service.metrics import InMemoryIndexingMetrics
 from indexing_service.parse_detection import ParseHintDetector
 
 
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    try:
+        import json as _json
+        _json.dumps(obj)
+        return obj
+    except (TypeError, ValueError):
+        return str(obj)
+
+
 def _read_bytes(source_binary_ref: str) -> bytes:
     if source_binary_ref.startswith("s3://"):
         import urllib.parse as _up
@@ -134,7 +147,7 @@ class ParsePreviewRunner:
         policy_key = json.dumps({"parser_id": policy.parser_id, "parser_config": policy.parser_config}, sort_keys=True)
         policy_hash = sha256(policy_key.encode("utf-8")).hexdigest()[:16]
         parse_snapshot_id = f"pss_{input_hash[:16]}_{policy.parser_id}_{policy_hash}"
-        upstream_chunks = list(preview.get("upstream_chunks", []))
+        upstream_chunks = _json_safe(list(preview.get("upstream_chunks", [])))
         warnings = list(policy.warnings)
         warnings.extend(str(item) for item in preview.get("warnings", []) if str(item))
         if not upstream_chunks:
