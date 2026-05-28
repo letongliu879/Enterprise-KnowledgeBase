@@ -28,18 +28,29 @@ REDIS_PASSWORD=<password> \
   --require-redis-cache
 ```
 
-## Infrastructure Dependencies (VERIFIED)
+## Infrastructure Ownership
 
-Infrastructure services are configured in `deploy/docker-compose.yml` and match the current dev environment:
+**Status: TEMPLATE READY (not yet verified as active infra entry point).**
 
-| Service | Image | Port | Health Check | Status |
-|---|---|---|---|---|
-| PostgreSQL | `postgres:16` | 5432 | `pg_isready` | VERIFIED |
-| OpenSearch | `opensearchproject/opensearch:2` | 1201 | `/_cluster/health` | VERIFIED |
-| Qdrant | `qdrant/qdrant:latest` | 6333 | `/health` | VERIFIED |
-| Redis | `valkey/valkey:8` | 6379 | `PING` with password | VERIFIED |
+The `deploy/docker-compose.yml` infrastructure configuration matches the current dev environment
+(sourced from `upstream/ragflow/docker/docker-compose-base.yml`). However, the current strict
+smoke still runs against the **upstream** containers because they occupy the host ports.
 
-To start only infrastructure:
+| Infra | Current Smoke Source | Target Owner | Verification |
+|---|---|---|---|
+| PostgreSQL | upstream `docker-postgres-1` (postgres:16, :5432) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/port/env |
+| OpenSearch | upstream `docker-opensearch01-1` (2.19.1, :1201→9201) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/port/http.port |
+| Qdrant | upstream `docker-qdrant-1` (latest, :6333-6334) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/ports/healthcheck |
+| Redis | upstream `docker-redis-1` (valkey:8, :6379) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/command/healthcheck |
+
+**To verify deploy as infra owner** (next step, not yet done):
+1. Stop upstream infra containers
+2. `cp deploy/.env.example deploy/.env` and fill in secrets
+3. `docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis`
+4. `py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache`
+5. If 32/32 PASS → update status to VERIFIED
+
+To start only infrastructure (when verified):
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
