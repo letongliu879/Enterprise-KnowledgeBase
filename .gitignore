@@ -19,3 +19,6 @@ Thumbs.db
 .run-logs/
 .verify/runtime/
 .verify/logs/
+target/
+*.egg-info/
+*.egg

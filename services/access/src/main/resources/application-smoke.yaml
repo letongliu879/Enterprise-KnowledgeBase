@@ -1,0 +1,29 @@
+server:
+  port: 18181
+
+spring:
+  application:
+    name: access
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://127.0.0.1:5432/rag_flow}
+    username: ${DATABASE_USERNAME:rag_flow}
+    password: ${DATABASE_PASSWORD:infini_rag_flow}
+    driver-class-name: ${DATABASE_DRIVER:org.postgresql.Driver}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+  sql:
+    init:
+      mode: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+access:
+  retrieval:
+    base-url: http://127.0.0.1:18182
+    connect-timeout: 5s
+    read-timeout: 30s

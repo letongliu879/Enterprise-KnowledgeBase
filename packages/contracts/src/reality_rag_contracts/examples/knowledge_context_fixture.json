@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reality-rag:knowledge-context:v1",
+  "description": "Golden wire fixture for KnowledgeContext exchanged between retrieval and access. All field names MUST be snake_case on the wire.",
+  "type": "object",
+  "required": ["query_id", "principal_context", "index_version_used", "collection_plans_used", "evidence_items", "grouped_sources", "citations", "token_budget_used", "retrieval_debug"],
+  "properties": {
+    "query_id": { "type": "string" },
+    "principal_context": { "type": "object" },
+    "index_version_used": { "type": "array", "items": { "type": "string" } },
+    "collection_plans_used": { "type": "array", "items": { "type": "object" } },
+    "evidence_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["collection_id", "doc_id", "evidence_id", "content", "score"],
+        "properties": {
+          "collection_id": { "type": "string" },
+          "doc_id": { "type": "string" },
+          "evidence_id": { "type": "string" },
+          "document_index_revision_id": { "type": "string" },
+          "content": { "type": "string" },
+          "section_path": { "type": "array", "items": { "type": "string" } },
+          "page_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["page_from", "page_to"],
+              "properties": {
+                "page_from": { "type": "integer" },
+                "page_to": { "type": "integer" }
+              }
+            }
+          },
+          "score": { "type": "number" },
+          "source_stage": { "type": "string" },
+          "why_selected": { "type": "string" }
+        }
+      }
+    },
+    "grouped_sources": { "type": "array", "items": { "type": "object" } },
+    "citations": { "type": "array", "items": { "type": "object" } },
+    "token_budget_used": { "type": "integer" },
+    "retrieval_debug": { "type": "object" }
+  }
+}

@@ -1,0 +1,86 @@
+server:
+  port: 18182
+
+spring:
+  application:
+    name: retrieval
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://127.0.0.1:5432/rag_flow}
+    username: ${DATABASE_USERNAME:rag_flow}
+    password: ${DATABASE_PASSWORD:infini_rag_flow}
+    driver-class-name: ${DATABASE_DRIVER:org.postgresql.Driver}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+  sql:
+    init:
+      mode: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+retrieval:
+  backends:
+    opensearch-base-url: ${OPENSEARCH_BASE_URL:http://127.0.0.1:1201}
+    qdrant-base-url: ${QDRANT_BASE_URL:http://127.0.0.1:6333}
+    live-recall-enabled: true
+    live-embedding-enabled: true
+    embedding-base-url: ${EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+    embedding-api-key: ${EMBEDDING_API_KEY:}
+    embedding-model: ${EMBEDDING_MODEL:BAAI/bge-m3}
+    live-rerank-enabled: true
+    reranker-base-url: ${RERANKER_BASE_URL:https://api.siliconflow.cn/v1/rerank}
+    reranker-api-key: ${RERANKER_API_KEY:}
+    reranker-model: ${RERANKER_MODEL:BAAI/bge-reranker-v2-m3}
+    live-prompt-strategies-enabled: false
+    require-live-backends: ${REQUIRE_LIVE_BACKENDS:false}
+  search:
+    fused-top-m: 60
+    enable-rerank: true
+    rerank-top-n: 10
+    max-rerank-chars: 1000
+    max-breadcrumb-chars: 250
+    head-ratio: 0.67
+    enable-ragflow-rerank-window: true
+    ragflow-rerank-window-min: 30
+    ragflow-rerank-window-max: 64
+    enable-ragflow-token-weighting: true
+    ragflow-title-token-weight: 2
+    ragflow-important-keyword-weight: 5
+    ragflow-question-token-weight: 6
+    enable-ragflow-rank-features: true
+    enable-ragflow-keyword-extraction: true
+    ragflow-keyword-top-n: 3
+    enable-ragflow-cross-languages: true
+    enable-ragflow-metadata-auto-filter: true
+    enable-ragflow-toc-aggregation: true
+    enable-ragflow-toc-llm-selector: true
+    ragflow-toc-top-n: 6
+    ragflow-toc-min-score: 0.3
+    enable-ragflow-children-aggregation: true
+    enable-smart-top-k: true
+    smart-top-score-ratio: 0.5
+    smart-top-score-delta-abs: 0.25
+    smart-min-score: 0.25
+    smart-min-k: 2
+    smart-max-k: 8
+    enable-neighbor-expansion: true
+    neighbor-hops: 2
+    decay-neighbor: 0.8
+    enable-breadcrumb-expansion: true
+    breadcrumb-expand-limit: 3
+    decay-breadcrumb: 0.7
+    max-segments-per-file: 3
+    max-total-chars: 48000
+  cache:
+    enabled: true
+    provider: ${RETRIEVAL_CACHE_PROVIDER:noop}
+    redis-url: ${REDIS_URL:redis://127.0.0.1:6379/0}
+    key-prefix: reality-rag:retrieval
+    query-embedding-ttl-seconds: 86400
+    recall-ttl-seconds: 60
+    fail-open: ${RETRIEVAL_CACHE_FAIL_OPEN:true}
+    require-redis: ${REQUIRE_REDIS_CACHE:false}

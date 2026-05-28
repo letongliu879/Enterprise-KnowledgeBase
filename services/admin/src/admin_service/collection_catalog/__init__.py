@@ -1,0 +1,1 @@
+"""Collection catalog module."""
