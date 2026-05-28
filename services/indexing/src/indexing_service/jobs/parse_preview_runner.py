@@ -14,10 +14,12 @@ from indexing_service.parse_detection import ParseHintDetector
 
 def _read_bytes(source_binary_ref: str) -> bytes:
     if source_binary_ref.startswith("s3://"):
+        import urllib.parse as _up
         s3_endpoint = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000").rstrip("/")
         rest = source_binary_ref[5:]  # strip "s3://"
         bucket, key = rest.split("/", 1)
-        url = f"{s3_endpoint}/{bucket}/{key}"
+        quoted_key = _up.quote(key, safe="")
+        url = f"{s3_endpoint}/{bucket}/{quoted_key}"
         with urllib.request.urlopen(url) as resp:
             return resp.read()
     return Path(source_binary_ref).read_bytes()

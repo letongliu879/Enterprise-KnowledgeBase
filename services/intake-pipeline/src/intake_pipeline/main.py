@@ -213,10 +213,12 @@ class IntakeService:
         source_binary_ref = doc_dir / request.filename
         if request.source_binary_ref and request.source_binary_ref.startswith("s3://"):
             import urllib.request as _ur
+            import urllib.parse as _up
             s3_ep = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000").rstrip("/")
             _rest = request.source_binary_ref[5:]
             _bucket, _key = _rest.split("/", 1)
-            _data = _ur.urlopen(f"{s3_ep}/{_bucket}/{_key}").read()
+            _quoted_key = _up.quote(_key, safe="")
+            _data = _ur.urlopen(f"{s3_ep}/{_bucket}/{_quoted_key}").read()
             source_binary_ref.write_bytes(_data)
             sanitized_asset_ref.write_bytes(_data)
             canonical_asset_ref.write_bytes(_data)
@@ -625,7 +627,11 @@ class IntakeService:
             approval_ref,
         ]
         total_asset_bytes = sum(path.stat().st_size for path in asset_files)
-        asset_payload_hash = _payload_hash(*(path.read_text(encoding="utf-8") for path in asset_files))
+        try:
+            asset_contents = tuple(path.read_bytes() for path in asset_files)
+        except Exception:
+            asset_contents = tuple(path.read_text(encoding="utf-8") for path in asset_files)
+        asset_payload_hash = _payload_hash(*asset_contents)
         record.publish_state = PublishState.ASSET_WRITTEN.value
         self._write_run_step(
             record.trace_id,
