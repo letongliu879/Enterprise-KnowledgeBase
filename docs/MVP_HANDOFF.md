@@ -116,6 +116,7 @@ py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-red
 | Concurrent/load testing | **NOT DONE** | Run load tests against retrieval and access endpoints |
 | UI/workbench frontend | **NOT DONE** | Build workbench UI and admin console frontend |
 | Retrieval cache purge granularity | Partial — `POST /internal/cache/purge` flushes ALL keys regardless of request parameters | Implement collection/doc-level purge |
+| MinIO / Object Storage | **NOT IN MVP PATH** — no service uses MinIO; `storage_key` field in data model is a URI string placeholder; `boto3` imports are in upstream RAGFlow code only | Add MinIO when document binary storage is enabled |
 
 ---
 
@@ -178,6 +179,7 @@ Any future change to one of these requires updating ALL:
 | OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :1201→9201 | VERIFIED — `_search` hits=1 |
 | Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED — `scroll` points=1 |
 | Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED — purge deleted=3 |
+| MinIO / Object Storage | N/A — upstream `docker-minio-1` (pgsty/minio, :9000-9001) was running idle with zero connections | N/A | **NOT IN MVP PATH** — no service uses MinIO; `storage_key`/`source_binary_ref` fields exist in data model as URI strings, but `boto3` imports are in upstream `ragflow_runtime/common/data_source/utils.py` only (not called by platform services) |
 
 ### Live Backends
 

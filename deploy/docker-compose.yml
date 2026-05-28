@@ -1,7 +1,8 @@
 # =============================================================================
 # Enterprise KnowledgeBase — Deployment Compose
 # =============================================================================
-# Infrastructure deps: VERIFIED (currently running in dev environment).
+# Infrastructure deps: VERIFIED (strict smoke 32/32 against project deploy).
+# MinIO/Object Storage: NOT IN MVP PATH (no service uses it).
 # Application services: TEMPLATE (Dockerfiles not yet built/tested).
 #
 # Quick start:
