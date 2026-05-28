@@ -1,13 +1,48 @@
 from __future__ import annotations
 
+import base64
+import logging
 from importlib import import_module
+from io import BytesIO
 from pathlib import Path
 import asyncio
+
+from PIL import Image
 
 from indexing_service.runtime_bridge.asset_resolver import LocalAssetResolver
 from indexing_service.runtime_bridge.progress_sink import IndexingProgressCollector
 from indexing_service.upstream_parser_config import deep_merge, get_parser_config
 from indexing_service.upstream_chunk_orchestrator import UpstreamChunkOrchestrator
+
+_logger = logging.getLogger(__name__)
+
+
+def _strip_images(chunks: list[dict]) -> list[dict]:
+    """Convert PIL Image objects in chunk dicts to base64 JPEG for JSON serialization.
+    Upstream RAGFlow uses image2id() with MinIO upload; we use inline base64 for preview.
+    """
+    result = []
+    for chunk in chunks:
+        cleaned = dict(chunk)
+        if "image" in cleaned and isinstance(cleaned["image"], Image.Image):
+            try:
+                img = cleaned["image"]
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                buf = BytesIO()
+                img.save(buf, format="JPEG")
+                cleaned["image_base64"] = base64.b64encode(buf.getvalue()).decode("ascii")
+                _logger.debug("converted PIL Image to base64 (%d bytes)", buf.tell())
+            except Exception as e:
+                _logger.warning("failed to convert PIL Image: %s", e)
+            finally:
+                try:
+                    cleaned["image"].close()
+                except Exception:
+                    pass
+                del cleaned["image"]
+        result.append(cleaned)
+    return result
 
 
 def _default_callback(progress_collector: IndexingProgressCollector):
@@ -61,7 +96,8 @@ class RAGFlowAppRuntime:
         persisted_parser_config = _load_kb_parser_config(kb_id)
         if persisted_parser_config:
             effective_parser_config = deep_merge(effective_parser_config, persisted_parser_config)
-        normalized_chunks = [dict(chunk) for chunk in chunks if isinstance(chunk, dict)]
+        raw_chunks = [dict(chunk) for chunk in chunks if isinstance(chunk, dict)]
+        normalized_chunks = _strip_images(raw_chunks)
         postprocessed = asyncio.run(
             self._orchestrator.process(
                 parser_id=parser_id,
