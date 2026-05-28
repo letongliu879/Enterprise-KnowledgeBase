@@ -344,9 +344,13 @@ class SmokeRunner:
             cur = conn.cursor()
             cur.execute("CREATE TABLE IF NOT EXISTS tenants (tenant_id VARCHAR(64) PRIMARY KEY, name VARCHAR(255) NOT NULL)")
             cur.execute("INSERT INTO tenants (tenant_id, name) VALUES ('default', 'Default Tenant') ON CONFLICT (tenant_id) DO NOTHING")
-            # Clean up ALL workbench upload sessions from prior runs to keep task projection fast
-            cur.execute("DELETE FROM workbench_upload_sessions")
-            deleted = cur.rowcount
+            # Clean up ALL workbench upload sessions from prior runs to keep task projection fast.
+            # Table may not exist on a fresh database — ignore.
+            try:
+                cur.execute("DELETE FROM workbench_upload_sessions")
+                deleted = cur.rowcount
+            except Exception:
+                deleted = 0
             conn.commit()
             cur.close()
             conn.close()

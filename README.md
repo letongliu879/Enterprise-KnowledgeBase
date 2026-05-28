@@ -100,15 +100,17 @@ py -3.14 scripts/run_real_runtime_smoke.py --keep-running
 
 ### Deployment
 
-`deploy/` contains docker-compose, Dockerfiles, and `.env.example`. See `deploy/README.md`.
+Infrastructure ownership **VERIFIED** — `deploy/docker-compose.yml` is primary infra entry point (32/32 strict smoke). See `deploy/README.md`.
 
 ```bash
-cp deploy/.env.example deploy/.env          # edit with real values
-docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
-py -3.14 scripts/run_real_runtime_smoke.py  # services start as local OS processes
+cp deploy/.env.example deploy/.env                    # edit with real values
+docker compose --env-file deploy/.env \
+  -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
+REDIS_PASSWORD=<pw> py -3.14 scripts/run_real_runtime_smoke.py \
+  --require-live-backends --require-redis-cache       # 32/32 VERIFIED
 ```
 
-Application Docker images: **template only, not yet built**.
+Application Docker images: **template only, not yet built**. `upstream/ragflow/docker` is legacy/reference.
 
 ### Pending (next phase)
 

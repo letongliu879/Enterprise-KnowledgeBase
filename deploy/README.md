@@ -30,30 +30,22 @@ REDIS_PASSWORD=<password> \
 
 ## Infrastructure Ownership
 
-**Status: TEMPLATE READY (not yet verified as active infra entry point).**
+**Status: VERIFIED — project deploy is primary infra owner (2026-05-28).**
 
-The `deploy/docker-compose.yml` infrastructure configuration matches the current dev environment
-(sourced from `upstream/ragflow/docker/docker-compose-base.yml`). However, the current strict
-smoke still runs against the **upstream** containers because they occupy the host ports.
+Strict smoke 32/32 PASS against project deploy containers. `upstream/ragflow/docker` is legacy/reference only.
 
-| Infra | Current Smoke Source | Target Owner | Verification |
+| Infra | Container | Image | Port | Verification |
 |---|---|---|---|
-| PostgreSQL | upstream `docker-postgres-1` (postgres:16, :5432) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/port/env |
-| OpenSearch | upstream `docker-opensearch01-1` (2.19.1, :1201→9201) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/port/http.port |
-| Qdrant | upstream `docker-qdrant-1` (latest, :6333-6334) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/ports/healthcheck |
-| Redis | upstream `docker-redis-1` (valkey:8, :6379) | `deploy/docker-compose.yml` | **TEMPLATE MATCH** — same image/command/healthcheck |
+| PostgreSQL | `deploy-postgres-1` | postgres:16 | :5432 | VERIFIED — smoke 32/32 |
+| OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :1201→9201 | VERIFIED — `_search` hits=1 |
+| Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED — `scroll` points=1 |
+| Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED — purge deleted=3 |
 
-**To verify deploy as infra owner** (next step, not yet done):
-1. Stop upstream infra containers
-2. `cp deploy/.env.example deploy/.env` and fill in secrets
-3. `docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis`
-4. `py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache`
-5. If 32/32 PASS → update status to VERIFIED
-
-To start only infrastructure (when verified):
+To start infrastructure:
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
+cp deploy/.env.example deploy/.env   # fill in real secrets
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
 ```
 
 ## Application Services (TEMPLATE — Not Yet Built)

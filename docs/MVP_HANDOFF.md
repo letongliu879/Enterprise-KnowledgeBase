@@ -110,7 +110,7 @@ py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-red
 | Item | Status | Next Step |
 |---|---|---|
 | Redis strict smoke | **PROVEN** — 32/32 PASS (2026-05-28): cache miss → hit → purge (deleted=3) → miss | Done |
-| Infrastructure ownership | **TEMPLATE READY (Status B)** — `deploy/docker-compose.yml` matches upstream config; not yet verified as active entry point (upstream containers occupy ports) | Stop upstream, start deploy infra, run strict smoke |
+| Infrastructure ownership | **VERIFIED (Status A)** — 32/32 PASS against project deploy containers (2026-05-28); `deploy/` is primary infra owner; `upstream/ragflow/docker` is legacy/reference | Done |
 | OAuth/IdP SSO | **NOT IMPLEMENTED** — JWT issuer/audience verification exists, but no SSO login page, no JWKS endpoint, no external IdP integration | Integrate OAuth2/OIDC provider (Keycloak, Auth0, etc.) |
 | Production deployment | **TEMPLATES READY** — `deploy/docker-compose.yml`, `Dockerfile.python`, `Dockerfile.java`, `.env.example` created; container images NOT YET BUILT | Build images, test compose, deploy |
 | Concurrent/load testing | **NOT DONE** | Run load tests against retrieval and access endpoints |
@@ -170,15 +170,14 @@ Any future change to one of these requires updating ALL:
 
 ### Infrastructure Ownership
 
-| Dependency | Current Smoke Source | Target Owner | Status |
-|---|---|---|---|
-| PostgreSQL | upstream `docker-postgres-1` (postgres:16, :5432) | `deploy/docker-compose.yml` | TEMPLATE MATCH |
-| OpenSearch | upstream `docker-opensearch01-1` (2.19.1, :1201→9201) | `deploy/docker-compose.yml` | TEMPLATE MATCH |
-| Qdrant | upstream `docker-qdrant-1` (latest, :6333-6334) | `deploy/docker-compose.yml` | TEMPLATE MATCH |
-| Redis | upstream `docker-redis-1` (valkey:8, :6379) | `deploy/docker-compose.yml` | TEMPLATE MATCH |
+**Status A VERIFIED (2026-05-28) — `deploy/` is primary infra owner. `upstream/ragflow/docker` is legacy/reference.**
 
-**Decision: Status B — TEMPLATE READY but not verified as active infra owner.**
-Upstream containers currently occupy host ports. To verify deploy as owner: stop upstream infra, start project deploy infra, run strict smoke.
+| Dependency | Container | Image | Port | Verification |
+|---|---|---|---|---|
+| PostgreSQL | `deploy-postgres-1` | postgres:16 | :5432 | VERIFIED — smoke 32/32 |
+| OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :1201→9201 | VERIFIED — `_search` hits=1 |
+| Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED — `scroll` points=1 |
+| Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED — purge deleted=3 |
 
 ### Live Backends
 
