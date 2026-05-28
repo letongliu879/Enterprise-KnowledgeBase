@@ -17,32 +17,41 @@ from indexing_service.upstream_chunk_orchestrator import UpstreamChunkOrchestrat
 _logger = logging.getLogger(__name__)
 
 
-def _strip_images(chunks: list[dict]) -> list[dict]:
-    """Convert PIL Image objects in chunk dicts to base64 JPEG for JSON serialization.
-    Upstream RAGFlow uses image2id() with MinIO upload; we use inline base64 for preview.
+def _pil_to_base64(img: Image.Image) -> str:
+    """Convert a PIL Image to base64 JPEG string. Closes the image on success."""
+    try:
+        converted = img
+        if converted.mode in ("RGBA", "P"):
+            converted = converted.convert("RGB")
+        buf = BytesIO()
+        converted.save(buf, format="JPEG")
+        result = base64.b64encode(buf.getvalue()).decode("ascii")
+        _logger.debug("converted PIL Image to base64 (%d bytes)", buf.tell())
+        return result
+    finally:
+        try:
+            img.close()
+        except Exception:
+            pass
+
+
+def _sanitize_for_json(obj):
+    """Recursively replace PIL Image objects with base64-encoded JPEG strings.
+    Upstream RAGFlow uses image2id() with MinIO upload; we use inline base64
+    for JSON-safe serialization.
     """
-    result = []
-    for chunk in chunks:
-        cleaned = dict(chunk)
-        if "image" in cleaned and isinstance(cleaned["image"], Image.Image):
-            try:
-                img = cleaned["image"]
-                if img.mode in ("RGBA", "P"):
-                    img = img.convert("RGB")
-                buf = BytesIO()
-                img.save(buf, format="JPEG")
-                cleaned["image_base64"] = base64.b64encode(buf.getvalue()).decode("ascii")
-                _logger.debug("converted PIL Image to base64 (%d bytes)", buf.tell())
-            except Exception as e:
-                _logger.warning("failed to convert PIL Image: %s", e)
-            finally:
-                try:
-                    cleaned["image"].close()
-                except Exception:
-                    pass
-                del cleaned["image"]
-        result.append(cleaned)
-    return result
+    if isinstance(obj, Image.Image):
+        return _pil_to_base64(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
+
+def _strip_images(chunks: list[dict]) -> list[dict]:
+    """Apply recursive PIL Image sanitization to all chunks."""
+    return [_sanitize_for_json(chunk) for chunk in chunks]
 
 
 def _default_callback(progress_collector: IndexingProgressCollector):

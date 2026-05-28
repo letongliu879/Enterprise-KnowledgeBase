@@ -950,7 +950,7 @@ class IndexedDocumentModel(Base):
 
     __tablename__ = "indexed_documents"
 
-    indexed_document_id = Column(String(64), primary_key=True)
+    indexed_document_id = Column(String(256), primary_key=True)
     final_doc_id = Column(String(128), nullable=False)
     collection_id = Column(String(64), nullable=False)
     index_version = Column(String(64), nullable=False)
