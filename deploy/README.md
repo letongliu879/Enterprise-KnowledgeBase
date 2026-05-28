@@ -40,7 +40,7 @@ Strict smoke 32/32 PASS against project deploy containers. `upstream/ragflow/doc
 | OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :1201→9201 | VERIFIED — `_search` hits=1 |
 | Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED — `scroll` points=1 |
 | Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED — purge deleted=3 |
-| MinIO / S3 | N/A | N/A | N/A | **NOT IN MVP PATH** — zero services connect to MinIO; `storage_key` field exists in data model but no object storage client is instantiated in current code |
+| MinIO / S3 | `minio/minio:latest` (commented out) | :9000-9001 | **TEMPLATE** — not in MVP path; uncomment when document binary storage is enabled |
 
 To start infrastructure:
 
