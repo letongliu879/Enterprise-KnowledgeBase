@@ -418,6 +418,12 @@ class SmokeRunner:
             retrieval_java_env["RETRIEVAL_CACHE_PROVIDER"] = "redis"
             retrieval_java_env["REQUIRE_REDIS_CACHE"] = "true"
             retrieval_java_env["RETRIEVAL_CACHE_FAIL_OPEN"] = "false"
+            # Read Redis password from env var only (never hardcoded in tracked file)
+            redis_password = os.environ.get("REDIS_PASSWORD", "")
+            if redis_password:
+                retrieval_java_env["REDIS_URL"] = f"redis://:{redis_password}@127.0.0.1:6379/0"
+            else:
+                retrieval_java_env["REDIS_URL"] = "redis://127.0.0.1:6379/0"
 
         # Start services sequentially
         for name in PYTHON_SERVICES + JAVA_SERVICES:

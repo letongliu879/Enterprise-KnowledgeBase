@@ -56,14 +56,15 @@ Verified via `py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
 | Qdrant write + recall | Direct `scroll` points=1 (`doc_smoke_test`); log: `Qdrant live recall returned 1 hits` |
 | SiliconFlow embedding | Log: `SiliconFlow embedding succeeded, model=BAAI/bge-m3, dimension=1024` |
 | SiliconFlow rerank | Log: `SiliconFlow rerank succeeded, returned 1 results`; trace: `source_stages: ["rerank_live"]` |
+| Redis cache (strict) | 32/32 PASS: cache miss → cache hit → purge (deleted=3) → cache miss after purge; log: `Redis cache purge: pattern=reality-rag:retrieval:*, deleted=3` |
 | Contract projection sync | All 3 projection sync endpoints return 200 |
 | JWT issuer/audience verification | 13 tests pass (`services/admin/tests/test_auth_jwt.py`) |
 
 ### Strict Mode Features
 
-- `--require-live-backends`: no silent stub/heuristic fallback → `IllegalStateException` on failure
-- `--require-redis-cache`: Redis cache miss/hit/purge proof (NOT RUN — credentials unavailable)
-- `--require-production-jwt-config`: JWT issuer/audience enforced, no default secret
+- `--require-live-backends`: no silent stub/heuristic fallback → `IllegalStateException` on failure (PROVEN, 28/28)
+- `--require-redis-cache`: Redis cache miss/hit/purge proof (PROVEN, 32/32, 2026-05-28)
+- `--require-production-jwt-config`: JWT issuer/audience enforced, no default secret (implemented, not yet run as strict smoke)
 
 ### Verified Unit/Integration Gates (2026-05-28)
 
@@ -108,7 +109,7 @@ py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-red
 
 | Item | Status | Next Step |
 |---|---|---|
-| Redis strict smoke | **NOT PROVEN** — `RedisRetrievalCache.java` implementation complete; credentials unavailable in current environment | Configure Redis credentials, run `--require-redis-cache` smoke |
+| Redis strict smoke | **PROVEN** — 32/32 PASS (2026-05-28): cache miss → hit → purge (deleted=3) → miss | Done |
 | OAuth/IdP SSO | **NOT IMPLEMENTED** — JWT issuer/audience verification exists, but no SSO login page, no JWKS endpoint, no external IdP integration | Integrate OAuth2/OIDC provider (Keycloak, Auth0, etc.) |
 | Production deployment | **NOT DONE** — all services run locally via `run_real_runtime_smoke.py` | Containerize, configure production profiles, deploy |
 | Concurrent/load testing | **NOT DONE** | Run load tests against retrieval and access endpoints |
@@ -177,8 +178,7 @@ Any future change to one of these requires updating ALL:
 
 ## 6. Recommended Next Phases (in order)
 
-1. **Redis credentialed strict proof** — configure Redis password, run `--require-redis-cache`, close the Redis test double gap
-2. **OAuth/IdP integration** — add OAuth2/OIDC provider, JWKS endpoint, replace smoke-test-secret with real identity provider
+1. **OAuth/IdP integration** — add OAuth2/OIDC provider, JWKS endpoint, replace smoke-test-secret with real identity provider
 3. **Deployment hardening** — containerize services, production profiles, secrets management, monitoring
 4. **Load/concurrency testing** — verify retrieval throughput, cache hit rates, failover behavior
 5. **UI/workbench frontend** — if needed by stakeholders
@@ -231,5 +231,5 @@ Any future change to one of these requires updating ALL:
 |---|---|---|
 | `services/indexing/.env` contains real SiliconFlow API key | HIGH — gitignored (`*.env`), confirmed not tracked | Key rotation recommended before production deployment |
 | Internal-only services (intake, publishing, indexing, retrieval) rely on deployment boundary, not in-service auth | HIGH — any network exposure of these services bypasses all authentication | Add service-to-service auth (mTLS, SPIFFE, internal JWT) or enforce network policy (API gateway, service mesh, firewall rules) in deployment hardening phase |
-| Redis requires authentication credentials not configured | MEDIUM — blocks strict Redis proof | Credentials needed to close Redis test double gap |
+| Redis requires authentication credentials not configured | ~~MEDIUM~~ RESOLVED — strict Redis smoke 32/32 PASS (2026-05-28) | Credentials configured via `REDIS_PASSWORD` env var (never tracked in repo) |
 | `smoke-test-secret` used for all smoke auth | LOW — explicitly marked as smoke/test mode only | Production mode requires `AUTH_MODE=production` + explicit issuer/audience + non-default secret |

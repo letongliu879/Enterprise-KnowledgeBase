@@ -103,7 +103,6 @@ py -3.14 scripts/run_real_runtime_smoke.py --keep-running
 - Workbench UI integration
 - Published chunk revision flow (requires indexing internal APIs)
 - OAuth/IdP SSO integration (JWT issuer/audience verification implemented; SSO UI + JWKS endpoint not done)
-- Redis deployment + credential configuration (implementation complete; requires operational Redis instance)
 - Concurrent/load testing
 
 ### Completed: Live Dependency Proof Phase (2026-05-28)
@@ -115,6 +114,6 @@ py -3.14 scripts/run_real_runtime_smoke.py --keep-running
 - **SiliconFlow embedding**: BAAI/bge-m3, 1024-dim verified live
 - **SiliconFlow rerank**: BAAI/bge-reranker-v2-m3 verified live (trace: `source_stages: ["rerank_live"]`)
 - **JWT production boundary**: issuer/audience verification implemented (`services/admin/tests/test_auth_jwt.py`, 13 tests)
-- **Redis cache**: `RedisRetrievalCache.java` implementation complete; strict Redis smoke **NOT RUN** (credentials unavailable)
-- **Strict mode flags**: `--require-live-backends` (PROVEN), `--require-redis-cache` (NOT PROVEN), `--require-production-jwt-config` (implemented)
+- **Redis cache**: `RedisRetrievalCache.java` strict proof **PROVEN** (32/32 PASS, 2026-05-28): cache miss → hit → purge → miss
+- **Strict mode flags**: `--require-live-backends` (PROVEN), `--require-redis-cache` (PROVEN), `--require-production-jwt-config` (implemented)
 - **Unit/integration gates**: contracts 174, admin 78, workbench-api 57, indexing 53, retrieval 89, access 39 — all passing

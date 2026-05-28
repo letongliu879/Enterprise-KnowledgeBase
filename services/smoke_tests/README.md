@@ -77,8 +77,8 @@ py -3.14 scripts/run_real_runtime_smoke.py
 # Strict live backends — require OpenSearch/Qdrant/SiliconFlow (28/28, PROVEN)
 py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
 
-# Strict live + Redis — also require Redis cache miss/hit/purge proof (NOT RUN)
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
+# Strict live + Redis — also require Redis cache miss/hit/purge proof (PROVEN, 32/32)
+REDIS_PASSWORD=<password> py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
 
 # Full production — live + Redis + production JWT config (NOT RUN)
 py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache --require-production-jwt-config
