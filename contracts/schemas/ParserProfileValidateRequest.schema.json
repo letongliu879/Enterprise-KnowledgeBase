@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ParserProfileValidateRequest.schema.json",
+  "title": "ParserProfileValidateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "parser_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "parser_id": {
+      "type": "string",
+      "enum": [
+        "naive",
+        "presentation",
+        "paper",
+        "qa"
+      ]
+    },
+    "parser_config": {
+      "type": "object"
+    },
+    "chunk_profile_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "version": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    }
+  },
+  "required": [
+    "parser_profile_id",
+    "parser_id",
+    "parser_config",
+    "tenant_id"
+  ]
+}

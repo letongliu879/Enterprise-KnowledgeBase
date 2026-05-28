@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/RetrievalCachePurgeRequest.schema.json",
+  "title": "RetrievalCachePurgeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "$ref": "./common.schema.json#/$defs/tenant_id"
+        },
+        "collection_id": {
+          "$ref": "./common.schema.json#/$defs/collection_id"
+        },
+        "doc_id": {
+          "$ref": "./common.schema.json#/$defs/final_doc_id"
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["tenant_id"]
+    }
+  },
+  "required": ["scope"]
+}

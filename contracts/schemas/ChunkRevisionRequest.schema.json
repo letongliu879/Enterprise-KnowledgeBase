@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ChunkRevisionRequest.schema.json",
+  "title": "ChunkRevisionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "target_type": {
+      "type": "string",
+      "enum": [
+        "chunk",
+        "parse_snapshot"
+      ]
+    },
+    "target_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "doc_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": {
+          "type": "string"
+        },
+        "vector_text": {
+          "type": "string"
+        },
+        "section_path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadata_patch": {
+          "type": "object"
+        },
+        "edit_reason": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "update",
+            "split",
+            "merge",
+            "delete",
+            "create",
+            "hide"
+          ]
+        }
+      },
+      "required": [
+        "evidence_id",
+        "doc_id",
+        "operation"
+      ]
+    }
+  },
+  "required": [
+    "command_id",
+    "trace_id",
+    "idempotency_key",
+    "actor",
+    "tenant_id",
+    "collection_id",
+    "target_type",
+    "target_id",
+    "payload"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/IndexProjectionSync.schema.json",
+  "title": "IndexProjectionSync",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "target_type": {
+      "type": "string",
+      "enum": [
+        "index_projection"
+      ]
+    },
+    "target_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Typically collection_id:index_version_id"
+    },
+    "payload": {
+      "$ref": "./IndexProjectionPayload.schema.json"
+    }
+  },
+  "required": [
+    "command_id",
+    "trace_id",
+    "idempotency_key",
+    "actor",
+    "tenant_id",
+    "target_type",
+    "target_id",
+    "payload"
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/IntakeJobView.schema.json",
+  "title": "IntakeJobView",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Read-only view of an intake job. Owner: intake-pipeline.",
+  "properties": {
+    "intake_job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "state": {
+      "$ref": "./common.schema.json#/$defs/intake_job_state"
+    },
+    "current_stage": {
+      "type": ["string", "null"]
+    },
+    "parse_snapshot_id": {
+      "type": ["string", "null"]
+    },
+    "ticket_id": {
+      "type": ["string", "null"]
+    },
+    "published_document_id": {
+      "type": ["string", "null"]
+    },
+    "doc_id": {
+      "type": ["string", "null"]
+    },
+    "error_message": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "intake_job_id",
+    "source_file_id",
+    "tenant_id",
+    "collection_id",
+    "state",
+    "created_at",
+    "updated_at"
+  ]
+}

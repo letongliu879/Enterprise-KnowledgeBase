@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ApprovalTicketView.schema.json",
+  "title": "ApprovalTicketView",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Read-only view of an approval ticket. Owner: approval-service.",
+  "properties": {
+    "ticket_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intake_job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "state": {
+      "$ref": "./common.schema.json#/$defs/approval_ticket_state"
+    },
+    "preliminary_doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "doc_id": {
+      "type": ["string", "null"]
+    },
+    "source_file_id": {
+      "type": ["string", "null"]
+    },
+    "parse_snapshot_id": {
+      "type": ["string", "null"]
+    },
+    "agent_review_ref": {
+      "type": ["string", "null"]
+    },
+    "decision": {
+      "type": ["string", "null"]
+    },
+    "decision_reason": {
+      "type": ["string", "null"]
+    },
+    "decided_by": {
+      "type": ["string", "null"]
+    },
+    "confirmed_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decided_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "ticket_id",
+    "intake_job_id",
+    "collection_id",
+    "tenant_id",
+    "state",
+    "preliminary_doc_id",
+    "confirmed_tags",
+    "created_at",
+    "updated_at"
+  ]
+}

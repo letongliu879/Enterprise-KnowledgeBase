@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Intake Pipeline Internal API
+  version: 0.1.0
+  description: |
+    Internal API for the intake-pipeline service.
+    Owner: intake-pipeline.
+    Workbench and other consumers may read and register, but never directly mutate owner state.
+
+paths:
+  /internal/source-files:
+    post:
+      operationId: registerSourceFile
+      summary: Register a new source file
+      description: |
+        Creates a source file and associated intake job.
+        Idempotent: duplicate idempotency_key returns the existing record without creating duplicates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/SourceFileRegisterRequest.schema.json
+      responses:
+        "201":
+          description: Source file registered
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/SourceFileView.schema.json
+        "200":
+          description: Source file already exists (idempotent return)
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/SourceFileView.schema.json
+        "400":
+          description: Invalid request
+        "403":
+          description: Cross-tenant access denied
+        "409":
+          description: Conflict
+
+  /internal/source-files/{source_file_id}:
+    get:
+      operationId: getSourceFile
+      summary: Get source file owner state
+      parameters:
+        - name: source_file_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Source file detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/SourceFileView.schema.json
+        "404":
+          description: Source file not found
+        "403":
+          description: Cross-tenant access denied
+
+  /internal/intake-jobs/{intake_job_id}:
+    get:
+      operationId: getIntakeJob
+      summary: Get intake job owner state
+      parameters:
+        - name: intake_job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Intake job detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/IntakeJobView.schema.json
+        "404":
+          description: Intake job not found
+        "403":
+          description: Cross-tenant access denied
+
+  /internal/published-documents/{published_document_id}:
+    get:
+      operationId: getPublishedDocument
+      summary: Get published document read-only view
+      parameters:
+        - name: published_document_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Published document detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/PublishedDocumentView.schema.json
+        "404":
+          description: Published document not found
+        "403":
+          description: Cross-tenant access denied
+
+components:
+  schemas: {}

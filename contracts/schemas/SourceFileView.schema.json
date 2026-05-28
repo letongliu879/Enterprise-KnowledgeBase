@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/SourceFileView.schema.json",
+  "title": "SourceFileView",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Read-only view of a source file. Owner: intake-pipeline.",
+  "properties": {
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "upload_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mime_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "$ref": "./common.schema.json#/$defs/source_file_state"
+    },
+    "intake_job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scan_verdict": {
+      "type": "string",
+      "enum": ["clean", "infected", "error"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "source_file_id",
+    "upload_id",
+    "tenant_id",
+    "collection_id",
+    "filename",
+    "mime_type",
+    "size_bytes",
+    "state",
+    "created_at",
+    "updated_at"
+  ]
+}

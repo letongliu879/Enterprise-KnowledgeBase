@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchChunkEdit.schema.json",
+  "title": "WorkbenchChunkEdit",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "chunk_edit_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parse_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_evidence_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "edit_scope": {
+      "type": "string",
+      "enum": [
+        "pre_publish",
+        "post_publish"
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "update",
+        "split",
+        "merge",
+        "delete",
+        "create",
+        "hide"
+      ]
+    },
+    "content": {
+      "type": "string"
+    },
+    "vector_text": {
+      "type": "string"
+    },
+    "section_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata_patch": {
+      "type": "object"
+    },
+    "citation_payload": {
+      "type": "object"
+    },
+    "source_block_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "edit_reason": {
+      "type": "string"
+    },
+    "edited_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "submitted",
+        "materialized",
+        "active",
+        "rejected",
+        "failed"
+      ]
+    },
+    "downstream_revision_id": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "chunk_edit_id",
+    "tenant_id",
+    "collection_id",
+    "source_file_id",
+    "base_evidence_id",
+    "edit_scope",
+    "operation",
+    "edited_by",
+    "status",
+    "created_at",
+    "updated_at"
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchUploadSession.schema.json",
+  "title": "WorkbenchUploadSession",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "upload_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intake_job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parse_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ticket_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selected_parser_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "parser_override_json": {
+      "type": "object"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "uploading",
+        "parsing",
+        "reviewing",
+        "approved",
+        "rejected",
+        "published",
+        "failed"
+      ]
+    },
+    "progress_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mime_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_message": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "upload_id",
+    "user_id",
+    "tenant_id",
+    "collection_id",
+    "status",
+    "progress_pct",
+    "filename",
+    "mime_type",
+    "size_bytes",
+    "created_at",
+    "updated_at"
+  ]
+}

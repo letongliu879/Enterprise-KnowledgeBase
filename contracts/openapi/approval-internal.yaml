@@ -1,0 +1,135 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Approval Service Internal API
+  version: 0.1.0
+  description: |
+    Internal API for the approval-service.
+    Owner: approval-service.
+    Workbench and other consumers may read and decide, but workbench does not own ticket state.
+
+paths:
+  /internal/tickets:
+    get:
+      operationId: listTickets
+      summary: List approval tickets
+      description: |
+        Filter by tenant_id, collection_id, state.
+        Fail closed: missing or mismatched tenant_id returns empty list or 403.
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../schemas/ApprovalTicketView.schema.json
+                  total:
+                    type: integer
+                required: [items, total]
+        "403":
+          description: Cross-tenant access denied
+        "501":
+          description: Downstream not implemented
+
+  /internal/tickets/{ticket_id}:
+    get:
+      operationId: getTicket
+      summary: Get ticket detail
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ApprovalTicketView.schema.json
+        "404":
+          description: Ticket not found
+        "403":
+          description: Cross-tenant access denied
+
+  /internal/tickets/{ticket_id}/decide:
+    post:
+      operationId: decideTicket
+      summary: Decide an approval ticket
+      description: |
+        approve / reject / return.
+        Idempotent: duplicate idempotency_key (decision_request_id) returns existing decision without creating duplicate.
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ApprovalDecisionRequest.schema.json
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ApprovalTicketView.schema.json
+        "400":
+          description: Invalid transition
+        "403":
+          description: Cross-tenant or insufficient permissions
+        "409":
+          description: Conflict — invalid transition or duplicate decision
+        "404":
+          description: Ticket not found
+
+  /internal/tickets/{ticket_id}/agent-review:
+    get:
+      operationId: getAgentReview
+      summary: Get AgentReview artifact read model
+      description: |
+        Read-only. Workbench displays but does not modify.
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AgentReview artifact
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AgentReviewView.schema.json
+        "404":
+          description: Ticket or review not found
+        "403":
+          description: Cross-tenant access denied
+
+components:
+  schemas: {}

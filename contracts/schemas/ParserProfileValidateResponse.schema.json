@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ParserProfileValidateResponse.schema.json",
+  "title": "ParserProfileValidateResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "valid": {
+      "type": "boolean"
+    },
+    "canonical_config": {
+      "type": "object"
+    },
+    "profile_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "default": []
+    },
+    "runtime_owner": {
+      "type": "string",
+      "enum": [
+        "indexing"
+      ]
+    },
+    "validator_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "valid",
+    "profile_hash",
+    "runtime_owner",
+    "validator_version"
+  ],
+  "if": {
+    "properties": {
+      "valid": {
+        "const": true
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "canonical_config"
+    ]
+  }
+}

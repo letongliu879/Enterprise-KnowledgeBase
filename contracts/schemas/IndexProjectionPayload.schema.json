@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/IndexProjectionPayload.schema.json",
+  "title": "IndexProjectionPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "index_version_id": {
+      "$ref": "./common.schema.json#/$defs/index_version_id"
+    },
+    "sync_mode": {
+      "type": "string",
+      "enum": [
+        "full_replace",
+        "lifecycle_patch"
+      ],
+      "description": "full_replace = replace all chunks for this collection+version. lifecycle_patch = update state of chunks matching final_doc_id."
+    },
+    "doc_id": {
+      "$ref": "./common.schema.json#/$defs/doc_id",
+      "description": "Required for lifecycle_patch. Ignored for full_replace."
+    },
+    "lifecycle_state": {
+      "$ref": "./common.schema.json#/$defs/published_document_state",
+      "description": "Required for lifecycle_patch. New state to apply to matching chunks."
+    },
+    "available_int": {
+      "type": "integer",
+      "description": "Optional override for lifecycle_patch. Defaults to 0 for ARCHIVED/RETRACTED, 1 for PUBLISHED."
+    },
+    "chunks": {
+      "type": "array",
+      "items": {
+        "$ref": "./ChunkRecord.schema.json"
+      },
+      "description": "Required for full_replace. Complete chunk set to store for this collection+version."
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id",
+      "description": "Tenant identifier for index_versions and published_documents upsert."
+    },
+    "opensearch_index": {
+      "type": "string",
+      "description": "OpenSearch index name for index_versions upsert."
+    },
+    "qdrant_collection": {
+      "type": "string",
+      "description": "Qdrant collection name for index_versions upsert."
+    },
+    "embedding_model": {
+      "type": "string",
+      "description": "Embedding model identifier for index_versions upsert."
+    },
+    "chunk_profile_id": {
+      "type": "string",
+      "description": "Chunk profile identifier for index_versions upsert."
+    },
+    "index_profile_id": {
+      "type": "string",
+      "description": "Index profile identifier for index_versions upsert."
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version for index_versions upsert. Defaults to v1."
+    },
+    "published_document_state": {
+      "$ref": "./common.schema.json#/$defs/published_document_state",
+      "description": "Published document state for published_documents upsert. Defaults to PUBLISHED."
+    }
+  },
+  "required": [
+    "collection_id",
+    "index_version_id",
+    "sync_mode"
+  ]
+}

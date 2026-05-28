@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchTaskView.schema.json",
+  "title": "WorkbenchTaskView",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "upload_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "uploading",
+        "parsing",
+        "reviewing",
+        "approved",
+        "rejected",
+        "published",
+        "failed"
+      ]
+    },
+    "progress_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "source_file_state": {
+      "$ref": "./common.schema.json#/$defs/source_file_state"
+    },
+    "intake_job_state": {
+      "$ref": "./common.schema.json#/$defs/intake_job_state"
+    },
+    "parse_snapshot_state": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "PARSING",
+        "PARSED",
+        "FAILED"
+      ]
+    },
+    "ticket_state": {
+      "$ref": "./common.schema.json#/$defs/approval_ticket_state"
+    },
+    "published_document_state": {
+      "oneOf": [
+        {"$ref": "./common.schema.json#/$defs/published_document_state"},
+        {"type": "null"}
+      ]
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "upload_id",
+    "status",
+    "progress_pct",
+    "filename",
+    "collection_id",
+    "created_at",
+    "updated_at"
+  ]
+}

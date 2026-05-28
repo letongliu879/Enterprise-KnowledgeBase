@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/RetrievalProfileAdmin.schema.json",
+  "title": "RetrievalProfileAdmin",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "retrieval_profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "profile_config": {
+      "type": "object",
+      "description": "BM25/vector/rerank/expansion/pack/fail policy configuration"
+    },
+    "runtime_canonical_config": {
+      "type": "object"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "published",
+        "retired"
+      ]
+    },
+    "created_by": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_by": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "retrieval_profile_id",
+    "name",
+    "profile_config",
+    "version",
+    "state",
+    "created_by",
+    "created_at",
+    "updated_by",
+    "updated_at"
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/ChunkRevisionView.schema.json",
+  "title": "ChunkRevisionView",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "revision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_evidence_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "doc_id": {
+      "$ref": "./common.schema.json#/$defs/final_doc_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "update",
+        "split",
+        "merge",
+        "delete",
+        "create",
+        "hide"
+      ]
+    },
+    "content": {
+      "type": "string"
+    },
+    "vector_text": {
+      "type": "string"
+    },
+    "section_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata_patch": {
+      "type": "object"
+    },
+    "citation_payload": {
+      "type": "object"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "materializing",
+        "active",
+        "failed",
+        "superseded"
+      ]
+    },
+    "superseded_evidence_id": {
+      "type": "string"
+    },
+    "superseded_by": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "revision_id",
+    "base_evidence_id",
+    "doc_id",
+    "collection_id",
+    "tenant_id",
+    "operation",
+    "status",
+    "created_at",
+    "updated_at"
+  ]
+}

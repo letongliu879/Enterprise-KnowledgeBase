@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/SourceFileRegisterRequest.schema.json",
+  "title": "SourceFileRegisterRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Command to register a source file in the intake pipeline. Owner: intake-pipeline.",
+  "properties": {
+    "command_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "$ref": "./common.schema.json#/$defs/trace_id"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mime_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "selected_parser_profile_id": {
+      "$ref": "./common.schema.json#/$defs/profile_id"
+    },
+    "parser_override_json": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "command_id",
+    "trace_id",
+    "idempotency_key",
+    "actor",
+    "tenant_id",
+    "collection_id",
+    "filename",
+    "mime_type",
+    "size_bytes"
+  ]
+}

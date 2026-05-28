@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/PublishedDocumentView.schema.json",
+  "title": "PublishedDocumentView",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Read-only view of a published document. Owner: publishing domain / intake-pipeline.",
+  "properties": {
+    "published_document_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_file_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intake_job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "state": {
+      "$ref": "./common.schema.json#/$defs/published_document_state"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "published_document_id",
+    "doc_id",
+    "source_file_id",
+    "intake_job_id",
+    "tenant_id",
+    "collection_id",
+    "state",
+    "version",
+    "created_at",
+    "updated_at"
+  ]
+}

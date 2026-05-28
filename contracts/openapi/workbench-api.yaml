@@ -1,0 +1,860 @@
+openapi: 3.1.0
+info:
+  title: Reality-RAG Workbench API
+  version: 0.1.0
+
+paths:
+  # ── Auth ──────────────────────────────────────────────────────────────
+
+  /workbench/auth/me:
+    get:
+      operationId: workbenchMe
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current workbench user
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  user_id:
+                    type: string
+                  email:
+                    type: string
+                  display_name:
+                    type: string
+                  roles:
+                    type: array
+                    items:
+                      type: string
+                  tenant_id:
+                    type: string
+                  allowed_collections:
+                    type: array
+                    items:
+                      type: string
+                required: [user_id, email, roles, tenant_id, allowed_collections]
+        "401":
+          description: Invalid or missing token
+
+  # ── Upload Sessions ───────────────────────────────────────────────────
+
+  /workbench/uploads:
+    post:
+      operationId: createUpload
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                collection_id:
+                  type: string
+                filename:
+                  type: string
+                mime_type:
+                  type: string
+                size_bytes:
+                  type: integer
+                  minimum: 0
+                selected_parser_profile_id:
+                  type: string
+                parser_override_json:
+                  type: object
+              required: [collection_id, filename, mime_type, size_bytes]
+      responses:
+        "201":
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchUploadSession.schema.json
+        "403":
+          description: Insufficient permissions
+        "501":
+          description: Downstream not implemented
+
+    get:
+      operationId: listUploads
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of upload sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../schemas/WorkbenchUploadSession.schema.json
+                  total:
+                    type: integer
+                required: [items, total]
+
+  /workbench/uploads/{upload_id}:
+    get:
+      operationId: getUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upload session detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchUploadSession.schema.json
+        "404":
+          description: Upload not found
+
+    delete:
+      operationId: deleteUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Upload not found
+
+  # ── Parser Profiles ───────────────────────────────────────────────────
+
+  /workbench/parser-profiles:
+    get:
+      operationId: listParserProfiles
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: collection_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available parser profiles for collection
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        parser_profile_id:
+                          type: string
+                        name:
+                          type: string
+                        parser_id:
+                          type: string
+                        state:
+                          type: string
+                        is_default:
+                          type: boolean
+                      required: [parser_profile_id, name, parser_id, state, is_default]
+                  default_parser_profile_id:
+                    type: string
+                required: [items, default_parser_profile_id]
+        "501":
+          description: Downstream not implemented
+
+  # ── Parse Previews ────────────────────────────────────────────────────
+
+  /workbench/parse-previews:
+    post:
+      operationId: createParsePreview
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                upload_id:
+                  type: string
+                source_file_id:
+                  type: string
+                collection_id:
+                  type: string
+                tenant_id:
+                  type: string
+                parser_profile_id:
+                  type: string
+                parser_override_json:
+                  type: object
+                actor:
+                  type: string
+              required: [upload_id, source_file_id, collection_id, tenant_id, parser_profile_id, actor]
+      responses:
+        "202":
+          description: Preview accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  request_id:
+                    type: string
+                  trace_id:
+                    type: string
+                  status:
+                    type: string
+                required: [request_id, trace_id, status]
+        "501":
+          description: Downstream not implemented
+
+  /workbench/parse-previews/{request_id}:
+    get:
+      operationId: getParsePreview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preview result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  request_id:
+                    type: string
+                  status:
+                    type: string
+                  parse_snapshot_id:
+                    type: string
+                  error_message:
+                    type: string
+                required: [request_id, status]
+        "404":
+          description: Preview not found
+
+  # ── Parse Snapshots ───────────────────────────────────────────────────
+
+  /workbench/parse-snapshots/{parse_snapshot_id}:
+    get:
+      operationId: getParseSnapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: parse_snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Parse snapshot
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ParseSnapshot.schema.json
+        "404":
+          description: Snapshot not found
+        "501":
+          description: Downstream not implemented
+
+  /workbench/parse-snapshots/{parse_snapshot_id}/chunks:
+    get:
+      operationId: getParseSnapshotChunks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: parse_snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Chunk list for snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        evidence_id:
+                          type: string
+                        doc_id:
+                          type: string
+                        content:
+                          type: string
+                        section_path:
+                          type: array
+                          items:
+                            type: string
+                        page_spans:
+                          type: array
+                          items:
+                            $ref: ../schemas/common.schema.json#/$defs/page_span
+                        chunk_type:
+                          type: string
+                      required: [evidence_id, doc_id, content]
+                  total:
+                    type: integer
+                required: [items, total]
+        "501":
+          description: Downstream not implemented
+
+  # ── Chunks ────────────────────────────────────────────────────────────
+
+  /workbench/chunks/{evidence_id}:
+    get:
+      operationId: getChunk
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chunk detail
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  evidence_id:
+                    type: string
+                  doc_id:
+                    type: string
+                  content:
+                    type: string
+                  vector_text:
+                    type: string
+                  section_path:
+                    type: array
+                    items:
+                      type: string
+                  page_spans:
+                    type: array
+                    items:
+                      $ref: ../schemas/common.schema.json#/$defs/page_span
+                  chunk_type:
+                    type: string
+                  metadata:
+                    type: object
+                required: [evidence_id, doc_id, content]
+        "404":
+          description: Chunk not found
+        "501":
+          description: Downstream not implemented
+
+    patch:
+      operationId: patchChunk
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ChunkRevisionRequest.schema.json
+      responses:
+        "202":
+          description: Revision accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  revision_id:
+                    type: string
+                  status:
+                    type: string
+                required: [revision_id, status]
+        "403":
+          description: Insufficient permissions
+        "409":
+          description: Conflict
+        "501":
+          description: Downstream not implemented
+
+  # ── Chunk Edits ───────────────────────────────────────────────────────
+
+  /workbench/parse-snapshots/{parse_snapshot_id}/chunk-edits:
+    post:
+      operationId: createChunkEdit
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: parse_snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                base_evidence_id:
+                  type: string
+                operation:
+                  type: string
+                  enum: [update, split, merge, delete, create, hide]
+                content:
+                  type: string
+                vector_text:
+                  type: string
+                section_path:
+                  type: array
+                  items:
+                    type: string
+                metadata_patch:
+                  type: object
+                citation_payload:
+                  type: object
+                source_block_ids:
+                  type: array
+                  items:
+                    type: string
+                edit_reason:
+                  type: string
+              required: [base_evidence_id, operation]
+      responses:
+        "201":
+          description: Chunk edit created
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchChunkEdit.schema.json
+        "403":
+          description: Insufficient permissions
+
+    get:
+      operationId: listChunkEdits
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: parse_snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of chunk edits
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../schemas/WorkbenchChunkEdit.schema.json
+                  total:
+                    type: integer
+                required: [items, total]
+
+  /workbench/chunk-edits/{chunk_edit_id}:
+    put:
+      operationId: updateChunkEdit
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: chunk_edit_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                content:
+                  type: string
+                vector_text:
+                  type: string
+                section_path:
+                  type: array
+                  items:
+                    type: string
+                metadata_patch:
+                  type: object
+                citation_payload:
+                  type: object
+                source_block_ids:
+                  type: array
+                  items:
+                    type: string
+                edit_reason:
+                  type: string
+                operation:
+                  type: string
+                  enum: [update, split, merge, delete, create, hide]
+      responses:
+        "200":
+          description: Chunk edit updated
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchChunkEdit.schema.json
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Chunk edit not found
+
+    delete:
+      operationId: deleteChunkEdit
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: chunk_edit_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Chunk edit not found
+
+  # ── Tickets ───────────────────────────────────────────────────────────
+
+  /workbench/tickets:
+    get:
+      operationId: listTickets
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        ticket_id:
+                          type: string
+                        collection_id:
+                          type: string
+                        status:
+                          type: string
+                        doc_id:
+                          type: string
+                        source_file_id:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required: [ticket_id, collection_id, status, created_at]
+                  total:
+                    type: integer
+                required: [items, total]
+        "501":
+          description: Downstream not implemented
+
+  /workbench/tickets/{ticket_id}:
+    get:
+      operationId: getTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket detail
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ticket_id:
+                    type: string
+                  collection_id:
+                    type: string
+                  status:
+                    type: string
+                  doc_id:
+                    type: string
+                  source_file_id:
+                    type: string
+                  parse_snapshot_id:
+                    type: string
+                  decision:
+                    type: string
+                  decision_reason:
+                    type: string
+                  decided_by:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+                required: [ticket_id, collection_id, status, created_at]
+        "404":
+          description: Ticket not found
+        "501":
+          description: Downstream not implemented
+
+  /workbench/tickets/{ticket_id}/decide:
+    post:
+      operationId: decideTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                decision_request_id:
+                  type: string
+                action:
+                  type: string
+                  enum: [APPROVE, REJECT, RETURN]
+                reason:
+                  type: string
+                actor:
+                  type: string
+                tenant_id:
+                  type: string
+                collection_id:
+                  type: string
+              required: [decision_request_id, action, actor, tenant_id, collection_id]
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ticket_id:
+                    type: string
+                  status:
+                    type: string
+                  decision:
+                    type: string
+                required: [ticket_id, status, decision]
+        "403":
+          description: Insufficient permissions
+        "409":
+          description: Conflict
+        "501":
+          description: Downstream not implemented
+
+  /workbench/tickets/{ticket_id}/agent-review:
+    get:
+      operationId: getAgentReview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AgentReview artifact
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/AgentReviewView.schema.json
+        "404":
+          description: Ticket or review not found
+        "501":
+          description: Downstream not implemented
+
+  # ── Tasks ─────────────────────────────────────────────────────────────
+
+  /workbench/tasks:
+    get:
+      operationId: listTasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of task views
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../schemas/WorkbenchTaskView.schema.json
+                  total:
+                    type: integer
+                required: [items, total]
+
+  /workbench/tasks/{upload_id}:
+    get:
+      operationId: getTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task view detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchTaskView.schema.json
+        "404":
+          description: Task not found
+
+  # ── Health ────────────────────────────────────────────────────────────
+
+  /workbench/health:
+    get:
+      operationId: workbenchHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                required: [service, status]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

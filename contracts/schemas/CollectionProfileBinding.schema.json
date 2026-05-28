@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/CollectionProfileBinding.schema.json",
+  "title": "CollectionProfileBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "binding_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "$ref": "./common.schema.json#/$defs/tenant_id"
+    },
+    "collection_id": {
+      "$ref": "./common.schema.json#/$defs/collection_id"
+    },
+    "parser_profile_id": {
+      "type": "string"
+    },
+    "retrieval_profile_id": {
+      "type": "string"
+    },
+    "approval_policy_id": {
+      "type": "string"
+    },
+    "effective_from": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "effective_to": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "binding_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "config_hash": {
+      "type": "string"
+    },
+    "created_by": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "binding_id",
+    "tenant_id",
+    "collection_id",
+    "effective_from",
+    "binding_version",
+    "config_hash",
+    "created_by",
+    "created_at"
+  ]
+}
