@@ -12,17 +12,18 @@ class WorkbenchConfig:
     jwt_audience: str = os.environ.get("JWT_AUDIENCE", "")
     auth_mode: str = os.environ.get("AUTH_MODE", "smoke")
 
-    indexing_base_url: str = os.environ.get("INDEXING_BASE_URL", "http://localhost:8002")
-    intake_base_url: str = os.environ.get("INTAKE_BASE_URL", "http://localhost:8003")
-    approval_base_url: str = os.environ.get("APPROVAL_BASE_URL", "http://localhost:8004")
-    admin_base_url: str = os.environ.get("ADMIN_BASE_URL", "http://localhost:8001")
+    indexing_base_url: str = os.environ.get("INDEXING_BASE_URL", "http://127.0.0.1:18080")
+    intake_base_url: str = os.environ.get("INTAKE_BASE_URL", "http://127.0.0.1:18085")
+    approval_base_url: str = os.environ.get("APPROVAL_BASE_URL", "http://127.0.0.1:18087")
+    admin_base_url: str = os.environ.get("ADMIN_BASE_URL", "http://127.0.0.1:18084")
+    document_service_base_url: str = os.environ.get("DOCUMENT_SERVICE_BASE_URL", "http://localhost:8006")
 
     database_url: str = os.environ.get(
         "DATABASE_URL",
         "postgresql+psycopg2://user:pass@localhost/reality_rag",
     )
 
-    default_http_timeout: float = float(os.environ.get("DEFAULT_HTTP_TIMEOUT", "10.0"))
+    default_http_timeout: float = float(os.environ.get("DEFAULT_HTTP_TIMEOUT", "30.0"))
 
 
 config = WorkbenchConfig()

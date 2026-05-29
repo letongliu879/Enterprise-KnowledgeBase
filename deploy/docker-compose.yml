@@ -1,7 +1,7 @@
 # =============================================================================
 # Enterprise KnowledgeBase — Deployment Compose
 # =============================================================================
-# Infrastructure deps: VERIFIED (strict smoke 32/32 against project deploy).
+# Infrastructure deps: VERIFIED (strict smoke 28/28 against project deploy).
 # MinIO/Object Storage: NOT IN MVP PATH (no service uses it).
 # Application services: TEMPLATE (Dockerfiles not yet built/tested).
 #
@@ -226,6 +226,26 @@ services:
   #     postgres:
   #       condition: service_healthy
   #     indexing:
+  #       condition: service_healthy
+
+  # document-service:
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/Dockerfile.python
+  #     args:
+  #       SERVICE_DIR: services/intake-pipeline/document-service
+  #   image: ekb-document-service:latest
+  #   ports:
+  #     - "8006:8006"
+  #   environment:
+  #     - DATABASE_URL=${DATABASE_URL}
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-s", "http://localhost:8006/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   depends_on:
+  #     postgres:
   #       condition: service_healthy
 
   # publishing:

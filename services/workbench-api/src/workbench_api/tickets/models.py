@@ -8,7 +8,7 @@ class TicketDecisionRequest(BaseModel):
     decision_request_id: str
     action: str
     reason: str | None = None
-    actor: str
+    actor: str | None = None  # Deprecated: backend derives actor from authenticated user
     tenant_id: str
     collection_id: str
 
@@ -33,5 +33,6 @@ class TicketDetail(BaseModel):
     decision: str | None = None
     decision_reason: str | None = None
     decided_by: str | None = None
+    tenant_id: str
     created_at: str
     updated_at: str | None = None

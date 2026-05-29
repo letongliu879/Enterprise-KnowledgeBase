@@ -31,6 +31,9 @@ class UploadSessionRepository:
             return True
         return False
 
+    def get_by_parse_snapshot_id(self, parse_snapshot_id: str) -> WorkbenchUploadSessionModel | None:
+        return self._session.query(WorkbenchUploadSessionModel).filter_by(parse_snapshot_id=parse_snapshot_id).first()
+
     def get_by_idempotency(self, user_id: str, collection_id: str, filename: str) -> WorkbenchUploadSessionModel | None:
         # Simple idempotency check: same user + collection + filename within a window could be duplicate
         # For strict idempotency, we use upload_id as the key

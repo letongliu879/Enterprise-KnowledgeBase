@@ -16,3 +16,4 @@ tests/test_retrieval_constraints.py
 tests/test_roundtrip.py
 tests/test_schema_validation.py
 tests/test_state_machine.py
+tests/test_wire_drift_guard.py

@@ -37,6 +37,6 @@ def logout(request: Request, user: CurrentUser = Depends(require_auth)):
 @router.get("/me", response_model=AdminUserResponse)
 def me(user: CurrentUser = Depends(require_auth), service: IdentityService = Depends(_get_identity_service)):
     try:
-        return service.me(user.user_id)
+        return service.me(user)
     except ValueError as e:
         raise not_found(str(e))

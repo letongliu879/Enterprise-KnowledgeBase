@@ -55,18 +55,15 @@ class TaskProjectionService:
             try:
                 sf = await self._intake_client.get_source_file(upload.source_file_id)
                 source_file_state = sf.get("state")
-            except DownstreamError:
-                pass
-
-            # Derive intake job state from source file response (it includes intake_job_id)
-            try:
-                sf = await self._intake_client.get_source_file(upload.source_file_id)
                 intake_job_id = sf.get("intake_job_id")
                 if intake_job_id:
                     job = await self._intake_client.get_intake_job(intake_job_id)
                     intake_job_state = job.get("state")
                     # Parse snapshot state derived from presence of parse_snapshot_id
                     parse_snapshot_id = job.get("parse_snapshot_id")
+                    if parse_snapshot_id and upload.parse_snapshot_id != parse_snapshot_id:
+                        upload.parse_snapshot_id = parse_snapshot_id
+                        self._repository.save(upload)
                     if parse_snapshot_id:
                         parse_snapshot_state = "PARSED"
                     elif intake_job_state in ("CREATED", "PARSING"):

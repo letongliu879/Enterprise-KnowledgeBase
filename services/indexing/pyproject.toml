@@ -19,6 +19,13 @@ dev = [
     "pytest>=8.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+reality-rag-contracts = { path = "../../packages/contracts" }
+ragflow-runtime = { path = "../../packages/ragflow_runtime" }
+
 [tool.pytest.ini_options]
 markers = [
     "live_model: tests that call real external model endpoints",

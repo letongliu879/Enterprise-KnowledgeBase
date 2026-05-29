@@ -47,6 +47,8 @@ def admin_user(identity_service):
         password="secret123",
         display_name="Admin User",
         roles=["platform_admin"],
+        allowed_tenants=["tenant_admin"],
+        allowed_collections=["col_default", "col_ops"],
     )
     return user
 
@@ -59,6 +61,8 @@ def knowledge_admin(identity_service):
         password="secret123",
         display_name="Knowledge Admin",
         roles=["knowledge_admin"],
+        allowed_tenants=["tenant_admin"],
+        allowed_collections=["col_default"],
     )
     return user
 
@@ -71,6 +75,8 @@ def viewer_user(identity_service):
         password="secret123",
         display_name="Viewer",
         roles=["auditor"],
+        allowed_tenants=["tenant_admin"],
+        allowed_collections=["col_default"],
     )
     return user
 

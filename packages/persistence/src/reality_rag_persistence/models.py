@@ -1185,6 +1185,7 @@ class WorkbenchUploadSessionModel(Base):
     ticket_id = Column(String(64), nullable=True)
     selected_parser_profile_id = Column(String(128), nullable=True)
     parser_override_json = Column(JSON, nullable=True)
+    access_scope_json = Column(JSON, nullable=True)
     status = Column(String(32), nullable=False, default="uploading")
     progress_pct = Column(Integer, nullable=False, default=0)
     filename = Column(String(512), nullable=False)

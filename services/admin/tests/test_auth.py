@@ -2,6 +2,9 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
+
+from admin_service.config import config
 
 
 class TestAuth:
@@ -14,6 +17,9 @@ class TestAuth:
         data = resp.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
+        payload = jwt.decode(data["access_token"], config.jwt_secret, algorithms=[config.jwt_algorithm], options={"verify_aud": False})
+        assert payload["tenant_id"] == "tenant_admin"
+        assert payload["allowed_collections"] == ["col_default", "col_ops"]
 
     def test_login_wrong_password(self, client: TestClient, admin_user):
         resp = client.post("/admin/auth/login", json={

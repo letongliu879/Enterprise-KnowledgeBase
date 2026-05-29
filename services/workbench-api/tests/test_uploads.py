@@ -1,6 +1,8 @@
 """Tests for upload sessions."""
 
-import pytest
+import json
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 
@@ -14,6 +16,7 @@ class TestUploads:
                 "filename": "test.pdf",
                 "mime_type": "application/pdf",
                 "size_bytes": 1024,
+                "access_scope_json": {"scope_type": "internal", "department": "Engineering"},
             },
         )
         assert resp.status_code == 201
@@ -22,6 +25,7 @@ class TestUploads:
         assert data["status"] in ("uploading", "failed")
         assert data["filename"] == "test.pdf"
         assert data["user_id"] == "user-001"
+        assert data["access_scope_json"]["scope_type"] == "internal"
 
     def test_create_upload_unauthorized(self, client: TestClient):
         resp = client.post(
@@ -140,3 +144,87 @@ class TestUploads:
         )
         # Different upload_ids generated each time
         assert resp1.json()["upload_id"] != resp2.json()["upload_id"]
+
+    def test_upload_content_uses_access_scope_visibility(self, client: TestClient, uploader_token: str):
+        create_resp = client.post(
+            "/workbench/uploads",
+            headers={"Authorization": f"Bearer {uploader_token}"},
+            json={
+                "collection_id": "col_default",
+                "filename": "test.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1024,
+                "access_scope_json": {"scope_type": "external", "customer": "acme"},
+            },
+        )
+        upload_id = create_resp.json()["upload_id"]
+
+        captured = {}
+
+        async def _fake_upload_file(self, collection_id, visibility, filename, content_bytes, mime_type):
+            captured["collection_id"] = collection_id
+            captured["visibility"] = visibility
+            captured["filename"] = filename
+            captured["mime_type"] = mime_type
+            captured["size"] = len(content_bytes)
+            return {
+                "source_file_id": "sf_123",
+                "status": "UPLOADED",
+                "duplicate": False,
+            }
+
+        with patch(
+            "workbench_api.downstream_clients.document_service_client.DocumentServiceClient.upload_file",
+            new=_fake_upload_file,
+        ):
+            resp = client.post(
+                f"/workbench/uploads/{upload_id}/content",
+                headers={"Authorization": f"Bearer {uploader_token}"},
+                data={"access_scope_json": json.dumps({"scope_type": "external", "customer": "acme"})},
+                files={"file": ("test.pdf", b"%PDF-1.4\n", "application/pdf")},
+            )
+
+        assert resp.status_code == 200
+        assert captured["collection_id"] == "col_default"
+        assert captured["visibility"] == "EXTERNAL"
+        assert captured["filename"] == "test.pdf"
+        assert captured["mime_type"] == "application/pdf"
+        assert captured["size"] > 0
+
+    def test_upload_content_reuses_persisted_access_scope(self, client: TestClient, uploader_token: str):
+        create_resp = client.post(
+            "/workbench/uploads",
+            headers={"Authorization": f"Bearer {uploader_token}"},
+            json={
+                "collection_id": "col_default",
+                "filename": "test.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1024,
+                "access_scope_json": {"scope_type": "external", "customer": "acme"},
+            },
+        )
+        upload_id = create_resp.json()["upload_id"]
+
+        captured = {}
+
+        async def _fake_upload_file(self, collection_id, visibility, filename, content_bytes, mime_type):
+            captured["visibility"] = visibility
+            return {
+                "source_file_id": "sf_123",
+                "status": "UPLOADED",
+                "duplicate": False,
+            }
+
+        with patch(
+            "workbench_api.downstream_clients.document_service_client.DocumentServiceClient.upload_file",
+            new=_fake_upload_file,
+        ):
+            resp = client.post(
+                f"/workbench/uploads/{upload_id}/content",
+                headers={"Authorization": f"Bearer {uploader_token}"},
+                files={"file": ("test.pdf", b"%PDF-1.4\n", "application/pdf")},
+            )
+
+        assert resp.status_code == 200
+        assert captured["visibility"] == "EXTERNAL"
+        assert resp.json()["access_scope_json"]["scope_type"] == "external"

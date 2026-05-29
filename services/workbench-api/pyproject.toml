@@ -19,6 +19,13 @@ dev = [
     "respx>=0.22",
 ]
 
+[tool.uv.sources]
+reality-rag-contracts = { path = "../../packages/contracts" }
+reality-rag-persistence = { path = "../../packages/persistence" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "strict"

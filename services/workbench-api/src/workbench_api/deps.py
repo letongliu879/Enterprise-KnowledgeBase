@@ -28,7 +28,7 @@ class CurrentUser:
         return True  # TODO: implement tenant-level ACL
 
     def can_access_collection(self, collection_id: str) -> bool:
-        return collection_id in self.allowed_collections
+        return "*" in self.allowed_collections or collection_id in self.allowed_collections
 
 
 def get_db():

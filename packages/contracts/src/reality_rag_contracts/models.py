@@ -1505,6 +1505,7 @@ class WorkbenchUploadSession(BaseModel):
     ticket_id: Optional[str] = None
     selected_parser_profile_id: Optional[str] = None
     parser_override_json: Optional[dict[str, Any]] = None
+    access_scope_json: Optional[dict[str, Any]] = None
     status: str = "uploading"
     progress_pct: int = Field(default=0, ge=0, le=100)
     filename: str
@@ -1681,4 +1682,3 @@ class RetrievalCachePurgeResponse(BaseModel):
 
     purged_count: int = 0
     scope: dict[str, Any] = Field(default_factory=dict)
-

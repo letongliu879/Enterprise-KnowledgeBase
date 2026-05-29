@@ -72,7 +72,7 @@ Verified via `py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
 |---|---|
 | `packages/contracts` pytest | 174 passed |
 | `services/admin` pytest | 78 passed |
-| `services/workbench-api` pytest | 57 passed |
+| `services/workbench-api` pytest | 58 passed |
 | `services/indexing` pytest | 53 passed |
 | `services/access` mvn test | 39 passed, 1 skipped |
 | `services/retrieval` mvn test | 89 passed |
@@ -89,6 +89,10 @@ cd services/workbench-api && py -3.14 -m pytest tests/ -v
 cd services/indexing && py -3.14 -m pytest tests/ -v
 cd services/access && mvn test
 cd services/retrieval && mvn test -Dtest='!RealSqliteIndexingRegistrySmokeTest'
+
+# Frontend build + E2E
+cd apps/web && npm run build
+npx playwright test
 
 # Normal smoke (stub fallback allowed)
 py -3.14 scripts/run_real_runtime_smoke.py
@@ -114,7 +118,7 @@ py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-red
 | OAuth/IdP SSO | **NOT IMPLEMENTED** — JWT issuer/audience verification exists, but no SSO login page, no JWKS endpoint, no external IdP integration | Integrate OAuth2/OIDC provider (Keycloak, Auth0, etc.) |
 | Production deployment | **TEMPLATES READY** — `deploy/docker-compose.yml`, `Dockerfile.python`, `Dockerfile.java`, `.env.example` created; container images NOT YET BUILT | Build images, test compose, deploy |
 | Concurrent/load testing | **NOT DONE** | Run load tests against retrieval and access endpoints |
-| UI/workbench frontend | **NOT DONE** | Build workbench UI and admin console frontend |
+| UI/workbench frontend | **COMPLETED** (2026-05-29) — Next.js 16 App Router, Chinese UI, 6 pages, upload governance payload, Playwright E2E 18/18 pass | Done |
 | Retrieval cache purge granularity | Partial — `POST /internal/cache/purge` flushes ALL keys regardless of request parameters | Implement collection/doc-level purge |
 | MinIO / Object Storage | **TEMPLATE** — deploy compose has commented-out minio service; not in current MVP path; zero service connections confirmed | Uncomment and start when document binary storage is enabled |
 
@@ -193,9 +197,9 @@ Any future change to one of these requires updating ALL:
 ## 6. Recommended Next Phases (in order)
 
 1. **OAuth/IdP integration** — add OAuth2/OIDC provider, JWKS endpoint, replace smoke-test-secret with real identity provider
-3. **Deployment hardening** — containerize services, production profiles, secrets management, monitoring
-4. **Load/concurrency testing** — verify retrieval throughput, cache hit rates, failover behavior
-5. **UI/workbench frontend** — if needed by stakeholders
+2. **Deployment hardening** — containerize services, production profiles, secrets management, monitoring
+3. **Load/concurrency testing** — verify retrieval throughput, cache hit rates, failover behavior
+4. **Frontend SSO** — replace demo token paste with real OAuth2/OIDC login flow
 
 ---
 

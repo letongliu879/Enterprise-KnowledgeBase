@@ -51,10 +51,26 @@ def get_session() -> Session:
     return SessionLocal()
 
 
+def _ensure_column_exists(table_name: str, column_name: str, column_type: str) -> None:
+    """Add a column to an existing table if it doesn't exist (dev-only schema sync)."""
+    from sqlalchemy import inspect, text
+    engine = _get_engine()
+    inspector = inspect(engine)
+    if table_name not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns(table_name)}
+    if column_name in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+
+
 def create_all() -> None:
     """Create all tables. For dev/seed usage only — not for production migrations."""
     from .models import Base
     Base.metadata.create_all(bind=_get_engine())
+    # Sync columns added after initial table creation
+    _ensure_column_exists("workbench_upload_sessions", "access_scope_json", "JSON")
 
 
 def drop_all() -> None:

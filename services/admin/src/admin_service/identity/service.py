@@ -11,6 +11,7 @@ from reality_rag_persistence.models import AdminUserModel, AdminSessionModel
 
 from .repository import IdentityRepository
 from .models import LoginResponse, AdminUserResponse
+from ..deps import CurrentUser
 from ..config import config
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
@@ -24,11 +25,13 @@ def _verify_password(password: str, password_hash: str) -> bool:
     return _pwd_context.verify(password, password_hash)
 
 
-def _create_token(user_id: str, email: str, roles: list[str]) -> str:
+def _create_token(user_id: str, email: str, roles: list[str], tenant_id: str, allowed_collections: list[str]) -> str:
     payload: dict = {
         "sub": user_id,
         "email": email,
         "roles": roles,
+        "tenant_id": tenant_id,
+        "allowed_collections": allowed_collections,
         "exp": datetime.now(timezone.utc) + timedelta(hours=config.jwt_expiration_hours),
     }
     if config.jwt_issuer:
@@ -52,7 +55,10 @@ class IdentityService:
             raise ValueError("Invalid email or password")
         user.last_login_at = datetime.now(timezone.utc)
         self._repo.save_user(user)
-        token = _create_token(user.user_id, user.email, user.roles or [])
+        allowed_tenants = user.allowed_tenants or []
+        tenant_id = allowed_tenants[0] if allowed_tenants else "default"
+        allowed_collections = user.allowed_collections or []
+        token = _create_token(user.user_id, user.email, user.roles or [], tenant_id, allowed_collections)
         session = AdminSessionModel(
             session_id=secrets.token_urlsafe(32),
             user_id=user.user_id,
@@ -69,26 +75,38 @@ class IdentityService:
         # In production, add a DB index or query
         pass
 
-    def me(self, user_id: str) -> AdminUserResponse:
-        user = self._repo.get_user(user_id)
-        if user is None:
+    def me(self, user: CurrentUser) -> AdminUserResponse:
+        user_db = self._repo.get_user(user.user_id)
+        if user_db is None:
             raise ValueError("User not found")
         return AdminUserResponse(
-            user_id=user.user_id,
-            email=user.email,
-            display_name=user.display_name or "",
-            roles=user.roles or [],
-            allowed_tenants=user.allowed_tenants or [],
-            allowed_collections=user.allowed_collections or [],
+            user_id=user_db.user_id,
+            email=user_db.email,
+            display_name=user_db.display_name or "",
+            roles=user_db.roles or [],
+            tenant_id=user.tenant_id,
+            allowed_tenants=user_db.allowed_tenants or [],
+            allowed_collections=user_db.allowed_collections or [],
         )
 
-    def create_user(self, user_id: str, email: str, password: str, display_name: str, roles: list[str]) -> AdminUserModel:
+    def create_user(
+        self,
+        user_id: str,
+        email: str,
+        password: str,
+        display_name: str,
+        roles: list[str],
+        allowed_tenants: list[str] | None = None,
+        allowed_collections: list[str] | None = None,
+    ) -> AdminUserModel:
         user = AdminUserModel(
             user_id=user_id,
             email=email,
             password_hash=_hash_password(password),
             display_name=display_name,
             roles=roles,
+            allowed_tenants=allowed_tenants or [],
+            allowed_collections=allowed_collections or [],
         )
         self._repo.save_user(user)
         return user

@@ -8,16 +8,23 @@ from sqlalchemy.orm import Session
 from reality_rag_contracts.models import WorkbenchUploadSession
 
 from ..deps import CurrentUser
-from ..downstream_clients import IntakeClient
+from ..downstream_clients import IntakeClient, DocumentServiceClient
 from ..downstream_clients.errors import DownstreamError
 from ..errors import downstream_not_implemented, downstream_unavailable, conflict
 from .repository import UploadSessionRepository
 
 
+def _visibility_from_access_scope(access_scope_json: dict | None) -> str:
+    if (access_scope_json or {}).get("scope_type") == "external":
+        return "EXTERNAL"
+    return "INTERNAL"
+
+
 class UploadSessionService:
-    def __init__(self, repository: UploadSessionRepository, intake_client: IntakeClient, actor_id: str):
+    def __init__(self, repository: UploadSessionRepository, intake_client: IntakeClient, document_client: DocumentServiceClient, actor_id: str):
         self._repository = repository
         self._intake_client = intake_client
+        self._document_client = document_client
         self._actor_id = actor_id
 
     async def create_upload(self, req: dict, user: CurrentUser) -> WorkbenchUploadSession:
@@ -41,6 +48,7 @@ class UploadSessionService:
                 "size_bytes": req["size_bytes"],
                 "selected_parser_profile_id": req.get("selected_parser_profile_id"),
                 "parser_override_json": req.get("parser_override_json"),
+                "access_scope_json": req.get("access_scope_json"),
             },
         }
 
@@ -72,6 +80,7 @@ class UploadSessionService:
             error_message=error_message,
             selected_parser_profile_id=req.get("selected_parser_profile_id"),
             parser_override_json=req.get("parser_override_json"),
+            access_scope_json=req.get("access_scope_json"),
         )
         self._repository.save(self._to_model(session))
         return session
@@ -99,6 +108,51 @@ class UploadSessionService:
             return False
         return self._repository.delete(upload_id)
 
+    async def upload_content(
+        self,
+        upload_id: str,
+        user: CurrentUser,
+        collection_id: str,
+        filename: str,
+        mime_type: str,
+        content_bytes: bytes,
+        access_scope_json: dict | None = None,
+    ) -> WorkbenchUploadSession:
+        model = self._repository.get(upload_id)
+        if not model or model.user_id != user.user_id:
+            raise ValueError("Upload not found or access denied")
+
+        effective_access_scope = access_scope_json if access_scope_json is not None else model.access_scope_json
+        visibility = _visibility_from_access_scope(effective_access_scope)
+
+        try:
+            result = await self._document_client.upload_file(
+                collection_id=collection_id,
+                visibility=visibility,
+                filename=filename,
+                content_bytes=content_bytes,
+                mime_type=mime_type,
+            )
+        except DownstreamError as e:
+            if e.code == "DOWNSTREAM_NOT_IMPLEMENTED":
+                raise downstream_not_implemented("Document service upload API not yet implemented") from e
+            elif e.code == "DOWNSTREAM_UNAVAILABLE":
+                raise downstream_unavailable("Document service unavailable") from e
+            else:
+                raise downstream_unavailable(f"Document service error: {e.message}") from e
+
+        if not model.source_file_id:
+            model.source_file_id = result.get("source_file_id") or model.source_file_id
+        model.access_scope_json = effective_access_scope
+        raw_status = result.get("status")
+        model.status = raw_status.lower() if isinstance(raw_status, str) else "uploaded"
+        model.progress_pct = 100
+        model.error_message = None
+        if result.get("duplicate"):
+            model.status = "duplicate"
+        self._repository.save(model)
+        return self._from_model(model)
+
     @staticmethod
     def _to_model(session: WorkbenchUploadSession) -> object:
         from reality_rag_persistence.models import WorkbenchUploadSessionModel
@@ -113,6 +167,7 @@ class UploadSessionService:
             ticket_id=session.ticket_id,
             selected_parser_profile_id=session.selected_parser_profile_id,
             parser_override_json=session.parser_override_json,
+            access_scope_json=session.access_scope_json,
             status=session.status,
             progress_pct=session.progress_pct,
             filename=session.filename,
@@ -136,6 +191,7 @@ class UploadSessionService:
             ticket_id=model.ticket_id,
             selected_parser_profile_id=model.selected_parser_profile_id,
             parser_override_json=model.parser_override_json,
+            access_scope_json=model.access_scope_json,
             status=model.status,
             progress_pct=model.progress_pct,
             filename=model.filename,

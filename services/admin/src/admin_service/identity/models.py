@@ -18,5 +18,6 @@ class AdminUserResponse(BaseModel):
     email: str
     display_name: str
     roles: list[str]
+    tenant_id: str
     allowed_tenants: list[str]
     allowed_collections: list[str]
