@@ -80,6 +80,26 @@ async function extractPptxText(bytes: ArrayBuffer): Promise<string> {
   return sections.join("\n\n");
 }
 
+function HighlightText({ text, highlight }: { text: string; highlight: string }) {
+  if (!highlight.trim()) return <>{text}</>;
+
+  const parts = text.split(new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"));
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === highlight.toLowerCase() ? (
+          <mark key={i} className="bg-amber-200 text-amber-900 px-0.5 rounded">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
 function ZoomableHtml({
   html,
   zoom,
@@ -114,6 +134,8 @@ export function DocumentViewer({
   parserBackend,
   warnings = [],
   chunks = [],
+  searchText,
+  onSearchComplete,
 }: {
   parseSnapshotId?: string | null;
   filename?: string | null;
@@ -122,6 +144,8 @@ export function DocumentViewer({
   parserBackend?: string | null;
   warnings?: string[];
   chunks?: ChunkView[];
+  searchText?: string;
+  onSearchComplete?: (found: boolean) => void;
 }) {
   const extension = useMemo(() => extOf(filename), [filename]);
   const anchoredPages = useMemo(() => collectAnchoredPages(chunks), [chunks]);
@@ -132,6 +156,7 @@ export function DocumentViewer({
   const [htmlPreview, setHtmlPreview] = useState("");
   const [textPreview, setTextPreview] = useState("");
   const [rendering, setRendering] = useState(false);
+  const [searchHighlight, setSearchHighlight] = useState("");
 
   const pageCount = anchoredPages.length > 0 ? anchoredPages[anchoredPages.length - 1] : null;
 
@@ -229,6 +254,60 @@ export function DocumentViewer({
       active = false;
     };
   }, [data?.blob, extension, parseSnapshotId, previewText]);
+
+  // Handle external search requests
+  useEffect(() => {
+    if (!searchText?.trim()) {
+      setSearchHighlight("");
+      return;
+    }
+
+    setSearchHighlight(searchText);
+
+    // For text/html modes, try to find and scroll to the text
+    if (mode === "text" || mode === "html") {
+      const container = document.querySelector("[data-document-viewer-content]");
+      if (container) {
+        const text = container.textContent || "";
+        const index = text.toLowerCase().indexOf(searchText.toLowerCase());
+        if (index >= 0) {
+          // Try to find the element containing this text
+          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+          let currentIndex = 0;
+          let foundNode: Text | null = null;
+          let foundOffset = 0;
+
+          while (walker.nextNode()) {
+            const node = walker.currentNode as Text;
+            const nodeText = node.textContent || "";
+            if (currentIndex <= index && currentIndex + nodeText.length > index) {
+              foundNode = node;
+              foundOffset = index - currentIndex;
+              break;
+            }
+            currentIndex += nodeText.length;
+          }
+
+          if (foundNode) {
+            const range = document.createRange();
+            range.setStart(foundNode, foundOffset);
+            range.setEnd(foundNode, Math.min(foundOffset + searchText.length, foundNode.length));
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+            foundNode.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+
+          onSearchComplete?.(true);
+          return;
+        }
+      }
+    }
+
+    // For PDF, we can't programmatically search inside iframe easily
+    // Just highlight that we attempted
+    onSearchComplete?.(mode === "pdf" ? false : false);
+  }, [searchText, mode, textPreview, htmlPreview, onSearchComplete]);
 
   const pdfUrl = useMemo(() => {
     if (!objectUrl || mode !== "pdf") return "";
@@ -399,13 +478,20 @@ export function DocumentViewer({
               />
             </div>
           ) : htmlPreview ? (
-            <ZoomableHtml html={htmlPreview} zoom={zoom} />
+            <div data-document-viewer-content>
+              <ZoomableHtml html={htmlPreview} zoom={zoom} />
+            </div>
           ) : textPreview ? (
             <div
+              data-document-viewer-content
               className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 leading-7"
               style={{ fontSize: `${Math.max(12, zoom / 6)}px` }}
             >
-              {textPreview}
+              {searchHighlight ? (
+                <HighlightText text={textPreview} highlight={searchHighlight} />
+              ) : (
+                textPreview
+              )}
             </div>
           ) : objectUrl && mode === "html" ? (
             <iframe

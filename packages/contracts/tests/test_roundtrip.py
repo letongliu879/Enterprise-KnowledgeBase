@@ -98,10 +98,10 @@ class TestCanonicalMetadata:
 
     def test_asset_paths_and_processing_summary_roundtrip(self):
         data = _load_json("canonical_metadata.json")
-        data["processing_summary"] = "converted via markitdown"
+        data["processing_summary"] = "converted via ragflow-naive"
         data["asset_paths"] = {"canonical_md": "col-finance-policy/doc-travel-policy-v3/canonical.md"}
         result = _roundtrip(CanonicalMetadata, data)
-        assert result["processing_summary"] == "converted via markitdown"
+        assert result["processing_summary"] == "converted via ragflow-naive"
         assert result["asset_paths"]["canonical_md"] == "col-finance-policy/doc-travel-policy-v3/canonical.md"
 
 
@@ -265,7 +265,7 @@ class TestProcessingRecord:
             source_file_path="/tmp/source.txt",
             source_hash="sha256:abc",
             conversion_status="success",
-            tool_chain=["markitdown"],
+            tool_chain=["ragflow-naive"],
             published_asset_paths={"canonical_md": "col-finance-policy/doc-travel-policy-v3/canonical.md"},
         )
         data = _roundtrip(ProcessingRecord, record.model_dump(mode="json"))

@@ -1,5 +1,6 @@
 import type {
   CollectionListResponse,
+  DocumentProjectionItem,
   WorkbenchTaskView,
   WorkbenchUploadSession,
   TicketItem,
@@ -354,8 +355,8 @@ export const workbenchApi = {
       WORKBENCH_BASE,
       `/workbench/chunks/${evidence_id}`
     ),
-  patchChunk: (evidence_id: string, payload: Record<string, unknown>) =>
-    request<Record<string, unknown>>(
+  patchChunk: <T = Record<string, unknown>>(evidence_id: string, payload: T) =>
+    request<T>(
       WORKBENCH_BASE,
       `/workbench/chunks/${evidence_id}`,
       { method: "PATCH", body: JSON.stringify(payload) }
@@ -371,6 +372,94 @@ export const workbenchApi = {
       `/workbench/parse-snapshots/${id}/chunks`,
       { query: { page: String(page || 1), page_size: String(page_size || 50) } }
     ),
+  listChunkEdits: (parse_snapshot_id: string) =>
+    request<{ items: Array<Record<string, unknown>>; total: number }>(
+      WORKBENCH_BASE,
+      `/workbench/chunk-edits`,
+      { query: { parse_snapshot_id } }
+    ),
+  listDocuments: (opts?: { collection_id?: string; document_state?: string }) =>
+    request<{ items: DocumentProjectionItem[]; total: number }>(
+      WORKBENCH_BASE,
+      "/workbench/documents",
+      { query: opts }
+    ),
+  getDocument: (doc_id: string) =>
+    request<DocumentProjectionItem>(
+      WORKBENCH_BASE,
+      `/workbench/documents/${doc_id}`
+    ),
+  getParseSnapshotSourceBlob: async (parse_snapshot_id: string) => {
+    const url = resolveUrl(
+      WORKBENCH_BASE,
+      `/workbench/parse-snapshots/${parse_snapshot_id}/source`
+    );
+    const headers = new Headers();
+    const token = getToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const res = await fetch(url.toString(), {
+      headers,
+      signal: controller.signal,
+    }).catch((error: unknown) => {
+      clearTimeout(timeout);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiClientError(
+          "REQUEST_TIMEOUT",
+          `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
+          408
+        );
+      }
+      throw error;
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      let body: { code?: string; message?: string; detail?: string } = {};
+      try {
+        body = await res.json();
+      } catch {
+        /* ignore */
+      }
+      throw new ApiClientError(
+        body.code || `HTTP_${res.status}`,
+        body.message || body.detail || `HTTP ${res.status}`,
+        res.status
+      );
+    }
+
+    const blob = await res.blob();
+    const contentType = res.headers.get("content-type") || "application/octet-stream";
+    return { blob, contentType };
+  },
+  getWorkspaceDetail: (ticket_id: string) =>
+    request<Record<string, unknown>>(
+      WORKBENCH_BASE,
+      `/workbench/tickets/${ticket_id}/workspace`
+    ),
+  retrieve: (payload: {
+    query: string;
+    collection_id: string;
+    token_budget?: number;
+    max_results?: number;
+    budget_policy?: string;
+    application_profile_id?: string;
+    retrieval_profile_id?: string;
+    debug?: "none" | "basic" | "full";
+  }) =>
+    request<{
+      query_run_id: string;
+      knowledge_context: Record<string, unknown>;
+      latency_ms: number;
+      trace_id: string;
+      evidence_items: Array<Record<string, unknown>>;
+      token_budget_used: number;
+    }>(WORKBENCH_BASE, "/workbench/retrieve", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ── Access API (retrieval) ─────────────────────────────────────────────

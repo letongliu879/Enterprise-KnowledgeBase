@@ -1,9 +1,8 @@
-"""Fake converter for tests — replaces MarkItDownConverter.
+"""Fake converter for tests — replaces the real converter.
 
 Does not parse files locally; returns a canned ConversionResult so that
 IngestionPipeline and run_conversion_stage can be tested without:
-- the markitdown package
-- a running indexing-service
+- a running indexing-service (RAGFlow converter)
 """
 
 from __future__ import annotations

@@ -31,6 +31,8 @@ class RetrieveRequest(BaseModel):
     max_results: int = Field(default=10, gt=0)
     budget_policy: str = Field(default="balanced")
     application_profile_id: str = Field(default="workbench_default")
+    retrieval_profile_id: str | None = Field(default=None)
+    debug: str = Field(default="none")
 
 
 @router.post("/workbench/retrieve")
@@ -46,7 +48,7 @@ async def retrieve(
     query_run_id = f"qr_{uuid.uuid4().hex[:16]}"
     trace_id = f"trc_{uuid.uuid4().hex[:16]}"
 
-    access_payload = {
+    access_payload: dict = {
         "query": req.query,
         "tenant_id": user.tenant_id,
         "application_profile_id": req.application_profile_id,
@@ -55,6 +57,10 @@ async def retrieve(
         "token_budget": req.token_budget,
         "budget_policy": req.budget_policy,
     }
+    if req.retrieval_profile_id:
+        access_payload["retrieval_profile_id"] = req.retrieval_profile_id
+    if req.debug and req.debug != "none":
+        access_payload["debug"] = req.debug
 
     repo = QueryRunRepository(session)
     repo.create({
@@ -92,6 +98,8 @@ async def retrieve(
             "knowledge_context": knowledge_context,
             "latency_ms": latency_ms,
             "trace_id": trace_id,
+            "evidence_items": knowledge_context.get("evidence_items", []),
+            "token_budget_used": knowledge_context.get("token_budget_used", 0),
         }
     except DownstreamError as e:
         latency_ms = int((time.monotonic() - started_at) * 1000)

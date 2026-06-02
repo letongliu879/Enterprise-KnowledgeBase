@@ -203,7 +203,7 @@ class TestDocumentRepository:
             publish_status=PublishStatus.PUBLISHED,
             index_status=IndexStatus.INDEXED,
             domain_tags=["finance"],
-            processing_summary="converted via markitdown",
+            processing_summary="converted via ragflow-naive",
             asset_paths={"canonical_md": "/sidecar/col-1/doc-1/canonical.md"},
         )
         repo.save(doc)
@@ -214,7 +214,7 @@ class TestDocumentRepository:
         assert result.publish_status == PublishStatus.PUBLISHED
         assert result.index_status == IndexStatus.INDEXED
         assert result.domain_tags == ["finance"]
-        assert result.processing_summary == "converted via markitdown"
+        assert result.processing_summary == "converted via ragflow-naive"
         assert result.asset_paths == {"canonical_md": "/sidecar/col-1/doc-1/canonical.md"}
 
     def test_list_by_collection(self, session):

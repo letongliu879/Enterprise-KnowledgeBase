@@ -116,7 +116,7 @@ class TestConversionResult:
             source_file_path="/data/raw/test.pdf",
             conversion_status=ConversionStatus.SUCCESS,
             canonical_md="# Markdown content",
-            metadata={"converter": "markitdown-0.1.0", "file_size_bytes": 204857},
+            metadata={"converter": "ragflow-naive", "file_size_bytes": 204857},
         )
         json_str = result.model_dump_json()
         re_parsed = ConversionResult.model_validate_json(json_str)

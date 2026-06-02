@@ -22,7 +22,7 @@
       "metadata": {
         "file_size_bytes": 204857,
         "encoding": "utf-8",
-        "converter": "markitdown-0.1.0"
+        "converter": "ragflow-naive"
       }
     },
     {
@@ -34,7 +34,7 @@
       "metadata": {
         "file_size_bytes": 152300,
         "encoding": "utf-8",
-        "converter": "markitdown-0.1.0"
+        "converter": "ragflow-naive"
       }
     },
     {
@@ -46,7 +46,7 @@
       "metadata": {
         "file_size_bytes": 89000,
         "encoding": null,
-        "converter": "markitdown-0.1.0"
+        "converter": "ragflow-naive"
       }
     },
     {
@@ -70,7 +70,7 @@
       "metadata": {
         "file_size_bytes": 45200,
         "encoding": "utf-8",
-        "converter": "markitdown-0.1.0"
+        "converter": "ragflow-naive"
       }
     }
   ],

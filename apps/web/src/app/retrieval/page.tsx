@@ -14,7 +14,7 @@ import {
   Sparkles,
   AlertCircle,
 } from "lucide-react";
-import { accessApi, adminApi } from "@/lib/api/client";
+import { workbenchApi, adminApi } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,9 +81,9 @@ export default function RetrievalPage() {
       tokenBudget,
     ],
     queryFn: () =>
-      accessApi.retrieve({
+      workbenchApi.retrieve({
         query,
-        collection_scope: currentCollectionId ? [currentCollectionId] : [],
+        collection_id: currentCollectionId || "",
         retrieval_profile_id: retrievalProfileId,
         token_budget: parseInt(tokenBudget, 10) || 2000,
         debug,

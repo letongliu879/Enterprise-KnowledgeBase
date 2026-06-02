@@ -15,6 +15,7 @@ import {
   Activity,
   ChevronDown,
   Shield,
+  Library,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/upload", label: "批量入库", icon: Upload },
   { href: "/review", label: "人工复核", icon: Inbox },
+  { href: "/documents", label: "文档库", icon: Library },
   { href: "/retrieval", label: "检索验证", icon: Search },
   { href: "/collections", label: "知识库集合", icon: Database },
 ];
