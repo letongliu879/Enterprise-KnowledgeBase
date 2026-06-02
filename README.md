@@ -64,6 +64,10 @@
 | **indexing** | Python | 18080 | 无 (internal) | 解析、分块、embedding、索引写入与版本管理 |
 | **publishing-worker** | Python | 18086 | 无 (internal) | 发布命令执行、索引激活 |
 | **document-service** | Python | 8006 | 无 (internal) | 源文件元数据与存储管理（intake-pipeline 子服务） |
+| **approval-service** | Python | 18087 | 无 (internal) | 审批决策服务（intake-pipeline 子服务） |
+| **agent-review-worker** | Python | 18090 | 无 (internal) | 智能审核 Worker（intake-pipeline 子服务） |
+| **conversion-worker** | Python | 18089 | 无 (internal) | 文档转换 Worker（intake-pipeline 子服务） |
+| **ingestion-worker** | Python | 18088 | 无 (internal) | 摄入任务 Worker（intake-pipeline 子服务） |
 
 ---
 
@@ -216,18 +220,42 @@ SPRING_PROFILES_ACTIVE=smoke
 
 ### 步骤 4：启动后端服务
 
-**推荐：本地编排器（一键启动，自动处理依赖顺序、readiness、PYTHONPATH）**
+**推荐：EKB Service Manager（一键启动，自动处理依赖、编译、健康检查）**
 
 ```bash
 # 在项目根目录执行（.venv 已激活）
-py -3.14 scripts/start-services.py
+py -3.14 scripts/ekb-svc.py start
+
+# 只启动 Java 服务
+py -3.14 scripts/ekb-svc.py start --java
+
+# 只启动 Python 服务
+py -3.14 scripts/ekb-svc.py start --python
+
+# 跳过基础设施检查
+py -3.14 scripts/ekb-svc.py start --no-infra-check
 ```
 
+功能：
 - 自动检测基础设施（PostgreSQL、OpenSearch、Qdrant、Redis）是否就绪
-- 按依赖图和 readiness 启动服务，不只看端口是否监听
-- Python/Java 分开处理环境变量；Java 会自动把 `postgresql://...` 转成 `jdbc:postgresql://...`
+- Java 服务先自动编译（`mvn package -DskipTests`），再 `java -jar` 启动，杜绝 PIPE 阻塞和超时
+- 按依赖拓扑分层并行启动，同层服务同时启动
+- 三阶段健康检查（port → HTTP → 200），失败自动打印日志最后 30 行
+- 服务崩溃后自动重启（指数退避，最多 5 次）
+- 每个服务日志独立写到 `tmp/services/<name>.out.log` / `.err.log`
 - `Ctrl+C` 一键停止所有服务
-- 支持 `--python`（只启动 Python 服务）、`--java`（只启动 Java 服务）、`--no-infra-check`
+
+```
+
+**诊断命令**：
+```bash
+py -3.14 scripts/ekb-svc.py status              # 查看所有服务状态
+py -3.14 scripts/ekb-svc.py logs retrieval      # 查看 retrieval 日志
+py -3.14 scripts/ekb-svc.py logs retrieval -f   # 实时跟踪日志
+py -3.14 scripts/ekb-svc.py restart retrieval   # 重启单个服务
+py -3.14 scripts/ekb-svc.py stop                # 停止所有服务
+py -3.14 scripts/ekb-svc.py build               # 手动编译 Java 服务
+```
 
 **手动启动（备选，每个服务一个终端）**
 
@@ -239,9 +267,13 @@ py -3.14 scripts/start-services.py
 PostgreSQL / OpenSearch / Qdrant / Redis (Docker)
   → admin (18084)
   → indexing (18080)
+  → document-service (8006)
   → intake-pipeline (18085)
   → publishing-worker (18086)
-  → document-service (8006)
+  → approval-service (18087)
+  → agent-review-worker (18090)
+  → conversion-worker (18089)
+  → ingestion-worker (18088)
   → workbench-api (18083)
   → retrieval (18182)
   → access (18181)
@@ -287,13 +319,17 @@ python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
 **Java 服务**（每个一个终端）：
 
 ```bash
+# 先编译（首次或代码变更后需要）
+cd services/retrieval && mvn package -DskipTests
+cd services/access    && mvn package -DskipTests
+
 # Terminal 7 — retrieval
 cd services/retrieval
-mvn spring-boot:run -Dspring-boot.run.profiles=smoke
+java -Dspring.profiles.active=smoke -Dserver.port=18182 -jar target/retrieval-*.jar
 
 # Terminal 8 — access
 cd services/access
-mvn spring-boot:run -Dspring-boot.run.profiles=smoke
+java -Dspring.profiles.active=smoke -Dserver.port=18181 -Daccess.retrieval.base-url=http://127.0.0.1:18182 -jar target/access-*.jar
 ```
 
 ---
@@ -402,7 +438,7 @@ Enterprise KnowledgeBase/
 │   └── documents/              # 共享文档域逻辑
 ├── scripts/
 │   ├── run_real_runtime_smoke.py   # 真实运行时冒烟测试
-│   └── start-services.py           # 一键本地启动所有后端服务
+│   └── ekb-svc.py                  # 生产级服务管理器（start/stop/status/logs/restart/build）
 ├── services/
 │   ├── access/                 # Java：外部查询入口 (REST + MCP)
 │   ├── admin/                  # Python：管理控制面
