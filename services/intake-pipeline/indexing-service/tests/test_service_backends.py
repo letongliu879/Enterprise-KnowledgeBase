@@ -33,7 +33,7 @@ def _bundle() -> IndexAssetBundle:
 
 def test_get_index_backend_defaults_to_hybrid(monkeypatch):
     monkeypatch.setenv("INDEX_BACKEND_MODE", "hybrid")
-    monkeypatch.setenv("OPENSEARCH_URL", "http://opensearch:9200")
+    monkeypatch.setenv("OPENSEARCH_URL", "http://opensearch:9201")
     monkeypatch.setenv("QDRANT_URL", "http://qdrant:6333")
     backend = mod.get_index_backend()
     assert isinstance(backend, mod.HybridIndexBackend)
@@ -47,7 +47,7 @@ def test_get_index_backend_explicit_noop(monkeypatch):
 
 def test_get_index_backend_builds_hybrid(monkeypatch):
     monkeypatch.setenv("INDEX_BACKEND_MODE", "hybrid")
-    monkeypatch.setenv("OPENSEARCH_URL", "http://opensearch:9200")
+    monkeypatch.setenv("OPENSEARCH_URL", "http://opensearch:9201")
     monkeypatch.setenv("QDRANT_URL", "http://qdrant:6333")
     backend = mod.get_index_backend()
     assert isinstance(backend, mod.HybridIndexBackend)
@@ -93,14 +93,14 @@ def test_opensearch_index_writer_posts_bulk_payload(monkeypatch):
 
     monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
 
-    writer = mod.OpenSearchIndexWriter(base_url="http://opensearch:9200")
+    writer = mod.OpenSearchIndexWriter(base_url="http://opensearch:9201")
     count = asyncio.run(
         writer.write_records([_bundle().opensearch_records[0].model_dump(mode="json")])
     )
 
     assert count == 1
-    assert captured["ensure_url"] == "http://opensearch:9200/reality-rag-col-1-v1"
-    assert captured["url"] == "http://opensearch:9200/_bulk"
+    assert captured["ensure_url"] == "http://opensearch:9201/reality-rag-col-1-v1"
+    assert captured["url"] == "http://opensearch:9201/_bulk"
     assert '"_index":"reality-rag-col-1-v1"' in captured["content"]
     assert captured["headers"]["Content-Type"] == "application/x-ndjson"
 
@@ -142,7 +142,7 @@ def test_opensearch_index_writer_raises_on_bulk_item_errors(monkeypatch):
 
     monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
 
-    writer = mod.OpenSearchIndexWriter(base_url="http://opensearch:9200")
+    writer = mod.OpenSearchIndexWriter(base_url="http://opensearch:9201")
     with pytest.raises(RuntimeError, match="OpenSearch bulk indexing reported errors"):
         asyncio.run(
             writer.write_records([_bundle().opensearch_records[0].model_dump(mode="json")])

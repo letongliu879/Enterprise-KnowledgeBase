@@ -37,7 +37,7 @@ Strict smoke 32/32 PASS against project deploy containers. `upstream/ragflow/doc
 | Infra | Container | Image | Port | Verification |
 |---|---|---|---|
 | PostgreSQL | `deploy-postgres-1` | postgres:16 | :5432 | VERIFIED — smoke 32/32 |
-| OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :1201→9201 | VERIFIED — `_search` hits=1 |
+| OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :19201→9201 | VERIFIED — `_search` hits=1 |
 | Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED — `scroll` points=1 |
 | Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED — purge deleted=3 |
 | MinIO / S3 | `minio/minio:latest` (commented out) | :9000-9001 | **TEMPLATE** — not in MVP path; uncomment when document binary storage is enabled |

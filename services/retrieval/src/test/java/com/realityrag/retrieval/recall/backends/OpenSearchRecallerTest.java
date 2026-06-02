@@ -55,7 +55,7 @@ class OpenSearchRecallerTest {
     @Test
     void normalModeFallsBackToStubWhenLiveFails() {
         properties.setLiveRecallEnabled(true);
-        properties.setOpensearchBaseUrl("http://127.0.0.1:1201");
+        properties.setOpensearchBaseUrl("http://127.0.0.1:19201");
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(String.class)))
             .thenThrow(new RestClientException("connection refused"));
 
@@ -77,7 +77,7 @@ class OpenSearchRecallerTest {
     @Test
     void strictModeThrowsWhenLiveFails() {
         properties.setLiveRecallEnabled(true);
-        properties.setOpensearchBaseUrl("http://127.0.0.1:1201");
+        properties.setOpensearchBaseUrl("http://127.0.0.1:19201");
         properties.setRequireLiveBackends(true);
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(String.class)))
             .thenThrow(new RestClientException("connection refused"));
@@ -90,7 +90,7 @@ class OpenSearchRecallerTest {
     @Test
     void strictModeThrowsWhenLiveReturnsEmpty() {
         properties.setLiveRecallEnabled(true);
-        properties.setOpensearchBaseUrl("http://127.0.0.1:1201");
+        properties.setOpensearchBaseUrl("http://127.0.0.1:19201");
         properties.setRequireLiveBackends(true);
 
         String emptyResponse = "{\"hits\":{\"total\":{\"value\":0},\"hits\":[]}}";
@@ -105,7 +105,7 @@ class OpenSearchRecallerTest {
     @Test
     void liveRecallReturnsHits() {
         properties.setLiveRecallEnabled(true);
-        properties.setOpensearchBaseUrl("http://127.0.0.1:1201");
+        properties.setOpensearchBaseUrl("http://127.0.0.1:19201");
 
         String response = "{\"hits\":{\"total\":{\"value\":1},\"hits\":[{\"_score\":2.5,"
             + "\"_source\":{\"chunk_id\":\"chk_1\",\"collection_id\":\"col_smoke\","

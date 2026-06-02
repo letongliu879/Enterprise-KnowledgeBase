@@ -43,7 +43,7 @@ services:
       plugins.security.ssl.transport.enabled: "false"
       http.port: "9201"
     ports:
-      - "1201:9201"
+      - "19201:9201"
     volumes:
       - os_data:/usr/share/opensearch/data
     healthcheck:

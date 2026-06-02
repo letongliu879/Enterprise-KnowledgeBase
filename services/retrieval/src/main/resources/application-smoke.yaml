@@ -24,7 +24,7 @@ management:
 
 retrieval:
   backends:
-    opensearch-base-url: ${OPENSEARCH_BASE_URL:http://127.0.0.1:1201}
+    opensearch-base-url: ${OPENSEARCH_BASE_URL:http://127.0.0.1:19201}
     qdrant-base-url: ${QDRANT_BASE_URL:http://127.0.0.1:6333}
     live-recall-enabled: true
     live-embedding-enabled: true

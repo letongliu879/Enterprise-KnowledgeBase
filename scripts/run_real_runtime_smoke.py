@@ -414,7 +414,7 @@ class SmokeRunner:
             "RERANKER_API_KEY": siliconflow_key,
             "RERANKER_BASE_URL": "https://api.siliconflow.cn/v1/rerank",
             "RERANKER_MODEL": "BAAI/bge-reranker-v2-m3",
-            "OPENSEARCH_BASE_URL": "http://127.0.0.1:1201",
+            "OPENSEARCH_BASE_URL": "http://127.0.0.1:19201",
             "QDRANT_BASE_URL": "http://127.0.0.1:6333",
         }
         if self.args.require_live_backends:
@@ -730,7 +730,7 @@ class SmokeRunner:
             return
 
         index_name = self._opensearch_index_name()
-        url = f"http://127.0.0.1:1201/{index_name}/_search"
+        url = f"http://127.0.0.1:19201/{index_name}/_search"
         payload = {
             "query": {"term": {"final_doc_id": self.final_doc_id}},
             "size": 1,

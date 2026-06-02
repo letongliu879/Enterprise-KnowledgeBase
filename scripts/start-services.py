@@ -225,7 +225,7 @@ def _check_infra() -> list[str]:
     """Check which infrastructure ports are up."""
     infra_ports = {
         "PostgreSQL": 5432,
-        "OpenSearch": 1201,
+        "OpenSearch": 19201,
         "Qdrant": 6333,
         "Redis": 6379,
     }
