@@ -9,7 +9,7 @@ from reality_rag_persistence.repositories.consumer_idempotency import (
     ConsumerIdempotencyRepository,
 )
 
-from ingestion_worker.domains.outbox import EventPublisher, OutboxDispatcher
+from reality_rag_persistence import EventPublisher, OutboxDispatcher
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:

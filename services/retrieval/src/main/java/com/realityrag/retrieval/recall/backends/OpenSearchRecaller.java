@@ -5,13 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.realityrag.retrieval.config.RetrievalBackendProperties;
 import com.realityrag.retrieval.contracts.CollectionRetrievalPlan;
 import com.realityrag.retrieval.store.IndexedChunk;
+import com.realityrag.retrieval.support.RetrievalUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
@@ -20,7 +20,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
@@ -80,7 +79,7 @@ public class OpenSearchRecaller implements RecallerBackend {
     }
 
     List<BackendRecallHit> recallStub(List<IndexedChunk> chunks, String queryText) {
-        String normalizedQuery = normalizeQuery(queryText);
+        String normalizedQuery = RetrievalUtils.normalizeQuery(queryText);
         String[] queryTerms = normalizedQuery.split("\\s+");
         List<BackendRecallHit> hits = new ArrayList<>();
         for (IndexedChunk chunk : chunks) {
@@ -142,7 +141,7 @@ public class OpenSearchRecaller implements RecallerBackend {
                 double rawScore = hit.path("_score").asDouble(0.0d);
                 hits.add(new BackendRecallHit(
                     chunk,
-                    normalizeBackendScore(rawScore),
+                    RetrievalUtils.normalizeBackendScore(rawScore),
                     "opensearch_bm25",
                     "Matched lexical terms in OpenSearch."
                 ));
@@ -151,10 +150,6 @@ public class OpenSearchRecaller implements RecallerBackend {
         } catch (IOException error) {
             throw new IllegalStateException("Failed to parse OpenSearch response", error);
         }
-    }
-
-    private String normalizeQuery(String queryText) {
-        return queryText.toLowerCase(Locale.ROOT).replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\s]+", " ");
     }
 
     private double lexicalScore(String[] queryTerms, String haystack) {
@@ -171,13 +166,6 @@ public class OpenSearchRecaller implements RecallerBackend {
         return matched == 0.0d ? 0.0d : matched / Math.max(1, queryTerms.length);
     }
 
-    private double normalizeBackendScore(double rawScore) {
-        if (rawScore <= 0.0d) {
-            return 0.0d;
-        }
-        return Math.max(0.0d, Math.min(1.0d, 1 - Math.exp(-rawScore)));
-    }
-
     private IndexedChunk toIndexedChunk(JsonNode source) {
         return new IndexedChunk(
             source.path("collection_id").asText(""),
@@ -187,46 +175,15 @@ public class OpenSearchRecaller implements RecallerBackend {
             source.path("chunk_id").asText(""),
             source.path("display_text").asText(""),
             source.path("vector_text").asText(""),
-            jsonTextList(source.path("section_path")),
-            jsonPageSpans(source.path("page_spans")),
+            RetrievalUtils.jsonTextList(source.path("section_path")),
+            RetrievalUtils.jsonPageSpans(source.path("page_spans")),
             source.path("published_document_state").asText(""),
             source.path("visibility").asText(""),
-            jsonTextList(source.path("allowed_principal_ids")),
-            jsonTextList(source.path("allowed_groups")),
+            RetrievalUtils.jsonTextList(source.path("allowed_principal_ids")),
+            RetrievalUtils.jsonTextList(source.path("allowed_groups")),
             objectMapper.convertValue(source.path("citation_payload"), Map.class),
             objectMapper.convertValue(source.path("metadata"), Map.class)
         );
-    }
-
-    private List<String> jsonTextList(JsonNode node) {
-        if (!node.isArray()) {
-            return List.of();
-        }
-        return asList(node).stream().map(JsonNode::asText).toList();
-    }
-
-    private List<com.realityrag.retrieval.contracts.KnowledgeContext.PageSpan> jsonPageSpans(JsonNode node) {
-        if (!node.isArray()) {
-            return List.of();
-        }
-        List<com.realityrag.retrieval.contracts.KnowledgeContext.PageSpan> spans = new ArrayList<>();
-        for (JsonNode item : node) {
-            spans.add(new com.realityrag.retrieval.contracts.KnowledgeContext.PageSpan(
-                item.path("page_from").asInt(1),
-                item.path("page_to").asInt(1)
-            ));
-        }
-        return spans;
-    }
-
-    private List<JsonNode> asList(JsonNode node) {
-        List<JsonNode> values = new ArrayList<>();
-        node.forEach(values::add);
-        return values;
-    }
-
-    private boolean hasBaseUrl(String value) {
-        return value != null && !value.isBlank();
     }
 
     private int candidateTopK(CollectionRetrievalPlan plan) {
@@ -234,4 +191,7 @@ public class OpenSearchRecaller implements RecallerBackend {
         return value instanceof Number number ? number.intValue() : 20;
     }
 
+    private boolean hasBaseUrl(String value) {
+        return value != null && !value.isBlank();
+    }
 }

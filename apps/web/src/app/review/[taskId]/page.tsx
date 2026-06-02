@@ -1,41 +1,88 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
-  XCircle,
-  RotateCcw,
   FileText,
   Layers,
+  RotateCcw,
+  ShieldAlert,
+  XCircle,
 } from "lucide-react";
-import { workbenchApi } from "@/lib/api/client";
-import { useAppStore } from "@/lib/store";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { toast } from "sonner";
+import { ChunkEditorWorkbench } from "@/components/document-workbench/chunk-editor-workbench";
+import { DocumentViewer } from "@/components/document-workbench/document-viewer";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
+import { BackendGap } from "@/components/backend-gap";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
-import { BackendGap } from "@/components/backend-gap";
+import { workbenchApi } from "@/lib/api/client";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
-import { toast } from "sonner";
+import {
+  formatFailureStageLabel,
+  formatNextActionLabel,
+  formatReviewDecisionLabel,
+  formatTicketStatusLabel,
+  normalizeStatus,
+} from "@/lib/status";
+
+function ticketTone(status?: string) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "pending") return "secondary";
+  if (normalized === "approved") return "default";
+  return "destructive";
+}
+
+function SummaryMetric({
+  label,
+  value,
+  tone = "text-foreground",
+}: {
+  label: string;
+  value: string | number;
+  tone?: string;
+}) {
+  return (
+    <div className="rounded-2xl border bg-background/85 p-3">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+function MetaItem({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value?: string | null;
+  mono?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5 rounded-xl border bg-muted/10 p-3">
+      <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+      <p className={`break-all text-sm text-foreground ${mono ? "font-mono" : "font-medium"}`}>
+        {value?.trim() || "-"}
+      </p>
+    </div>
+  );
+}
 
 export default function ReviewDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const queryClient = useQueryClient();
   const [decisionReason, setDecisionReason] = useState("");
-  const { demoToken } = useAppStore();
 
   const {
     data: ticket,
@@ -44,6 +91,8 @@ export default function ReviewDetailPage() {
   } = useQuery({
     queryKey: ["ticket", taskId],
     queryFn: () => workbenchApi.getTicket(taskId),
+    enabled: Boolean(taskId),
+    retry: 0,
   });
 
   const {
@@ -53,27 +102,42 @@ export default function ReviewDetailPage() {
   } = useQuery({
     queryKey: ["agent-review", taskId],
     queryFn: () => workbenchApi.getAgentReview(taskId),
-    enabled: !!taskId,
+    enabled: Boolean(ticket?.ticket_id),
+    retry: 0,
   });
+
+  const parseSnapshotId = ticket?.parse_snapshot_id ?? "";
 
   const {
     data: parseSnapshot,
     isLoading: snapshotLoading,
+    error: snapshotError,
   } = useQuery({
-    queryKey: ["parse-snapshot", ticket?.parse_snapshot_id],
-    queryFn: () =>
-      workbenchApi.getParseSnapshot(ticket?.parse_snapshot_id ?? ""),
-    enabled: !!ticket?.parse_snapshot_id,
+    queryKey: ["parse-snapshot", parseSnapshotId],
+    queryFn: () => workbenchApi.getParseSnapshot(parseSnapshotId),
+    enabled: Boolean(parseSnapshotId),
+    retry: 0,
   });
 
   const {
     data: chunks,
     isLoading: chunksLoading,
+    error: chunksError,
   } = useQuery({
-    queryKey: ["parse-snapshot-chunks", ticket?.parse_snapshot_id],
-    queryFn: () =>
-      workbenchApi.getParseSnapshotChunks(ticket?.parse_snapshot_id ?? ""),
-    enabled: !!ticket?.parse_snapshot_id,
+    queryKey: ["review-viewer-chunks", parseSnapshotId],
+    queryFn: () => workbenchApi.getParseSnapshotChunks(parseSnapshotId),
+    enabled: Boolean(parseSnapshotId),
+    retry: 0,
+  });
+
+  const {
+    data: chunkEdits,
+    isLoading: chunkEditsLoading,
+  } = useQuery({
+    queryKey: ["review-viewer-edits", parseSnapshotId],
+    queryFn: () => workbenchApi.listChunkEdits(parseSnapshotId),
+    enabled: Boolean(parseSnapshotId),
+    retry: 0,
   });
 
   const decide = useMutation({
@@ -85,284 +149,513 @@ export default function ReviewDetailPage() {
         tenant_id: ticket?.tenant_id ?? "",
         collection_id: ticket?.collection_id ?? "",
       }),
-    onSuccess: () => {
-      toast.success("复核决策已记录");
-      queryClient.invalidateQueries({ queryKey: ["ticket", taskId] });
-      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    onSuccess: async () => {
+      toast.success("Review decision submitted");
+      await queryClient.invalidateQueries({ queryKey: ["ticket", taskId] });
+      await queryClient.invalidateQueries({ queryKey: ["tickets"] });
     },
     onError: (err) => {
-      toast.error(isApiError(err) ? err.message : "复核决策失败");
+      toast.error(isApiError(err) ? err.message : "Failed to submit review decision");
     },
   });
+
+  const hasParseSnapshot = Boolean(parseSnapshotId);
+  const isPending = normalizeStatus(ticket?.status) === "pending";
+  const displayTitle =
+    ticket?.filename?.trim() || ticket?.doc_id?.trim() || ticket?.ticket_id || taskId;
+
+  const editedCount = useMemo(
+    () => chunkEdits?.items.length ?? 0,
+    [chunkEdits?.items.length]
+  );
+
+  const reviewSummary = useMemo(
+    () => ({
+      findings: agentReview?.quality_findings.length ?? 0,
+      risks: agentReview?.risk_flags.length ?? 0,
+      fixes: agentReview?.suggested_fixes.length ?? 0,
+    }),
+    [agentReview]
+  );
+
+  const systemActionLabel = useMemo(() => {
+    const action = normalizeStatus(ticket?.decision);
+    if (action === "approve") return "System auto-approved";
+    if (action === "reject") return "System auto-rejected";
+    if (action === "return") return "System returned for review";
+    if (normalizeStatus(ticket?.status) === "system_decided") return "System decision recorded";
+    return "";
+  }, [ticket?.decision, ticket?.status]);
+
+  const parseSnapshotSummary = useMemo(() => {
+    if (!parseSnapshot) return null;
+    return {
+      sourceFilename: String(parseSnapshot.source_filename || ticket?.filename || "-"),
+      sourceSuffix: String(parseSnapshot.source_suffix || "-"),
+      parserId: String(parseSnapshot.parser_id || "-"),
+      parserBackend: String(parseSnapshot.parser_backend || "-"),
+      effectivePolicy: String(
+        parseSnapshot.effective_policy || parseSnapshot.decision_reason || "-"
+      ),
+      previewText: String(parseSnapshot.preview_text || "").trim(),
+      warnings: Array.isArray(parseSnapshot.warnings)
+        ? parseSnapshot.warnings.map((item: unknown) => String(item))
+        : [],
+    };
+  }, [parseSnapshot, ticket?.filename]);
+
+  const warningCount = parseSnapshotSummary?.warnings.length ?? 0;
 
   if (ticketLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-40 rounded-lg" />
+        <Skeleton className="h-10 w-56 rounded-lg" />
+        <Skeleton className="h-36 rounded-lg" />
       </div>
     );
   }
 
   if (ticketError) {
     if (isBackendGap(ticketError)) {
-      return <BackendGap feature="工单详情" endpoint={ticketError.endpoint} />;
+      return <BackendGap feature="Review detail" endpoint={ticketError.endpoint} />;
     }
     return (
-      <div className="text-red-500">
-        {isApiError(ticketError) ? ticketError.message : String(ticketError)}
-      </div>
+      <Alert variant="destructive">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertDescription>{isApiError(ticketError) ? ticketError.message : String(ticketError)}</AlertDescription>
+      </Alert>
     );
   }
 
-  const isPending = ticket?.status === "PENDING";
+  if (!ticket) {
+    return (
+      <EmptyState
+        icon={FileText}
+        title="Review ticket not found"
+        description="The review ticket record is unavailable or you no longer have access to it."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/review">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">复核详情</h1>
-          <p className="text-sm text-muted-foreground">{taskId}</p>
+      <section className="rounded-[28px] border bg-card/92 p-5 shadow-sm">
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-start gap-3">
+              <Link href="/review" prefetch={false}>
+                <Button variant="outline" size="icon" className="mt-1 rounded-full">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </Link>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={ticketTone(ticket.status)}>{formatTicketStatusLabel(ticket.status)}</Badge>
+                  {ticket.failure_code ? <Badge variant="destructive">{ticket.failure_code}</Badge> : null}
+                  {ticket.next_action ? (
+                    <Badge variant="outline">{formatNextActionLabel(ticket.next_action)}</Badge>
+                  ) : null}
+                </div>
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight xl:text-4xl">
+                  {displayTitle}
+                </h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Human review writes back to the ticket state. Keep the source, parsed draft, and
+                  agent assessment aligned before you approve publish.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[420px]">
+              <SummaryMetric label="Findings" value={reviewSummary.findings} tone="text-amber-600" />
+              <SummaryMetric label="Risks" value={reviewSummary.risks} tone="text-rose-600" />
+              <SummaryMetric
+                label="Draft edits"
+                value={chunkEditsLoading ? "-" : editedCount}
+                tone="text-sky-600"
+              />
+              <SummaryMetric label="Warnings" value={warningCount} tone="text-violet-600" />
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetaItem label="Ticket id" value={ticket.ticket_id} mono />
+            <MetaItem label="Collection" value={ticket.collection_id} />
+            <MetaItem label="Document id" value={ticket.doc_id} mono />
+            <MetaItem label="Parse snapshot" value={ticket.parse_snapshot_id} mono />
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Metadata */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">文档元数据</CardTitle>
-            <Badge
-              variant={
-                ticket?.status === "PENDING"
-                  ? "secondary"
-                  : ticket?.status === "APPROVED"
-                  ? "default"
-                  : "destructive"
-              }
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          <Tabs defaultValue="source" className="space-y-4">
+            <TabsList
+              variant="line"
+              className="w-full justify-start gap-2 overflow-x-auto rounded-none border-0 bg-transparent p-0"
             >
-              {ticket?.status}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <span className="text-muted-foreground">知识库集合:</span>{" "}
-              {ticket?.collection_id}
-            </div>
-            <div>
-              <span className="text-muted-foreground">文档 ID:</span>{" "}
-              {ticket?.doc_id ?? "—"}
-            </div>
-            <div>
-              <span className="text-muted-foreground">创建时间:</span>{" "}
-              {ticket?.created_at
-                ? new Date(ticket.created_at).toLocaleString()
-                : "—"}
-            </div>
-            <div>
-              <span className="text-muted-foreground">更新时间:</span>{" "}
-              {ticket?.updated_at
-                ? new Date(ticket.updated_at).toLocaleString()
-                : "—"}
-            </div>
-            {ticket?.decision && (
-              <div>
-                <span className="text-muted-foreground">决策:</span>{" "}
-                {ticket.decision} · 操作人:{ticket.decided_by ?? "—"}
-              </div>
-            )}
-            {ticket?.decision_reason && (
-              <div className="col-span-2">
-                <span className="text-muted-foreground">Reason:</span>{" "}
-                {ticket.decision_reason}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              <TabsTrigger value="source">
+                <FileText className="mr-1 h-3.5 w-3.5" />
+                Source
+              </TabsTrigger>
+              <TabsTrigger value="drafts">
+                <Layers className="mr-1 h-3.5 w-3.5" />
+                Draft edits
+              </TabsTrigger>
+              <TabsTrigger value="agent">
+                <ShieldAlert className="mr-1 h-3.5 w-3.5" />
+                Agent review
+              </TabsTrigger>
+            </TabsList>
 
-      {/* Agent Review */}
-      {reviewError && isBackendGap(reviewError) ? (
-        <BackendGap feature="代理审核产物" endpoint={reviewError.endpoint} />
-      ) : agentReview ? (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              代理拦截原因
-            </CardTitle>
-            <CardDescription>
-              决策: {agentReview.decision}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {agentReview.quality_findings.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">质量发现</h4>
-                <div className="space-y-2">
-                  {agentReview.quality_findings.map((f, i) => (
-                    <div key={i} className="rounded-md border p-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={
-                            f.severity === "critical"
-                              ? "destructive"
-                              : "secondary"
-                          }
-                          className="text-xs"
-                        >
-                          {f.severity}
-                        </Badge>
-                        <span className="font-medium">{f.category}</span>
+            <TabsContent value="source" className="space-y-4">
+              {!hasParseSnapshot ? (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>This ticket does not currently link to a parse snapshot.</AlertDescription>
+                </Alert>
+              ) : (
+                <DocumentViewer
+                  parseSnapshotId={parseSnapshotId}
+                  filename={ticket.filename || parseSnapshotSummary?.sourceFilename}
+                  previewText={parseSnapshotSummary?.previewText}
+                  parserId={parseSnapshotSummary?.parserId}
+                  parserBackend={parseSnapshotSummary?.parserBackend}
+                  warnings={parseSnapshotSummary?.warnings}
+                  chunks={chunks?.items ?? []}
+                />
+              )}
+
+              {!hasParseSnapshot ? null : snapshotError ? (
+                isBackendGap(snapshotError) ? (
+                  <BackendGap feature="Parse snapshot" endpoint={snapshotError.endpoint} />
+                ) : (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      {isApiError(snapshotError) ? snapshotError.message : String(snapshotError)}
+                    </AlertDescription>
+                  </Alert>
+                )
+              ) : snapshotLoading ? (
+                <Skeleton className="h-32 rounded-2xl" />
+              ) : parseSnapshotSummary ? (
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+                  <Card className="rounded-2xl">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Parse context</CardTitle>
+                      <CardDescription>
+                        This is the parser configuration and normalized preview context used for the
+                        review ticket.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <MetaItem label="Source file" value={parseSnapshotSummary.sourceFilename} />
+                        <MetaItem label="Suffix" value={parseSnapshotSummary.sourceSuffix} />
+                        <MetaItem label="Parser" value={parseSnapshotSummary.parserId} />
+                        <MetaItem label="Backend" value={parseSnapshotSummary.parserBackend} />
                       </div>
-                      <p className="mt-1 text-muted-foreground">{f.message}</p>
-                    </div>
-                  ))}
+                      <div className="rounded-2xl border bg-muted/10 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                          Effective parse policy
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-foreground">
+                          {parseSnapshotSummary.effectivePolicy}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-2xl">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Preview signal</CardTitle>
+                      <CardDescription>
+                        Sanity check the extracted payload before you trust the agent recommendation.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <SummaryMetric label="Chunks" value={chunks?.items.length ?? 0} tone="text-slate-900" />
+                        <SummaryMetric label="Warnings" value={warningCount} tone="text-violet-600" />
+                        <SummaryMetric label="Edits" value={chunkEditsLoading ? "-" : editedCount} tone="text-sky-600" />
+                      </div>
+                      <div className="max-h-52 overflow-auto rounded-2xl border bg-muted/10 p-4 text-sm leading-7">
+                        {parseSnapshotSummary.previewText || "No preview text is available for this parse snapshot."}
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-              </div>
-            )}
-            {agentReview.risk_flags.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">风险标记</h4>
+              ) : (
+                <EmptyState
+                  icon={ShieldAlert}
+                  title="Parse summary is not available"
+                  description="The parse snapshot exists, but the summary payload is incomplete."
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="drafts" className="space-y-4">
+              <Card className="rounded-2xl border-dashed bg-card/85">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Pre-publish draft layer</CardTitle>
+                  <CardDescription>
+                    Draft edits stay inside workbench governance. They do not mutate the live retrieval
+                    index directly.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              {chunksError && isBackendGap(chunksError) ? (
+                <BackendGap feature="Parse snapshot chunks" endpoint={chunksError.endpoint} />
+              ) : (
+                <ChunkEditorWorkbench
+                  parseSnapshotId={parseSnapshotId}
+                  title="Draft corrections"
+                  description="Tighten chunk wording, restore broken structure, and submit governed draft edits before the human decision."
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="agent" className="space-y-4">
+              {reviewError ? (
+                isBackendGap(reviewError) ? (
+                  <BackendGap feature="Agent review" endpoint={reviewError.endpoint} />
+                ) : (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      {isApiError(reviewError) ? reviewError.message : String(reviewError)}
+                    </AlertDescription>
+                  </Alert>
+                )
+              ) : reviewLoading ? (
+                <Skeleton className="h-44 rounded-2xl" />
+              ) : agentReview ? (
+                <div className="space-y-4">
+                  <Card className="rounded-2xl">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Agent recommendation</CardTitle>
+                      <CardDescription>
+                        Use this as a review input, not as a final decision. The source and draft layer
+                        remain the primary evidence.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">{formatReviewDecisionLabel(agentReview.decision)}</Badge>
+                        {agentReview.model ? <Badge variant="outline">{agentReview.model}</Badge> : null}
+                        {agentReview.version ? <Badge variant="outline">{agentReview.version}</Badge> : null}
+                      </div>
+
+                      {agentReview.failure_reason ? (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertDescription>{agentReview.failure_reason}</AlertDescription>
+                        </Alert>
+                      ) : null}
+
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <SummaryMetric label="Findings" value={reviewSummary.findings} tone="text-amber-600" />
+                        <SummaryMetric label="Risks" value={reviewSummary.risks} tone="text-rose-600" />
+                        <SummaryMetric label="Fixes" value={reviewSummary.fixes} tone="text-sky-600" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {agentReview.quality_findings.length > 0 ? (
+                    <Card className="rounded-2xl">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Quality findings</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {agentReview.quality_findings.map((item, index) => (
+                          <div
+                            key={`${item.category}-${index}`}
+                            className="rounded-2xl border bg-background/85 p-4"
+                          >
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant="outline">{item.category}</Badge>
+                              <Badge variant="secondary">{item.severity}</Badge>
+                            </div>
+                            <p className="mt-3 text-sm leading-6">{item.message}</p>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  {agentReview.risk_flags.length > 0 ? (
+                    <Card className="rounded-2xl">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Risk flags</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {agentReview.risk_flags.map((item, index) => (
+                          <div key={`${item.flag_type}-${index}`} className="rounded-2xl border bg-background/85 p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline">{item.flag_type}</Badge>
+                              {item.confidence ? (
+                                <Badge variant="secondary">{Math.round(item.confidence * 100)}% confidence</Badge>
+                              ) : null}
+                            </div>
+                            <p className="mt-3 text-sm leading-6">{item.description}</p>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  {agentReview.suggested_fixes.length > 0 ? (
+                    <Card className="rounded-2xl">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Suggested fixes</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {agentReview.suggested_fixes.map((item, index) => (
+                          <div key={`${item.fix_type}-${index}`} className="rounded-2xl border bg-background/85 p-4">
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant="outline">{item.fix_type}</Badge>
+                              {item.target_evidence_id ? (
+                                <Badge variant="secondary">{item.target_evidence_id}</Badge>
+                              ) : null}
+                            </div>
+                            <p className="mt-3 text-sm leading-6">{item.description}</p>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={ShieldAlert}
+                  title="Agent review is not available"
+                  description="No agent review payload is attached to this ticket."
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <Card className="rounded-[24px] shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Decision cockpit</CardTitle>
+              <CardDescription>
+                Keep the final human action obvious. Everything else on this page is supporting evidence.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border bg-muted/10 p-4">
                 <div className="flex flex-wrap gap-2">
-                  {agentReview.risk_flags.map((f, i) => (
-                    <Badge key={i} variant="outline">
-                      {f.flag_type}: {f.description}
-                    </Badge>
-                  ))}
+                  <Badge variant={ticketTone(ticket.status)}>{formatTicketStatusLabel(ticket.status)}</Badge>
+                  {ticket.decision ? (
+                    <Badge variant="outline">{formatReviewDecisionLabel(ticket.decision)}</Badge>
+                  ) : null}
                 </div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  {isPending
+                    ? "This ticket is still waiting on a human decision."
+                    : "This ticket already has a terminal human or system decision recorded."}
+                </p>
               </div>
-            )}
-            {agentReview.suggested_fixes.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">建议修复</h4>
-                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                  {agentReview.suggested_fixes.map((f, i) => (
-                    <li key={i}>
-                      {f.fix_type} — {f.description}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : reviewLoading ? (
-        <Skeleton className="h-32 rounded-lg" />
-      ) : null}
 
-      {/* Tabs: Parse Preview / Chunks / Actions */}
-      <Tabs defaultValue="chunks">
-        <TabsList>
-          <TabsTrigger value="chunks">
-            <Layers className="h-3.5 w-3.5 mr-1" />
-            片段预览
-          </TabsTrigger>
-          <TabsTrigger value="metadata">
-            <FileText className="h-3.5 w-3.5 mr-1" />
-            解析元数据
-          </TabsTrigger>
-        </TabsList>
+              {isPending ? (
+                <>
+                  <Textarea
+                    placeholder="Optional decision reason"
+                    value={decisionReason}
+                    onChange={(event) => setDecisionReason(event.target.value)}
+                    className="min-h-28"
+                  />
+                  <div className="grid gap-2">
+                    <Button onClick={() => decide.mutate("APPROVE")} disabled={decide.isPending}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Approve
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => decide.mutate("REJECT")}
+                      disabled={decide.isPending}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Reject
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => decide.mutate("RETURN")}
+                      disabled={decide.isPending}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Return for revision
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border bg-muted/10 p-4 text-sm leading-6 text-muted-foreground">
+                  {ticket.decision_reason?.trim() || "No additional human decision reason was recorded."}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        <TabsContent value="chunks" className="space-y-3">
-          {chunksLoading ? (
-            <Skeleton className="h-40 rounded-lg" />
-          ) : chunks && chunks.items.length > 0 ? (
-            <div className="space-y-2">
-              {chunks.items.map((chunk, i) => (
-                <Card key={i}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <Badge variant="outline" className="text-xs">
-                        {chunk.evidence_id}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {chunk.chunk_type ?? "text"}
-                      </span>
-                    </div>
-                    <p className="text-sm line-clamp-4">{chunk.content}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <BackendGap
-              feature="解析快照片段预览"
-              endpoint="GET /workbench/parse-snapshots/{id}/chunks"
-            />
-          )}
-        </TabsContent>
+          <Card className="rounded-[24px]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Ticket context</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <MetaItem label="Ticket id" value={ticket.ticket_id} mono />
+              <MetaItem label="Collection" value={ticket.collection_id} />
+              <MetaItem label="Document id" value={ticket.doc_id} mono />
+              <MetaItem label="Parse snapshot" value={ticket.parse_snapshot_id} mono />
+            </CardContent>
+          </Card>
 
-        <TabsContent value="metadata">
-          {snapshotLoading ? (
-            <Skeleton className="h-32 rounded-lg" />
-          ) : parseSnapshot ? (
-            <Card>
-              <CardContent className="p-4">
-                <pre className="text-xs overflow-auto max-h-96">
-                  {JSON.stringify(parseSnapshot, null, 2)}
-                </pre>
+          {systemActionLabel || ticket.decision || ticket.failure_code || ticket.next_action ? (
+            <Card className="rounded-[24px]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">System and diagnostics</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {systemActionLabel || ticket.decision ? (
+                  <div className="rounded-2xl border bg-muted/10 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      System decision
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-foreground">
+                      {systemActionLabel || formatTicketStatusLabel(ticket.decision)}
+                      {ticket.decided_by ? ` / ${ticket.decided_by}` : ""}
+                    </p>
+                    {ticket.decision_reason ? (
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        {ticket.decision_reason}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {ticket.failure_code ? (
+                    <span className="rounded-full border bg-muted/20 px-3 py-1.5">
+                      Failure: {ticket.failure_code}
+                    </span>
+                  ) : null}
+                  {ticket.failure_stage ? (
+                    <span className="rounded-full border bg-muted/20 px-3 py-1.5">
+                      Stage: {formatFailureStageLabel(ticket.failure_stage)}
+                    </span>
+                  ) : null}
+                  {ticket.next_action ? (
+                    <span className="rounded-full border bg-muted/20 px-3 py-1.5">
+                      Next: {formatNextActionLabel(ticket.next_action)}
+                    </span>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
-          ) : (
-            <BackendGap
-              feature="解析快照查看"
-              endpoint="GET /workbench/parse-snapshots/{id}"
-            />
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* Actions */}
-      {isPending && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">复核决策</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              placeholder="决策原因（可选）"
-              value={decisionReason}
-              onChange={(e) => setDecisionReason(e.target.value)}
-            />
-            <div className="flex gap-3">
-              <Button
-                variant="default"
-                className="gap-2"
-                onClick={() => decide.mutate("APPROVE")}
-                disabled={decide.isPending}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                批准
-              </Button>
-              <Button
-                variant="destructive"
-                className="gap-2"
-                onClick={() => decide.mutate("REJECT")}
-                disabled={decide.isPending}
-              >
-                <XCircle className="h-4 w-4" />
-                驳回
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => decide.mutate("RETURN")}
-                disabled={decide.isPending}
-              >
-                <RotateCcw className="h-4 w-4" />
-                Return
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : null}
+        </aside>
+      </div>
     </div>
   );
 }

@@ -26,6 +26,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class RecallOrchestrator {
     private static final Logger LOG = LoggerFactory.getLogger(RecallOrchestrator.class);
+    private static final com.fasterxml.jackson.core.type.TypeReference<List<RetrievedChunk>> CHUNK_LIST_TYPE =
+        new com.fasterxml.jackson.core.type.TypeReference<List<RetrievedChunk>>() {};
 
     private final KnowledgeStore knowledgeStore;
     private final PermissionPrefilter permissionPrefilter;
@@ -59,7 +61,7 @@ public class RecallOrchestrator {
     public List<RetrievedChunk> recall(RetrievalScope scope, List<CollectionRetrievalPlan> plans, String queryText) {
         if (cacheProperties.isEnabled() && cache.isAvailable()) {
             String key = keyBuilder.recallKey(scope, plans, queryText, candidateTopK());
-            List<RetrievedChunk> cached = cache.get(key, new com.fasterxml.jackson.core.type.TypeReference<List<RetrievedChunk>>() {});
+            List<RetrievedChunk> cached = cache.get(key, CHUNK_LIST_TYPE);
             if (cached != null) {
                 LOG.debug("Recall cache hit for key={}", key);
                 return cached;
