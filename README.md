@@ -125,7 +125,7 @@ docker compose up -d postgres opensearch qdrant redis
 | 服务 | 容器内端口 | 宿主机端口 |
 |---|---|---|
 | PostgreSQL | 5432 | 5432 |
-| OpenSearch | 9201 | 1201 |
+| OpenSearch | 9201 | 19201 |
 | Qdrant | 6333 / 6334 | 6333 / 6334 |
 | Redis | 6379 | 6379 |
 
@@ -177,7 +177,7 @@ DOCUMENT_SERVICE_BASE_URL=http://localhost:8006
 
 # ========== indexing 服务 (端口 18080) ==========
 INDEXING_BACKEND_MODE=hybrid
-INDEXING_OPENSEARCH_URL=http://127.0.0.1:1201
+INDEXING_OPENSEARCH_URL=http://127.0.0.1:19201
 INDEXING_QDRANT_URL=http://127.0.0.1:6333
 INDEXING_EMBEDDING_API_KEY=<your-siliconflow-key>
 INDEXING_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
@@ -190,7 +190,7 @@ INDEXING_CHAT_MODEL=deepseek-chat
 DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/rag_flow
 DATABASE_USERNAME=rag_flow
 DATABASE_PASSWORD=infini_rag_flow
-OPENSEARCH_BASE_URL=http://127.0.0.1:1201
+OPENSEARCH_BASE_URL=http://127.0.0.1:19201
 QDRANT_BASE_URL=http://127.0.0.1:6333
 EMBEDDING_API_KEY=<your-siliconflow-key>
 EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
@@ -216,7 +216,7 @@ SPRING_PROFILES_ACTIVE=smoke
 
 ### 步骤 4：启动后端服务
 
-**推荐：一键启动（自动处理依赖顺序、PYTHONPATH、日志标签）**
+**推荐：本地编排器（一键启动，自动处理依赖顺序、readiness、PYTHONPATH）**
 
 ```bash
 # 在项目根目录执行（.venv 已激活）
@@ -224,9 +224,10 @@ py -3.14 scripts/start-services.py
 ```
 
 - 自动检测基础设施（PostgreSQL、OpenSearch、Qdrant、Redis）是否就绪
-- 按依赖顺序启动所有服务，带颜色标签的日志统一输出到当前终端
+- 按依赖图和 readiness 启动服务，不只看端口是否监听
+- Python/Java 分开处理环境变量；Java 会自动把 `postgresql://...` 转成 `jdbc:postgresql://...`
 - `Ctrl+C` 一键停止所有服务
-- 支持 `--python`（只启动 Python 服务）、`--java`（只启动 Java 服务）
+- 支持 `--python`（只启动 Python 服务）、`--java`（只启动 Java 服务）、`--no-infra-check`
 
 **手动启动（备选，每个服务一个终端）**
 
