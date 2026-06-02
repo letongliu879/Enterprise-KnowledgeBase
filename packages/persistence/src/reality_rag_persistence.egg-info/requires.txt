@@ -1,5 +1,6 @@
 sqlalchemy>=2.0
 reality-rag-contracts
+enterprise-kb-indexing
 
 [dev]
 pytest>=8.0

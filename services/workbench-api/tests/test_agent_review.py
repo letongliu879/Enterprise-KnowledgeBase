@@ -8,6 +8,13 @@ from fastapi.testclient import TestClient
 class TestAgentReview:
     def test_get_agent_review(self, client: TestClient, reviewer_token: str):
         with respx.mock:
+            respx.get("http://localhost:8004/internal/tickets/ticket_123").respond(
+                200, json={
+                    "ticket_id": "ticket_123",
+                    "collection_id": "col_default",
+                    "status": "PENDING",
+                }
+            )
             respx.get("http://localhost:8004/internal/tickets/ticket_123/agent-review").respond(
                 200, json={
                     "ticket_id": "ticket_123",
@@ -30,6 +37,13 @@ class TestAgentReview:
 
     def test_get_agent_review_not_implemented(self, client: TestClient, reviewer_token: str):
         with respx.mock:
+            respx.get("http://localhost:8004/internal/tickets/ticket_123").respond(
+                200, json={
+                    "ticket_id": "ticket_123",
+                    "collection_id": "col_default",
+                    "status": "PENDING",
+                }
+            )
             respx.get("http://localhost:8004/internal/tickets/ticket_123/agent-review").respond(404)
             resp = client.get(
                 "/workbench/tickets/ticket_123/agent-review",
@@ -42,6 +56,13 @@ class TestAgentReview:
         # AgentReview is read-only; there is no PUT/POST endpoint for it
         # This test documents that workbench cannot modify AgentReview
         with respx.mock:
+            respx.get("http://localhost:8004/internal/tickets/ticket_123").respond(
+                200, json={
+                    "ticket_id": "ticket_123",
+                    "collection_id": "col_default",
+                    "status": "PENDING",
+                }
+            )
             respx.get("http://localhost:8004/internal/tickets/ticket_123/agent-review").respond(404)
             resp = client.get(
                 "/workbench/tickets/ticket_123/agent-review",

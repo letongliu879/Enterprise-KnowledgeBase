@@ -15,7 +15,10 @@ from .publish_jobs import PublishJobRepository
 from .reindex_jobs import ReindexJobRepository
 from .published_documents import PublishedDocumentRepository
 from .collections import CollectionRepository
-from .chunk_registry import ChunkRegistryRepository
+try:
+    from .chunk_registry import ChunkRegistryRepository
+except ImportError:
+    ChunkRegistryRepository = None  # type: ignore[misc,assignment]
 from .run_audit import (
     RunStepEntry,
     RunStepRepository,

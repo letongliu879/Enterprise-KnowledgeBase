@@ -16,7 +16,9 @@ class WorkbenchConfig:
     intake_base_url: str = os.environ.get("INTAKE_BASE_URL", "http://127.0.0.1:18085")
     approval_base_url: str = os.environ.get("APPROVAL_BASE_URL", "http://127.0.0.1:18087")
     admin_base_url: str = os.environ.get("ADMIN_BASE_URL", "http://127.0.0.1:18084")
+    access_base_url: str = os.environ.get("ACCESS_BASE_URL", "http://127.0.0.1:18081")
     document_service_base_url: str = os.environ.get("DOCUMENT_SERVICE_BASE_URL", "http://localhost:8006")
+    access_internal_api_key: str = os.environ.get("ACCESS_INTERNAL_API_KEY", "")
 
     database_url: str = os.environ.get(
         "DATABASE_URL",

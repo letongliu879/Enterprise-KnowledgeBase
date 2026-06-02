@@ -3,7 +3,6 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_auth, require_role, CurrentUser
 from ..downstream_clients import IntakeClient, DocumentServiceClient
@@ -21,11 +20,16 @@ def _get_service(session: Session = Depends(get_db), user: CurrentUser = Depends
         IntakeClient(),
         DocumentServiceClient(),
         actor_id=user.user_id,
+        db_session=session,
     )
 
 
 @router.post("", status_code=201)
-async def create_upload(req: UploadCreateRequest, service: UploadSessionService = Depends(_get_service), user: CurrentUser = Depends(require_role("uploader"))):
+async def create_upload(
+    req: UploadCreateRequest,
+    service: UploadSessionService = Depends(_get_service),
+    user: CurrentUser = Depends(require_role("uploader")),
+):
     if not user.can_access_collection(req.collection_id):
         raise forbidden("Collection access denied")
     session = await service.create_upload(req.model_dump(), user)

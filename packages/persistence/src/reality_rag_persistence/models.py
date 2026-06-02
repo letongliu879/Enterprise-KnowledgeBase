@@ -1255,3 +1255,287 @@ class WorkbenchChunkEditModel(Base):
         Index("ix_wb_chunk_edits_evidence", "base_evidence_id"),
         Index("ix_wb_chunk_edits_editor", "edited_by"),
     )
+
+
+# ── Workbench Projection Store ──────────────────────────────────────────
+
+
+class WorkbenchProjectionEventModel(Base):
+    """Projection event log. Append-only, idempotent by event_id.
+    Each event carries a full snapshot payload, not a delta.
+    """
+
+    __tablename__ = "workbench_projection_events"
+
+    event_id = Column(String(64), primary_key=True)
+    event_type = Column(String(64), nullable=False)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    aggregate_type = Column(String(64), nullable=False)
+    aggregate_id = Column(String(128), nullable=False)
+    aggregate_version = Column(Integer, nullable=False, default=1)
+    occurred_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    payload = Column(JSON, nullable=False, default=dict)
+    trace_id = Column(String(64), nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_proj_events_aggregate", "aggregate_type", "aggregate_id", "aggregate_version"),
+        Index("ix_proj_events_occurred", "occurred_at"),
+        Index("ix_proj_events_trace", "trace_id"),
+    )
+
+
+class WorkbenchTaskProjectionModel(Base):
+    """Denormalized task projection for list queries. Owner: workbench-api.
+    Derived from downstream owner states via event-driven projection.
+    """
+
+    __tablename__ = "workbench_task_projection"
+
+    projection_id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    user_id = Column(String(128), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    upload_id = Column(String(64), nullable=False, unique=True)
+    filename = Column(String(512), nullable=False)
+    mime_type = Column(String(128), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+
+    source_file_id = Column(String(64), nullable=True)
+    intake_job_id = Column(String(64), nullable=True)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    ticket_id = Column(String(64), nullable=True)
+    published_doc_id = Column(String(64), nullable=True)
+    doc_id = Column(String(128), nullable=True)
+
+    source_file_state = Column(String(32), nullable=True)
+    intake_job_state = Column(String(32), nullable=True)
+    parse_snapshot_state = Column(String(32), nullable=True)
+    ticket_state = Column(String(32), nullable=True)
+    agent_review_state = Column(String(32), nullable=True)
+    published_document_state = Column(String(32), nullable=True)
+    index_build_state = Column(String(32), nullable=True)
+    active_index_version = Column(String(64), nullable=True)
+
+    overall_status = Column(String(32), nullable=False, default="uploading")
+    progress_pct = Column(Integer, nullable=False, default=0)
+    blocking_reason = Column(String(2048), nullable=True)
+    error_code = Column(String(64), nullable=True)
+    error_message = Column(String(2048), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    last_event_at = Column(DateTime(timezone=True), nullable=True)
+    projection_updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    stale_after = Column(DateTime(timezone=True), nullable=True)
+    is_stale = Column(Boolean, nullable=False, default=False)
+    degraded_reason = Column(String(512), nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_wtp_user_list", "tenant_id", "user_id", "collection_id", "projection_updated_at"),
+        Index("ix_wtp_status", "tenant_id", "collection_id", "overall_status", "projection_updated_at"),
+        Index("ix_wtp_ticket", "tenant_id", "ticket_id"),
+        Index("ix_wtp_stale", "is_stale", "stale_after"),
+    )
+
+
+class WorkbenchTicketProjectionModel(Base):
+    """Ticket projection for review list queries. Owner: workbench-api."""
+
+    __tablename__ = "workbench_ticket_projection"
+
+    ticket_id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    upload_id = Column(String(64), nullable=True)
+    source_file_id = Column(String(64), nullable=True)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    doc_id = Column(String(128), nullable=True)
+
+    title = Column(String(512), nullable=True)
+    filename = Column(String(512), nullable=True)
+    state = Column(String(32), nullable=False, default="pending")
+    priority = Column(String(32), nullable=True)
+    routing_recommendation = Column(String(32), nullable=True)
+    assignee_user_id = Column(String(128), nullable=True)
+
+    agent_decision = Column(String(32), nullable=True)
+    agent_risk_level = Column(String(32), nullable=True)
+    agent_finding_count = Column(Integer, nullable=False, default=0)
+    agent_blocking_finding_count = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    last_event_at = Column(DateTime(timezone=True), nullable=True)
+    projection_updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    is_stale = Column(Boolean, nullable=False, default=False)
+    degraded_reason = Column(String(512), nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_wtkp_list", "tenant_id", "collection_id", "projection_updated_at"),
+        Index("ix_wtkp_state", "tenant_id", "collection_id", "state", "projection_updated_at"),
+        Index("ix_wtkp_stale", "is_stale", "projection_updated_at"),
+    )
+
+
+class WorkbenchDocumentProjectionModel(Base):
+    """Document projection for collection/document list queries. Owner: workbench-api."""
+
+    __tablename__ = "workbench_document_projection"
+
+    doc_id = Column(String(128), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    source_file_id = Column(String(64), nullable=True)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    published_doc_id = Column(String(64), nullable=True)
+    upload_id = Column(String(64), nullable=True)
+    filename = Column(String(512), nullable=True)
+    mime_type = Column(String(128), nullable=True)
+    document_state = Column(String(32), nullable=True)
+    publish_state = Column(String(32), nullable=True)
+    active_index_version = Column(String(64), nullable=True)
+    chunk_count = Column(Integer, nullable=False, default=0)
+    page_count = Column(Integer, nullable=False, default=0)
+    parser_profile_id = Column(String(128), nullable=True)
+    parser_profile_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    projection_updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    is_stale = Column(Boolean, nullable=False, default=False)
+    degraded_reason = Column(String(512), nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_wdp_list", "tenant_id", "collection_id", "projection_updated_at"),
+        Index("ix_wdp_state", "tenant_id", "collection_id", "document_state", "projection_updated_at"),
+        Index("ix_wdp_stale", "is_stale", "projection_updated_at"),
+    )
+
+
+class WorkbenchAgentReviewProjectionModel(Base):
+    """Structured AgentReview finding projection. Owner: workbench-api.
+    workbench projects finding artifacts but does not own the AgentReview fact.
+    """
+
+    __tablename__ = "workbench_agent_review_projection"
+
+    finding_id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    ticket_id = Column(String(64), nullable=False)
+    doc_id = Column(String(128), nullable=True)
+    source_file_id = Column(String(64), nullable=True)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    evidence_id = Column(String(128), nullable=True)
+
+    severity = Column(String(32), nullable=True)
+    category = Column(String(64), nullable=True)
+    problem_summary = Column(String(1024), nullable=True)
+    problem_detail = Column(Text, nullable=True)
+    source_quote = Column(Text, nullable=True)
+    chunk_quote = Column(Text, nullable=True)
+    page_from = Column(Integer, nullable=True)
+    page_to = Column(Integer, nullable=True)
+    source_anchor_json = Column(JSON, nullable=True)
+    why_wrong = Column(Text, nullable=True)
+    suggested_fix = Column(Text, nullable=True)
+    suggested_operation = Column(String(32), nullable=True)
+    confidence = Column(Float, nullable=True)
+
+    state = Column(String(32), nullable=False, default="open")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    projection_updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_warp_ticket", "tenant_id", "ticket_id"),
+        Index("ix_warp_severity", "tenant_id", "severity"),
+        Index("ix_warp_doc", "tenant_id", "doc_id"),
+    )
+
+
+class WorkbenchChunkProjectionModel(Base):
+    """Chunk projection for workbench list view. Owner: workbench-api.
+    Lightweight summary only; full content is queried from indexing on demand.
+    """
+
+    __tablename__ = "workbench_chunk_projection"
+
+    evidence_id = Column(String(128), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    doc_id = Column(String(128), nullable=False)
+    source_file_id = Column(String(64), nullable=True)
+    parse_snapshot_id = Column(String(64), nullable=True)
+    chunk_ordinal = Column(Integer, nullable=False, default=0)
+    content_preview = Column(String(512), nullable=True)
+    section_path_json = Column(JSON, nullable=True)
+    page_from = Column(Integer, nullable=True)
+    page_to = Column(Integer, nullable=True)
+    source_anchor_json = Column(JSON, nullable=True)
+    state = Column(String(32), nullable=False, default="active")
+    active_revision_id = Column(String(64), nullable=True)
+    projection_updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_wcp_doc", "tenant_id", "doc_id", "chunk_ordinal"),
+        Index("ix_wcp_snapshot", "parse_snapshot_id"),
+        Index("ix_wcp_state", "tenant_id", "state"),
+    )
+
+
+class WorkbenchQueryRunModel(Base):
+    """Retrieval verification query run audit log. Owner: workbench-api."""
+
+    __tablename__ = "workbench_query_runs"
+
+    query_run_id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), nullable=False)
+    user_id = Column(String(128), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    query = Column(Text, nullable=False)
+    token_budget = Column(Integer, nullable=False, default=4096)
+    request_json = Column(JSON, nullable=True)
+    access_response_json = Column(JSON, nullable=True)
+    knowledge_context_json = Column(JSON, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    cache_hit = Column(Boolean, nullable=False, default=False)
+    status = Column(String(32), nullable=False, default="pending")
+    error_code = Column(String(64), nullable=True)
+    error_message = Column(String(2048), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_wqr_user", "tenant_id", "user_id", "created_at"),
+        Index("ix_wqr_collection", "tenant_id", "collection_id", "created_at"),
+        Index("ix_wqr_status", "status"),
+    )
+
+
+class WorkbenchProjectionReconcileRunModel(Base):
+    """Reconciliation run record. Owner: workbench-api."""
+
+    __tablename__ = "workbench_projection_reconcile_runs"
+
+    run_id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), nullable=True)
+    collection_id = Column(String(64), nullable=True)
+    aggregate_type = Column(String(64), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    scanned_count = Column(Integer, nullable=False, default=0)
+    updated_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    degraded_count = Column(Integer, nullable=False, default=0)
+    status = Column(String(32), nullable=False, default="running")
+    error_message = Column(String(2048), nullable=True)
+    trace_id = Column(String(64), nullable=False, default="")
+
+    __table_args__ = (
+        Index("ix_wprr_started", "started_at"),
+        Index("ix_wprr_status", "status"),
+    )

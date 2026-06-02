@@ -11,6 +11,7 @@ from ..deps import CurrentUser
 from ..downstream_clients import IntakeClient, DocumentServiceClient
 from ..downstream_clients.errors import DownstreamError
 from ..errors import downstream_not_implemented, downstream_unavailable, conflict
+from ..projections.projector import ProjectionProjector
 from .repository import UploadSessionRepository
 
 
@@ -21,11 +22,19 @@ def _visibility_from_access_scope(access_scope_json: dict | None) -> str:
 
 
 class UploadSessionService:
-    def __init__(self, repository: UploadSessionRepository, intake_client: IntakeClient, document_client: DocumentServiceClient, actor_id: str):
+    def __init__(
+        self,
+        repository: UploadSessionRepository,
+        intake_client: IntakeClient,
+        document_client: DocumentServiceClient,
+        actor_id: str,
+        db_session: Session | None = None,
+    ):
         self._repository = repository
         self._intake_client = intake_client
         self._document_client = document_client
         self._actor_id = actor_id
+        self._db_session = db_session
 
     async def create_upload(self, req: dict, user: CurrentUser) -> WorkbenchUploadSession:
         upload_id = f"upload_{uuid.uuid4().hex[:16]}"
@@ -83,6 +92,37 @@ class UploadSessionService:
             access_scope_json=req.get("access_scope_json"),
         )
         self._repository.save(self._to_model(session))
+
+        # Write initial task projection row
+        if self._db_session is not None:
+            projector = ProjectionProjector(self._db_session)
+            now = datetime.now(timezone.utc)
+            event = {
+                "event_id": f"ev_{upload_id}_created",
+                "event_type": "TASK_CREATED",
+                "tenant_id": session.tenant_id,
+                "collection_id": session.collection_id,
+                "aggregate_type": "task",
+                "aggregate_id": upload_id,
+                "aggregate_version": 1,
+                "occurred_at": now,
+                "payload": {
+                    "projection_id": upload_id,
+                    "tenant_id": session.tenant_id,
+                    "user_id": session.user_id,
+                    "collection_id": session.collection_id,
+                    "upload_id": upload_id,
+                    "filename": session.filename,
+                    "mime_type": session.mime_type,
+                    "size_bytes": session.size_bytes,
+                    "source_file_id": session.source_file_id,
+                    "overall_status": session.status,
+                    "progress_pct": session.progress_pct,
+                },
+                "trace_id": upload_id,
+            }
+            projector.record_and_apply(event)
+
         return session
 
     def list_uploads(self, user: CurrentUser, collection_id: str | None = None, status: str | None = None) -> list[WorkbenchUploadSession]:
@@ -151,7 +191,40 @@ class UploadSessionService:
         if result.get("duplicate"):
             model.status = "duplicate"
         self._repository.save(model)
-        return self._from_model(model)
+
+        updated = self._from_model(model)
+
+        # Update task projection row
+        if self._db_session is not None:
+            projector = ProjectionProjector(self._db_session)
+            now = datetime.now(timezone.utc)
+            event = {
+                "event_id": f"ev_{upload_id}_content_uploaded",
+                "event_type": "TASK_CONTENT_UPLOADED",
+                "tenant_id": updated.tenant_id,
+                "collection_id": updated.collection_id,
+                "aggregate_type": "task",
+                "aggregate_id": upload_id,
+                "aggregate_version": 2,
+                "occurred_at": now,
+                "payload": {
+                    "projection_id": upload_id,
+                    "tenant_id": updated.tenant_id,
+                    "user_id": updated.user_id,
+                    "collection_id": updated.collection_id,
+                    "upload_id": upload_id,
+                    "filename": updated.filename,
+                    "mime_type": updated.mime_type,
+                    "size_bytes": updated.size_bytes,
+                    "source_file_id": updated.source_file_id,
+                    "overall_status": updated.status,
+                    "progress_pct": updated.progress_pct,
+                },
+                "trace_id": upload_id,
+            }
+            projector.record_and_apply(event)
+
+        return updated
 
     @staticmethod
     def _to_model(session: WorkbenchUploadSession) -> object:

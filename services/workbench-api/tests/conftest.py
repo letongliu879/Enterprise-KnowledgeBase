@@ -1,5 +1,12 @@
 """Test fixtures for workbench-api."""
 
+import sys
+from pathlib import Path
+
+# Add indexing_service to path so reality_rag_persistence can import it
+_project_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_project_root / "services" / "indexing" / "src"))
+
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -13,6 +20,12 @@ from workbench_api.config import config
 @pytest.fixture(autouse=True)
 def _setup_db():
     override_url_for_testing("sqlite:///:memory:")
+    # Monkeypatch downstream URLs to match test mocks
+    config.indexing_base_url = "http://localhost:8002"
+    config.intake_base_url = "http://localhost:8003"
+    config.approval_base_url = "http://localhost:8004"
+    config.admin_base_url = "http://localhost:8005"
+    config.access_base_url = "http://localhost:8007"
     drop_all()
     create_all()
     yield

@@ -40,6 +40,28 @@
   展示 collection、profile、readiness、projection freshness。
 ```
 
+## 2.5 文档结构
+
+本文档包含两个独立可实施的部分：
+
+- **Part A: 后端 Projection 改造**（第3–8节、第13节）  
+  目标：`workbench-api` 作为 BFF + SQL Projection Store + 下游事件适配。  
+  实施者：后端团队  
+  前置条件：无  
+  产出：稳定的 API Contract（见 7.6）
+
+- **Part B: 前端 RAGFlow 迁移**（第2节、第9–12节）  
+  目标：将 RAGFlow 工作台能力迁入 `/workbench/[ticketId]`。  
+  实施者：前端团队  
+  前置条件：Part A 中 7.1–7.5 接口已稳定并通过验收测试  
+  产出：`apps/web/src/features/ragflow-workbench/`
+
+两部分通过 **API Contract** 解耦：
+- 前端不感知后端是否使用 projection；只调用 `workbench-api` 接口。
+- 后端不感知前端是否使用 RAGFlow 组件；只保证接口 contract 稳定。
+
+---
+
 ## 3. 后端改造总原则
 
 ### 3.1 唯一前端入口
@@ -582,6 +604,33 @@ workbench-ui
 
 `access` 仍然是外部 Agent/API key/MCP 的正式入口。workbench 用户通过 JWT 进入 workbench-api，由后端转接。
 
+### 7.6 前后端契约
+
+Part A 完成后必须冻结的接口（Part B 的前置依赖）：
+
+| 接口 | 前端依赖 | 状态源 |
+|------|---------|--------|
+| `GET /workbench/tasks` | 上传列表页 | SQL projection |
+| `GET /workbench/tasks/{upload_id}` | 任务详情 | SQL projection |
+| `GET /workbench/tickets` | 审批列表页 | SQL projection |
+| `GET /workbench/tickets/{ticket_id}` | 审批详情 | SQL projection + approval fallback |
+| `GET /workbench/documents` | 集合文档列表 | SQL projection |
+| `GET /workbench/tickets/{ticket_id}/workspace` | 工作台详情页 | 并发聚合 |
+| `GET /workbench/source-files/{source_file_id}/content` | 原文预览 | document-service 代理 |
+| `GET /workbench/source-files/{source_file_id}/preview` | 原文预览 | document-service 代理 |
+| `GET /workbench/parse-snapshots/{parse_snapshot_id}` | Snapshot 详情 | indexing 代理 |
+| `GET /workbench/parse-snapshots/{parse_snapshot_id}/chunks` | Chunk 列表 | indexing 代理 |
+| `GET /workbench/chunks/{evidence_id}` | Chunk 详情 | indexing 代理 |
+| `POST /workbench/parse-snapshots/{parse_snapshot_id}/chunk-edits` | 创建 chunk edit | workbench 本地 |
+| `PUT /workbench/chunk-edits/{chunk_edit_id}` | 更新 chunk edit | workbench 本地 |
+| `POST /workbench/chunk-edits/{chunk_edit_id}/submit` | 提交 chunk edit | indexing 代理 |
+| `PATCH /workbench/chunks/{evidence_id}` | Chunk revision | indexing 代理 |
+| `POST /workbench/retrieve` | 检索验证 | access 代理 |
+| `GET /workbench/query-runs` | 检索历史 | SQL projection |
+| `GET /workbench/query-runs/{query_run_id}` | 检索详情 | SQL projection |
+
+**冻结条件**：Part A 全部 Phase A1–A5 完成并通过验收测试后，以上接口的 URL、请求/响应 schema、HTTP 状态码不再变更。Part B 在此之后启动。
+
 ## 8. 并发与延迟策略
 
 ### 8.1 列表页
@@ -740,67 +789,110 @@ RAGFlow document status -> workbench projection status
 
 ## 12. 实施阶段
 
-### Phase 0: 冻结方向
+### Part A: 后端 Projection 改造（后端团队）
+
+#### Phase A0: 冻结方向
 
 - 停止继续补当前手写 workbench detail 页面。
 - 确认前端是多页面业务系统。
 - 确认只迁移 RAGFlow 工作台相关模块。
 - 确认 `workbench-api` 是唯一前端后端入口。
 
-### Phase 1: 后端 projection 改造
+#### Phase A1: Projection 基础设施
 
-- 新增 `workbench_task_projection`。
-- 新增 `workbench_ticket_projection`。
-- 新增 `workbench_document_projection`。
-- 新增 `workbench_projection_events`。
-- 把 `/workbench/tasks` 从运行时 fan-out 改成只读 SQL。
-- 给 projection 增加分页、过滤、排序、stale 标记。
-- 增加 projector 和 reconciliation job。
+- 新增 `workbench_chunk_projection` 表。
+- 修复 `agent_review` projection 版本检查（当前无版本控制，需补 `upsert_with_version_check`）。
+- 创建 `events/` 目录：认证中间件、下游事件适配器框架、统一内部事件格式。
+- projector 支持 `aggregate_type="chunk"`。
+- 验收标准：event ingestion 单测通过，projector idempotency 单测通过。
 
-### Phase 2: Workspace 详情聚合接口
+#### Phase A2: 下游事件接入（Intake + Approval）
 
-- 新增 `/workbench/tickets/{ticket_id}/workspace`。
-- 并发读取 ticket、document、parse snapshot、chunk edits、AgentReview findings。
-- 支持局部降级和 `degraded_parts`。
-- 详情页不再由前端分别查多个服务。
+- 实现 `IntakeEventAdapter` + `POST /internal/events/intake`。
+  - 映射：`SourceFileRegistered`, `IntakeJobStateChanged`, `PublishedDocumentStateChanged`
+  - Document projection **双 owner 分离**：Intake 负责生命周期字段，Indexing 只更新 index 字段
+- 实现 `ApprovalEventAdapter` + `POST /internal/events/approval`。
+  - 映射：`TicketCreated`, `TicketUpdated`, `TicketDecided`, `AgentReviewCompleted`
+  - Ticket projection 由 approval 回调异步更新
+- 迁移 `tickets/routes.py`：列表读 SQL projection，详情可 fallback 到 approval。
+- 验收标准：上传 → intake 回调 → task + document projection 更新 E2E 通过；审批 → approval 回调 → ticket projection 更新 E2E 通过。
 
-### Phase 3: 原始文档与 chunk 对照
+#### Phase A3: 下游事件接入（Indexing）+ Chunk 批量处理
 
-- 新增 source file content/preview 代理。
-- 新增 chunk projection 或 chunk preview adapter。
-- 支持 chunk 点击定位原文 page/anchor。
-- 支持原文和 chunk 对照编辑。
+- 实现 `IndexingEventAdapter` + `POST /internal/events/indexing`。
+  - 映射：`ParseSnapshotCompleted`, `ChunksMaterialized`（批量）, `IndexBuildCompleted`, `ChunkRevisionActivated`
+  - Indexing 发 **批量 chunk 事件**（非逐 chunk），projection 只存 lightweight summary（前 100 个 preview）
+- Document projection 接收 indexing 字段更新（`index_build_state`, `active_index_version`, `chunk_count`）。
+- 验收标准：indexing 回调 → document + chunk projection 更新；批量事件不造成网络风暴。
 
-### Phase 4: AgentReview finding 化
+#### Phase A4: Reconciliation 分布式实现
 
-- 更新 AgentReview schema。
-- 更新 agent reviewer prompt。
-- 把 AgentReview artifact 投影成 finding。
-- finding 支持定位原文、定位 chunk、生成 chunk edit draft。
+- Reconciler 改用数据库行级锁：`FOR UPDATE SKIP LOCKED`。
+- Cursor 分页：每次只取一批（如 100 条），记录 last cursor。
+- FastAPI lifespan 启动 background reconciliation loop（多实例安全）。
+- 写 `workbench_projection_reconcile_runs` 审计日志。
+- 验收标准：启动 3 个实例，观察无重复修复日志；stale 行被修复后 `is_stale=false`。
 
-### Phase 5: access 转接
+#### Phase A5: 列表页全面迁移 + 验收测试
 
-- 新增 `AccessClient`。
-- 新增 `/workbench/retrieve`。
-- 写入 `workbench_query_runs`。
-- `/retrieval` 页面不再直接调用 access。
+- `GET /workbench/tasks` 只读 SQL projection（已完成，验证稳定）。
+- `GET /workbench/tickets` 只读 SQL projection（Phase A2 已完成）。
+- `GET /workbench/documents` 只读 SQL projection（projections/routes.py 注册到 main.py）。
+- 补全分页、过滤、排序、stale 标记。
+- 验收标准：列表页抓包 **0 下游调用**；P95 < 200ms。
+- 全量测试：
+  - projection contract tests
+  - workspace detail degraded response tests
+  - access proxy authorization tests
+  - E2E：上传 → projection → review → workbench → 原文预览 → chunk edit → AgentReview → 审批 → 检索验证
+  - 延迟测试：列表页 SQL 查询、详情页并发聚合、检索验证 warm query
 
-### Phase 6: RAGFlow 工作台页迁移
+**Part A 完成标志**：7.6 契约接口全部冻结，测试通过，文档更新。
 
-- 创建 `apps/web/src/features/ragflow-workbench`。
-- 迁移 RAGFlow document viewer / chunk 页面。
-- 用 `workbench-ragflow-adapter.ts` 对接 workbench-api。
-- 接入 `/workbench/[ticketId]`。
+---
 
-### Phase 7: 验证
+### Part B: 前端 RAGFlow 迁移（前端团队）
 
-- workbench-api contract tests。
-- projection projector idempotency tests。
-- reconciliation tests。
-- workspace detail degraded response tests。
-- access proxy authorization tests。
-- E2E：上传 -> projection -> review -> workbench -> 原文预览 -> chunk edit -> AgentReview -> 审批 -> 检索验证。
-- 延迟测试：列表页 SQL 查询、详情页并发聚合、检索验证 warm query。
+**启动条件**：Part A Phase A5 完成并通过验收。
+
+#### Phase B0: 环境准备
+
+- 确认 `workbench-api` 接口已冻结（见 7.6）。
+- 创建 `apps/web/src/features/ragflow-workbench/` 目录结构。
+- 配置 `workbench-ragflow-adapter.ts` 基架。
+
+#### Phase B1: RAGFlow 组件迁移
+
+- 迁移 RAGFlow document viewer 组件。
+- 迁移 RAGFlow chunk 列表/编辑组件。
+- 适配 canonical wire 字段命名（`evidence_id` not `chunk_id`, `doc_id` not `final_doc_id`）。
+
+#### Phase B2: 工作台页集成
+
+- 创建 `/workbench/[ticketId]` 路由。
+- 对接 `GET /workbench/tickets/{ticket_id}/workspace` 详情聚合。
+- 实现原文预览 + chunk 对照编辑。
+- AgentReview finding 列表展示（从 `GET /workbench/tickets/{ticket_id}/workspace` 取）。
+
+#### Phase B3: Chunk 编辑工作流
+
+- 发布前编辑：`POST /workbench/parse-snapshots/{id}/chunk-edits` → draft → submit。
+- 发布后编辑：`PATCH /workbench/chunks/{evidence_id}` → revision。
+- 状态同步：编辑后刷新 workspace 详情。
+
+#### Phase B4: 检索验证页
+
+- `/retrieval` 页面只调 `workbench-api`。
+- 对接 `POST /workbench/retrieve` + `GET /workbench/query-runs`。
+- 展示检索结果和 history。
+
+#### Phase B5: 验收
+
+- E2E 完整流程测试。
+- 视觉和交互回归测试。
+- 性能测试：工作台首屏 < 2s，chunk 列表滚动流畅。
+
+**Part B 完成标志**：所有页面功能正常，E2E 通过，无直接调下游服务的代码。
 
 ## 13. 当前代码风险点
 
