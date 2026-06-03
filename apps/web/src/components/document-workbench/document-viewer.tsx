@@ -16,7 +16,8 @@ import {
 import { toast } from "sonner";
 import { workbenchApi } from "@/lib/api/client";
 import type { ChunkView } from "@/lib/api/types";
-import { isApiError } from "@/lib/api/errors";
+import DOMPurify from "dompurify";
+import { isApiError, getErrorMessage } from "@/lib/api/errors";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,7 @@ function ZoomableHtml({
   zoom: number;
 }) {
   const scale = zoom / 100;
+  const sanitizedHtml = DOMPurify.sanitize(html);
   return (
     <div className="overflow-auto rounded-lg border bg-white p-4">
       <div
@@ -119,7 +121,7 @@ function ZoomableHtml({
       >
         <div
           className="prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       </div>
     </div>
@@ -304,9 +306,9 @@ export function DocumentViewer({
       }
     }
 
-    // For PDF, we can't programmatically search inside iframe easily
-    // Just highlight that we attempted
-    onSearchComplete?.(mode === "pdf" ? false : false);
+    // For PDF, we can't programmatically search inside iframe easily.
+    // For text/html, reaching here means the text was not found.
+    onSearchComplete?.(false);
   }, [searchText, mode, textPreview, htmlPreview, onSearchComplete]);
 
   const pdfUrl = useMemo(() => {
@@ -444,7 +446,7 @@ export function DocumentViewer({
           ) : error ? (
             <Alert variant="destructive">
               <FileText className="h-4 w-4" />
-              <AlertDescription>{isApiError(error) ? error.message : String(error)}</AlertDescription>
+              <AlertDescription>{isApiError(error) ? error.message : getErrorMessage(error)}</AlertDescription>
             </Alert>
           ) : !parseSnapshotId || !data?.blob ? (
             previewText ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,14 +44,14 @@ export function ChunkEditModal({
   const [editReason, setEditReason] = useState("");
 
   // Reset form when chunk changes
-  useState(() => {
+  useEffect(() => {
     if (chunk) {
       setContent(chunk.content || "");
       setSectionPath(JSON.stringify(chunk.section_path || [], null, 2));
       setMetadata(JSON.stringify(chunk.metadata || {}, null, 2));
       setEditReason("");
     }
-  });
+  }, [chunk]);
 
   if (!chunk) return null;
 

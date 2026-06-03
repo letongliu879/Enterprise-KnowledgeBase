@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/empty-state";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, getErrorMessage } from "@/lib/api/errors";
 import { toast } from "sonner";
 import type { UploadStatus } from "@/lib/api/types";
 
@@ -107,11 +107,15 @@ function getStatusLabel(status: FileStatus) {
   return labels[status];
 }
 
+const MAX_CONCURRENT_UPLOADS = 3;
+
 export default function UploadPage() {
   const { currentCollectionId, accessScope } = useAppStore();
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadQueueRef = useRef<string[]>([]);
+  const activeUploadsRef = useRef(0);
 
   const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
@@ -161,12 +165,14 @@ export default function UploadPage() {
       uploadContent.mutate({ ...item, uploadId });
     },
     onError: (err, item) => {
-      const msg = isApiError(err) ? err.message : String(err);
+      const msg = isApiError(err) ? err.message : getErrorMessage(err);
       setFiles((prev) =>
         prev.map((f) =>
           f.id === item.id ? { ...f, status: "failed", error: msg } : f
         )
       );
+      activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+      processUploadQueue();
       toast.error(`创建上传会话失败: ${item.file.name}`);
     },
   });
@@ -186,18 +192,49 @@ export default function UploadPage() {
             : f
         )
       );
+      activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+      processUploadQueue();
       toast.success(`已上传: ${item.file.name}`);
     },
     onError: (err, item) => {
-      const msg = isApiError(err) ? err.message : String(err);
+      const msg = isApiError(err) ? err.message : getErrorMessage(err);
       setFiles((prev) =>
         prev.map((f) =>
           f.id === item.id ? { ...f, status: "failed", error: msg } : f
         )
       );
+      activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+      processUploadQueue();
       toast.error(`上传文件失败: ${item.file.name}`);
     },
   });
+
+  const startUpload = (item: FileItem) => {
+    activeUploadsRef.current += 1;
+    setFiles((prev) =>
+      prev.map((f) => (f.id === item.id ? { ...f, status: "uploading" } : f))
+    );
+    createUpload.mutate(item);
+  };
+
+  const processUploadQueue = () => {
+    const activeCount = activeUploadsRef.current;
+    if (activeCount >= MAX_CONCURRENT_UPLOADS) return;
+
+    const slots = MAX_CONCURRENT_UPLOADS - activeCount;
+    const queuedIds = uploadQueueRef.current.splice(0, slots);
+
+    queuedIds.forEach((id) => {
+      const item = files.find((f) => f.id === id);
+      if (item) startUpload(item);
+    });
+  };
+
+  const enqueueUploads = (items: FileItem[]) => {
+    setFiles((prev) => [...prev, ...items]);
+    items.forEach((item) => uploadQueueRef.current.push(item.id));
+    processUploadQueue();
+  };
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -217,16 +254,9 @@ export default function UploadPage() {
         status: "queued",
         progress: 0,
       }));
-      setFiles((prev) => [...prev, ...newItems]);
-      // Auto-start uploads
-      newItems.forEach((item) => {
-        setFiles((prev) =>
-          prev.map((f) => (f.id === item.id ? { ...f, status: "uploading" } : f))
-        );
-        createUpload.mutate(item);
-      });
+      enqueueUploads(newItems);
     },
-    [currentCollectionId, accessScope, createUpload]
+    [currentCollectionId, accessScope, enqueueUploads]
   );
 
   const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -245,13 +275,7 @@ export default function UploadPage() {
       status: "queued",
       progress: 0,
     }));
-    setFiles((prev) => [...prev, ...newItems]);
-    newItems.forEach((item) => {
-      setFiles((prev) =>
-        prev.map((f) => (f.id === item.id ? { ...f, status: "uploading" } : f))
-      );
-      createUpload.mutate(item);
-    });
+    enqueueUploads(newItems);
     e.target.value = "";
   };
 
@@ -263,11 +287,12 @@ export default function UploadPage() {
     setFiles((prev) =>
       prev.map((f) =>
         f.id === item.id
-          ? { ...f, status: S_UPLOADING, progress: 0, error: undefined, uploadId: undefined }
+          ? { ...f, status: "queued", progress: 0, error: undefined, uploadId: undefined }
           : f
       )
     );
-    createUpload.mutate({ ...item, uploadId: undefined });
+    uploadQueueRef.current.push(item.id);
+    processUploadQueue();
   };
 
   const stats = {

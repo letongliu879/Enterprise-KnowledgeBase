@@ -14,15 +14,19 @@ import { useAppStore } from "@/lib/store";
 
 const ADMIN_BASE =
   process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_ADMIN_API_URL ||
   "/api/admin";
 const WORKBENCH_BASE =
   process.env.NEXT_PUBLIC_WORKBENCH_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_WORKBENCH_API_URL ||
   "/api/workbench";
 const ACCESS_BASE =
   process.env.NEXT_PUBLIC_ACCESS_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_ACCESS_API_URL ||
   "/api/access";
 const RETRIEVAL_BASE =
   process.env.NEXT_PUBLIC_RETRIEVAL_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_RETRIEVAL_API_URL ||
   "/api/retrieval";
 const REQUEST_TIMEOUT_MS = 15000;
 

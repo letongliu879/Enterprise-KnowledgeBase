@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { workbenchApi } from "@/lib/api/client";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
+import type { Finding, FindingSeverity } from "@/features/workbench/types/finding";
 import {
   formatFailureStageLabel,
   formatNextActionLabel,
@@ -172,27 +173,16 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
   );
 
   // Convert legacy AgentReviewView to new Finding format
-  const convertAgentReviewToFindings = (review: typeof agentReview) => {
+  const convertAgentReviewToFindings = (review: typeof agentReview): Finding[] => {
     if (!review) return [];
     
-    const findings: Array<{
-      finding_id: string;
-      severity: string;
-      category: string;
-      problem_summary: string;
-      source_quote?: string;
-      evidence_id?: string;
-      page_from?: number;
-      page_to?: number;
-      confidence?: number;
-      state: string;
-    }> = [];
+    const findings: Finding[] = [];
 
     // Convert quality_findings
     review.quality_findings?.forEach((item, index) => {
       findings.push({
         finding_id: `qf_${index}`,
-        severity: item.severity,
+        severity: (item.severity as FindingSeverity) || "medium",
         category: item.category,
         problem_summary: item.message,
         source_quote: item.evidence_anchor,
@@ -224,18 +214,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
       });
     });
 
-    return findings as Array<{
-      finding_id: string;
-      severity: "critical" | "high" | "medium" | "low" | "info";
-      category: string;
-      problem_summary: string;
-      source_quote?: string;
-      evidence_id?: string;
-      page_from?: number;
-      page_to?: number;
-      state: "open" | "resolved";
-      confidence?: number;
-    }>;
+    return findings;
   };
 
   const reviewSummary = useMemo(

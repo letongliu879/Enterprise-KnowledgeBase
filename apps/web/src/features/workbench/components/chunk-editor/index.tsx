@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { workbenchApi } from "@/lib/api/client";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, getErrorMessage } from "@/lib/api/errors";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -109,7 +109,7 @@ export function ChunkEditorWorkbench({
       <Alert variant="destructive">
         <AlertTriangle className="h-4 w-4" />
         <AlertDescription>
-          {isApiError(error) ? error.message : String(error)}
+          {isApiError(error) ? error.message : getErrorMessage(error)}
         </AlertDescription>
       </Alert>
     );

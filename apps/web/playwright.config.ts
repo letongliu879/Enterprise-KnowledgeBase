@@ -12,9 +12,7 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     launchOptions: {
-      executablePath:
-        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ||
-        "C:\\Users\\LLT\\AppData\\Local\\ms-playwright\\chromium-1223\\chrome-win64\\chrome.exe",
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
     },
   },
   projects: [

@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { workbenchApi } from "@/lib/api/client";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, getErrorMessage } from "@/lib/api/errors";
 
 export default function DocumentDetailPage() {
   const { docId } = useParams<{ docId: string }>();
@@ -63,7 +63,7 @@ export default function DocumentDetailPage() {
       <Alert variant="destructive">
         <AlertTriangle className="h-4 w-4" />
         <AlertDescription>
-          {isApiError(error) ? error.message : String(error)}
+          {isApiError(error) ? error.message : getErrorMessage(error)}
         </AlertDescription>
       </Alert>
     );

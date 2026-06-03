@@ -123,7 +123,10 @@ export default function DocumentsPage() {
           <BackendGap feature="Document Library" endpoint={error.endpoint} />
         ) : (
           <div className="text-red-500 text-sm">
-            {isApiError(error) ? error.message : String(error)}
+            {isApiError(error) ? error.message : 
+              error instanceof Error ? error.message : 
+              typeof error === 'string' ? error : 
+              JSON.stringify(error)}
           </div>
         )
       )}

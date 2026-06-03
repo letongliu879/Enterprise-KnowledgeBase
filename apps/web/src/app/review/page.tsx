@@ -29,7 +29,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { BackendGap } from "@/components/backend-gap";
-import { isBackendGap, isApiError } from "@/lib/api/errors";
+import { isBackendGap, isApiError, getErrorMessage } from "@/lib/api/errors";
 
 export default function ReviewQueuePage() {
   const [collectionFilter, setCollectionFilter] = useState("");
@@ -108,7 +108,7 @@ export default function ReviewQueuePage() {
           <BackendGap feature="Review Queue (Tickets)" endpoint={error.endpoint} />
         ) : (
           <div className="text-red-500 text-sm">
-            {isApiError(error) ? error.message : String(error)}
+            {isApiError(error) ? error.message : getErrorMessage(error)}
           </div>
         )
       )}
