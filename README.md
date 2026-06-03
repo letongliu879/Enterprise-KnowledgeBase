@@ -261,19 +261,19 @@ py -3.14 scripts/ekb-svc.py build               # 手动编译 Java 服务
 
 如果你需要单独调试某个服务，可以手动启动。所有 Python 服务共用项目根目录的 `.venv`。
 
-**依赖顺序**：
+**依赖顺序（默认真实链路）**：
 
 ```
 PostgreSQL / OpenSearch / Qdrant / Redis (Docker)
   → admin (18084)
   → indexing (18080)
   → document-service (8006)
-  → intake-pipeline (18085)
-  → publishing-worker (18086)
   → approval-service (18087)
-  → agent-review-worker (18090)
   → conversion-worker (18089)
+  → agent-review-worker (18090)
+  → publishing-worker (18086)
   → ingestion-worker (18088)
+  → intake-pipeline (18085, compat/smoke only)
   → workbench-api (18083)
   → retrieval (18182)
   → access (18181)
@@ -283,6 +283,11 @@ PostgreSQL / OpenSearch / Qdrant / Redis (Docker)
 
 ```powershell
 $env:PYTHONPATH = "$PWD\packages\contracts\src;$PWD\packages\persistence\src;$PWD\packages\documents\src;$PWD\packages\ragflow_runtime\src;$PWD\services\admin\src;$PWD\services\workbench-api\src;$PWD\services\indexing\src;$PWD\services\intake-pipeline\src;$PWD\services\intake-pipeline\publishing-worker\src;$PWD\services\intake-pipeline\document-service\src"
+$env:DOCUMENT_SERVICE_URL = "http://127.0.0.1:8006"
+$env:APPROVAL_SERVICE_URL = "http://127.0.0.1:18087"
+$env:PUBLISHING_WORKER_URL = "http://127.0.0.1:18086"
+$env:INDEXING_SERVICE_URL = "http://127.0.0.1:18080"
+$env:ALLOW_LOCAL_FALLBACK_FOR_TESTS = "false"
 
 # Terminal 1 — admin
 python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
@@ -290,16 +295,28 @@ python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
 # Terminal 2 — indexing
 python -m uvicorn indexing_service.main:app --host 0.0.0.0 --port 18080
 
-# Terminal 3 — intake-pipeline
-python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085
-
-# Terminal 4 — publishing-worker
-python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
-
-# Terminal 5 — document-service
+# Terminal 3 — document-service
 python -m uvicorn document_service.main:app --host 0.0.0.0 --port 8006
 
-# Terminal 6 — workbench-api
+# Terminal 4 — approval-service
+python -m uvicorn approval_service.main:app --host 0.0.0.0 --port 18087
+
+# Terminal 5 — conversion-worker
+python -m uvicorn conversion_worker.main:app --host 0.0.0.0 --port 18089
+
+# Terminal 6 — agent-review-worker
+python -m uvicorn agent_review_worker.main:app --host 0.0.0.0 --port 18090
+
+# Terminal 7 — publishing-worker
+python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
+
+# Terminal 8 — ingestion-worker
+python -m uvicorn ingestion_worker.main:app --host 0.0.0.0 --port 18088
+
+# Terminal 9 — intake-pipeline (compat/smoke only)
+python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085
+
+# Terminal 10 — workbench-api
 python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
 ```
 
@@ -307,12 +324,21 @@ python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
 
 ```bash
 export PYTHONPATH="$PWD/packages/contracts/src:$PWD/packages/persistence/src:$PWD/packages/documents/src:$PWD/packages/ragflow_runtime/src:$PWD/services/admin/src:$PWD/services/workbench-api/src:$PWD/services/indexing/src:$PWD/services/intake-pipeline/src:$PWD/services/intake-pipeline/publishing-worker/src:$PWD/services/intake-pipeline/document-service/src"
+export DOCUMENT_SERVICE_URL="http://127.0.0.1:8006"
+export APPROVAL_SERVICE_URL="http://127.0.0.1:18087"
+export PUBLISHING_WORKER_URL="http://127.0.0.1:18086"
+export INDEXING_SERVICE_URL="http://127.0.0.1:18080"
+export ALLOW_LOCAL_FALLBACK_FOR_TESTS="false"
 
 python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
 python -m uvicorn indexing_service.main:app --host 0.0.0.0 --port 18080
-python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085
-python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
 python -m uvicorn document_service.main:app --host 0.0.0.0 --port 8006
+python -m uvicorn approval_service.main:app --host 0.0.0.0 --port 18087
+python -m uvicorn conversion_worker.main:app --host 0.0.0.0 --port 18089
+python -m uvicorn agent_review_worker.main:app --host 0.0.0.0 --port 18090
+python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
+python -m uvicorn ingestion_worker.main:app --host 0.0.0.0 --port 18088
+python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085  # compat/smoke only
 python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
 ```
 
@@ -365,13 +391,18 @@ npm run dev
 # 1. 健康检查
 curl http://localhost:18084/health        # admin
 curl http://localhost:18083/workbench/health  # workbench-api
-curl http://localhost:18080/health       # indexing
-curl http://localhost:18085/health       # intake-pipeline
-curl http://localhost:18086/health       # publishing-worker
-curl http://localhost:18182/health       # retrieval
-curl http://localhost:18181/health       # access
+curl http://localhost:18080/health        # indexing
+curl http://localhost:8006/health         # document-service
+curl http://localhost:18087/health        # approval-service
+curl http://localhost:18089/health        # conversion-worker
+curl http://localhost:18090/health        # agent-review-worker
+curl http://localhost:18086/health        # publishing-worker
+curl http://localhost:18088/health        # ingestion-worker
+curl http://localhost:18085/health        # intake-pipeline (compat/smoke only)
+curl http://localhost:18182/health        # retrieval
+curl http://localhost:18181/health        # access
 
-# 2. 运行时冒烟测试（验证全链路）
+# 2. 运行时冒烟测试（默认验证 split intake chain，不依赖 /v1/documents）
 py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
 ```
 
@@ -406,7 +437,7 @@ npx playwright test
 ### 运行时冒烟测试
 
 ```bash
-# 基础模式（允许 stub 回退）
+# 基础模式（默认验证 document-service -> ingestion-worker -> conversion/agent-review -> approval -> publishing -> indexing）
 py -3.14 scripts/run_real_runtime_smoke.py
 
 # 严格模式（要求所有真实后端在线）

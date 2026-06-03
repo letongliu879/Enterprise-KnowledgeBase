@@ -28,22 +28,24 @@ from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from reality_rag_persistence.repositories.tenants import TenantRepository
 from reality_rag_persistence.telemetry import TelemetryStore
+from reality_rag_documents import object_id_from_hash
 
-from .agent_review_cache import get_agent_review_cache
-from .agent_reviewer import get_agent_reviewer
-from .converters.base import BaseConverter
+from intake_runtime.agent_review_cache import get_agent_review_cache
+from intake_runtime.agent_reviewer import get_agent_reviewer
+from intake_runtime.converters.base import BaseConverter
+from intake_runtime.pipeline_utils import report_asset_path, write_json_asset
+from intake_runtime.stage_runtime import execute_conversion_task, execute_publishing_task, execute_review_task
+from intake_runtime.stage_runtime import json_summary
+from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from intake_runtime.stages.protocol import StageContext
+from intake_runtime.stages.pure_stages import _logical_document_id
+
 from .document_service_client import DocumentServiceClient
-from .domains.document_domain import _object_id_from_hash
+from .domains.publishing_domain import persist_document_and_policy
 from .pipeline_report import build_error_message, resolve_job_status
-from .pipeline_utils import report_asset_path, write_json_asset
-from .stage_task_worker import make_stage_task_deliver, make_stage_task_filter
-from .stage_runtime import execute_conversion_task, execute_publishing_task, execute_review_task
-from .stage_runtime import json_summary
-from .stages.pure_stages import _logical_document_id
-from .stages.protocol import StageContext
 
 if TYPE_CHECKING:
-    from .monitoring import MonitorContext
+    from .monitor_context import MonitorContext
 
 
 class IngestionPipeline:
@@ -120,7 +122,7 @@ class IngestionPipeline:
                     continue
 
                 source_path = Path(source_file)
-                object_id = _object_id_from_hash(content_hash)
+                object_id = object_id_from_hash(content_hash)
                 doc_client.get_or_create_object_blob(
                     content_hash,
                     str(source_path),
@@ -298,7 +300,13 @@ class IngestionPipeline:
                 stage_name=StageName.PUBLISHING,
                 consumer_id="publishing-worker:stage-task:sync-pipeline",
                 worker_id="worker-publishing-sync",
-                execute=execute_publishing_task,
+                execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_publishing_task(
+                    session,
+                    stage_task_id,
+                    intake_job_id,
+                    worker_id,
+                    persist_fn=persist_document_and_policy,
+                ),
             ),
             should_process=make_stage_task_filter(StageName.PUBLISHING),
             batch_size=100,

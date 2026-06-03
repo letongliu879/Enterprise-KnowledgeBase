@@ -14,9 +14,10 @@ from reality_rag_contracts import (
 )
 from reality_rag_persistence.models import StageResultModel
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
+from intake_runtime.orchestrator import OrchestratorService
+from intake_runtime.stages.schemas import PublishingStageOutput
 
 from .document_service_client import DocumentServiceClient
-from .orchestrator import OrchestratorService
 
 
 def schedule_stage(
@@ -151,7 +152,6 @@ def _after_review(session, orch: OrchestratorService, job) -> None:
 
 def _after_publishing(session, orch: OrchestratorService, job) -> None:
     from reality_rag_contracts import CanonicalMetadata, IndexAssetBundle
-    from .stages.schemas import PublishingStageOutput
 
     row = _stage_result(session, job.intake_job_id, StageName.PUBLISHING)
     summary = row.summary_json or {}
@@ -214,11 +214,11 @@ def _resolve_publish_status(
     quality_report: QualityReport | None,
     agent_review: AgentReview | None,
 ) -> PublishStatus | None:
-    from .domains import approval_domain
+    from .domains.approval_domain import system_decide
 
     if quality_report is None and agent_review is None:
         return None
-    return approval_domain.system_decide(quality_report, agent_review)
+    return system_decide(quality_report, agent_review)
 
 
 def _normalize_agent_review(value: Any, doc_id: str) -> AgentReview | None:

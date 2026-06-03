@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
@@ -26,14 +27,20 @@ from reality_rag_contracts import (
     IndexSwitchRequest,
     IndexSwitchResult,
 )
-from reality_rag_indexing import IndexJobError, IndexingService
 
-_indexing_service: IndexingService | None = None
+_indexing_service: Any | None = None
 
 
-def get_indexing_service() -> IndexingService:
+def _load_runtime():
+    from reality_rag_indexing import IndexJobError, IndexingService, get_index_backend
+
+    return IndexJobError, IndexingService, get_index_backend
+
+
+def get_indexing_service():
     global _indexing_service
     if _indexing_service is None:
+        _, IndexingService, _ = _load_runtime()
         _indexing_service = IndexingService()
     return _indexing_service
 
@@ -41,7 +48,7 @@ def get_indexing_service() -> IndexingService:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if os.environ.get("APP_ENV", "development").lower() == "production":
-        from reality_rag_indexing import get_index_backend
+        _, _, get_index_backend = _load_runtime()
         get_index_backend()
     yield
 
@@ -67,7 +74,10 @@ async def health() -> HealthResponse:
 async def run_index_job(request: IndexJobRequest) -> IndexJobResult:
     try:
         return await get_indexing_service().run(request)
-    except IndexJobError as exc:
+    except Exception as exc:
+        IndexJobError, _, _ = _load_runtime()
+        if not isinstance(exc, IndexJobError):
+            raise
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -78,7 +88,10 @@ async def activate_index(request: IndexSwitchRequest) -> IndexSwitchResult:
             request.collection_id,
             request.index_version,
         )
-    except IndexJobError as exc:
+    except Exception as exc:
+        IndexJobError, _, _ = _load_runtime()
+        if not isinstance(exc, IndexJobError):
+            raise
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -89,5 +102,8 @@ async def rollback_index(request: IndexSwitchRequest) -> IndexSwitchResult:
             request.collection_id,
             request.index_version,
         )
-    except IndexJobError as exc:
+    except Exception as exc:
+        IndexJobError, _, _ = _load_runtime()
+        if not isinstance(exc, IndexJobError):
+            raise
         raise HTTPException(status_code=400, detail=str(exc)) from exc

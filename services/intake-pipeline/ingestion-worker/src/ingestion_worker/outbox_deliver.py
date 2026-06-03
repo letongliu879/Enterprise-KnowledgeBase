@@ -16,10 +16,10 @@ from reality_rag_persistence.repositories.consumer_idempotency import ConsumerId
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
+from intake_runtime.orchestrator import OrchestratorService
 
 from .job_event_flow import apply_approval_decision, apply_stage_completed
 from .document_service_client import DocumentServiceClient
-from .orchestrator import OrchestratorService
 
 logger = logging.getLogger(__name__)
 
@@ -306,10 +306,7 @@ def _deliver_file_ready(event: OutboxEvent) -> bool:
             collection_id=source_file.collection_id,
             trace_id=event.trace_id or source_file.upload_id or "",
         )
-        claimed = __import__("ingestion_worker.document_service_client", fromlist=["DocumentServiceClient"]).DocumentServiceClient(session).claim(
-            source_file.source_file_id,
-            intake_job.intake_job_id,
-        )
+        claimed = DocumentServiceClient(session).claim(source_file.source_file_id, intake_job.intake_job_id)
         if not claimed:
             raise ValueError(f"Failed to claim source file {source_file.source_file_id}")
 

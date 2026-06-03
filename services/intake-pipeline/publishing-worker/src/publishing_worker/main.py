@@ -22,9 +22,9 @@ from reality_rag_contracts import CanonicalMetadata, HealthResponse, StageName
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.outbox import OutboxDispatcher
 
-from ingestion_worker.stage_runtime import execute_publishing_task
-from ingestion_worker.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
-from .publishing_domain import PublishingService, update_published_document_state
+from intake_runtime.stage_runtime import execute_publishing_task
+from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from .publishing_domain import PublishingService, persist_document_and_policy, update_published_document_state
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +213,13 @@ async def _outbox_poll_loop() -> None:
             stage_name=StageName.PUBLISHING,
             consumer_id="publishing-worker:stage-task",
             worker_id="worker-publishing",
-            execute=execute_publishing_task,
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_publishing_task(
+                session,
+                stage_task_id,
+                intake_job_id,
+                worker_id,
+                persist_fn=persist_document_and_policy,
+            ),
         ),
         should_process=make_stage_task_filter(StageName.PUBLISHING),
     )

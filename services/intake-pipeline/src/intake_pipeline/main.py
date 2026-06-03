@@ -1,3 +1,9 @@
+"""Compatibility-only intake API.
+
+This module remains available for smoke and legacy paths, but it is no longer
+the intended owner for the split intake chain.
+"""
+
 from __future__ import annotations
 
 import json
@@ -174,23 +180,6 @@ class ApprovalTicketRecord(BaseModel):
     approval_audit_ref: str | None = None
 
 
-class ClaimSourceFileRequest(BaseModel):
-    intake_job_id: str | None = None
-
-
-class SourceFileTransitionResponse(BaseModel):
-    source_file_id: str
-    source_file_state: str
-    intake_job_id: str
-    claimed_by_job_id: str | None = None
-    trace_id: str
-
-
-class FailSourceFileRequest(BaseModel):
-    error_code: str
-    error_message: str
-
-
 class IntakeService:
     def __init__(self) -> None:
         self._documents: dict[str, IntakeDocumentRecord] = {}
@@ -350,70 +339,6 @@ class IntakeService:
             return self._tickets[ticket_id]
         except KeyError as error:
             raise KeyError(f"Unknown ticket_id: {ticket_id}") from error
-
-    def claim_source_file(self, source_file_id: str, request: ClaimSourceFileRequest) -> SourceFileTransitionResponse:
-        record = self.get(source_file_id)
-        self._require_source_file_state(record, SourceFileState.READY)
-        claimed_job_id = request.intake_job_id or record.intake_job_id
-        if claimed_job_id != record.intake_job_id:
-            raise ValueError(
-                f"Document {source_file_id} is owned by intake_job_id {record.intake_job_id}, "
-                f"not {claimed_job_id}"
-            )
-        record.source_file_state = SourceFileState.CLAIMED.value
-        record.claimed_by_job_id = claimed_job_id
-        record.source_file_claimed_at = _utc_now()
-        return self._source_file_transition(record)
-
-    def consume_source_file(self, source_file_id: str) -> SourceFileTransitionResponse:
-        record = self.get(source_file_id)
-        self._require_source_file_state(record, SourceFileState.CLAIMED)
-        record.source_file_state = SourceFileState.CONSUMED.value
-        record.source_file_consumed_at = _utc_now()
-        return self._source_file_transition(record)
-
-    def mark_source_file_cleanable(self, source_file_id: str) -> SourceFileTransitionResponse:
-        record = self.get(source_file_id)
-        allowed_states = {SourceFileState.CONSUMED.value, SourceFileState.FAILED.value, SourceFileState.CLEANABLE.value}
-        if record.source_file_state not in allowed_states:
-            raise ValueError(
-                f"Document {source_file_id} cannot become CLEANABLE from {record.source_file_state}"
-            )
-        record.source_file_state = SourceFileState.CLEANABLE.value
-        return self._source_file_transition(record)
-
-    def clean_source_file(self, source_file_id: str) -> SourceFileTransitionResponse:
-        record = self.get(source_file_id)
-        self._require_source_file_state(record, SourceFileState.CLEANABLE)
-        record.source_file_state = SourceFileState.CLEANED.value
-        record.source_file_cleaned_at = _utc_now()
-        return self._source_file_transition(record)
-
-    def fail_source_file(self, source_file_id: str, request: FailSourceFileRequest) -> SourceFileTransitionResponse:
-        record = self.get(source_file_id)
-        if record.source_file_state in {SourceFileState.CLEANED.value, SourceFileState.CLEANABLE.value}:
-            raise ValueError(f"Document {source_file_id} cannot fail from {record.source_file_state}")
-        record.source_file_state = SourceFileState.FAILED.value
-        record.intake_job_state = IntakeJobState.FAILED.value
-        record.state = IntakeJobState.FAILED.value
-        record.failure_code = request.error_code
-        record.failure_message = request.error_message
-        self._write_run_trace(
-            record,
-            root_status="FAILED",
-            final_doc_id=None,
-            approval_ticket_id=record.approval_ticket_id,
-            debug_ref=f"dbg://intake/{record.trace_id}",
-            result_count=0,
-        )
-        self._write_run_step(record.trace_id, "source_file_failed", "FAILED", f"error_code={request.error_code}")
-        self._write_run_artifact(
-            record.trace_id,
-            f"art://intake/{record.source_file_id}/failure",
-            "failure",
-            f"error_code={request.error_code};message={request.error_message}",
-        )
-        return self._source_file_transition(record)
 
     def submit_for_approval(self, source_file_id: str, request: SubmitApprovalRequest) -> ApprovalTicketRecord:
         record = self.get(source_file_id)
@@ -786,22 +711,6 @@ class IntakeService:
             "status": "PUBLISHED",
         }
 
-    def _require_source_file_state(self, record: IntakeDocumentRecord, required: SourceFileState) -> None:
-        if record.source_file_state != required.value:
-            raise ValueError(
-                f"Document {record.source_file_id} must be in {required.value}, "
-                f"not {record.source_file_state}"
-            )
-
-    def _source_file_transition(self, record: IntakeDocumentRecord) -> SourceFileTransitionResponse:
-        return SourceFileTransitionResponse(
-            source_file_id=record.source_file_id,
-            source_file_state=record.source_file_state,
-            intake_job_id=record.intake_job_id,
-            claimed_by_job_id=record.claimed_by_job_id,
-            trace_id=record.trace_id,
-        )
-
     def _write_run_trace(
         self,
         record: IntakeDocumentRecord,
@@ -874,7 +783,11 @@ class IntakeService:
 
 service = IntakeService()
 lineage = MainChainLineageInspector(_runtime_dir())
-app = FastAPI(title="Reality-RAG Intake Pipeline", version="0.1.0")
+app = FastAPI(
+    title="Reality-RAG Intake Pipeline Compat API",
+    version="0.1.0",
+    description="Compatibility-only intake API for smoke and legacy callers.",
+)
 
 
 @app.get("/health")
@@ -911,61 +824,6 @@ def get_lineage_by_trace(trace_id: str) -> dict[str, object]:
         return lineage.get_by_trace_id(trace_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-
-
-@app.post("/internal/source-files/{source_file_id}/claim")
-def claim_source_file(source_file_id: str, request: ClaimSourceFileRequest) -> dict[str, object]:
-    try:
-        transition = service.claim_source_file(source_file_id, request)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return transition.model_dump(mode="json")
-
-
-@app.post("/internal/source-files/{source_file_id}/consume")
-def consume_source_file(source_file_id: str) -> dict[str, object]:
-    try:
-        transition = service.consume_source_file(source_file_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return transition.model_dump(mode="json")
-
-
-@app.post("/internal/source-files/{source_file_id}/mark-cleanable")
-def mark_source_file_cleanable(source_file_id: str) -> dict[str, object]:
-    try:
-        transition = service.mark_source_file_cleanable(source_file_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return transition.model_dump(mode="json")
-
-
-@app.post("/internal/source-files/{source_file_id}/clean")
-def clean_source_file(source_file_id: str) -> dict[str, object]:
-    try:
-        transition = service.clean_source_file(source_file_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return transition.model_dump(mode="json")
-
-
-@app.post("/internal/source-files/{source_file_id}/fail")
-def fail_source_file(source_file_id: str, request: FailSourceFileRequest) -> dict[str, object]:
-    try:
-        transition = service.fail_source_file(source_file_id, request)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return transition.model_dump(mode="json")
 
 
 @app.post("/v1/documents/{source_file_id}/approval-tickets")
@@ -1015,35 +873,6 @@ def approve_and_publish(source_file_id: str, request: ApproveAndPublishRequest) 
 # -- New internal owner APIs for workbench consumption --------------------------------
 
 
-class RegisterSourceFileRequest(BaseModel):
-    command_id: str
-    trace_id: str
-    idempotency_key: str
-    actor: str
-    tenant_id: str
-    collection_id: str
-    filename: str
-    mime_type: str
-    size_bytes: int = Field(ge=0)
-    selected_parser_profile_id: str | None = None
-    parser_override_json: dict[str, str] | None = None
-
-
-class SourceFileView(BaseModel):
-    source_file_id: str
-    upload_id: str
-    tenant_id: str
-    collection_id: str
-    filename: str
-    mime_type: str
-    size_bytes: int
-    state: str
-    intake_job_id: str
-    scan_verdict: str | None = None
-    created_at: str
-    updated_at: str
-
-
 class IntakeJobView(BaseModel):
     intake_job_id: str
     source_file_id: str
@@ -1073,153 +902,137 @@ class PublishedDocumentView(BaseModel):
     updated_at: str
 
 
-# In-memory idempotency store for source file registration
-_source_file_idempotency: dict[str, str] = {}  # idempotency_key -> source_file_id
+class SourceFileView(BaseModel):
+    source_file_id: str
+    upload_id: str | None = None
+    tenant_id: str
+    collection_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    state: str
+    intake_job_id: str | None = None
+    scan_verdict: str | None = None
+    created_at: str
+    updated_at: str
 
 
-@app.post("/internal/source-files")
-def register_source_file(request: RegisterSourceFileRequest) -> SourceFileView:
-    """Register a source file. Idempotent by idempotency_key."""
-    # Check idempotency
-    if request.idempotency_key in _source_file_idempotency:
-        existing_id = _source_file_idempotency[request.idempotency_key]
-        record = service.get(existing_id)
-        return SourceFileView(
-            source_file_id=record.source_file_id,
-            upload_id=record.upload_id,
-            tenant_id=record.tenant_id,
-            collection_id=record.collection_id,
-            filename=record.filename,
-            mime_type="text/markdown",
-            size_bytes=0,
-            state=record.source_file_state,
-            intake_job_id=record.intake_job_id,
-            scan_verdict=record.scan_verdict,
-            created_at=record.source_file_claimed_at or _utc_now(),
-            updated_at=_utc_now(),
-        )
-
-    # Create a lightweight source file record without triggering the full pipeline
-    upload_id = f"upl_{uuid4().hex[:12]}"
-    source_file_id = f"src_{uuid4().hex[:12]}"
-    intake_job_id = f"job_{uuid4().hex[:12]}"
-    trace_id = f"trc_{intake_job_id}"
-    now = _utc_now()
-
-    record = IntakeDocumentRecord(
-        upload_id=upload_id,
-        source_file_id=source_file_id,
-        intake_job_id=intake_job_id,
-        tenant_id=request.tenant_id,
-        collection_id=request.collection_id,
-        filename=request.filename,
-        document_version="v1",
-        publish_version="pub_001",
-        visibility="internal",
-        sanitized_asset_ref="",
-        canonical_asset_ref="",
-        metadata_ref="",
-        source_binary_ref="",
-        parse_snapshot_id="",
-        trace_id=trace_id,
-        source_metadata={"filename": request.filename},
-        state=IntakeJobState.CREATED.value,
-        source_file_state=SourceFileState.READY.value,
-        intake_job_state=IntakeJobState.CREATED.value,
-        scan_result_id=None,
-        scan_verdict="clean",
-        scan_completed_at=now,
-        failure_code=None,
-        failure_message=None,
-        publish_state=None,
-    )
-    service._documents[source_file_id] = record
-    _source_file_idempotency[request.idempotency_key] = source_file_id
-
-    return SourceFileView(
-        source_file_id=record.source_file_id,
-        upload_id=record.upload_id,
-        tenant_id=record.tenant_id,
-        collection_id=record.collection_id,
-        filename=record.filename,
-        mime_type=request.mime_type,
-        size_bytes=request.size_bytes,
-        state=record.source_file_state,
-        intake_job_id=record.intake_job_id,
-        scan_verdict=record.scan_verdict,
-        created_at=now,
-        updated_at=now,
-    )
+# Source-file owner APIs were retired from the compat root service.
+# document-service is the only supported owner for mutation on /internal/source-files*.
 
 
 @app.get("/internal/source-files/{source_file_id}")
 def get_source_file(source_file_id: str) -> SourceFileView:
+    from reality_rag_persistence.repositories.collections import CollectionRepository
+    from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+    from reality_rag_persistence.repositories.source_files import SourceFileRepository
+    from reality_rag_persistence.repositories.malware_scan_results import MalwareScanResultRepository
+
+    session = get_session()
     try:
-        record = service.get(source_file_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    return SourceFileView(
-        source_file_id=record.source_file_id,
-        upload_id=record.upload_id,
-        tenant_id=record.tenant_id,
-        collection_id=record.collection_id,
-        filename=record.filename,
-        mime_type="text/markdown",
-        size_bytes=0,
-        state=record.source_file_state,
-        intake_job_id=record.intake_job_id,
-        scan_verdict=record.scan_verdict,
-        created_at=record.source_file_claimed_at or _utc_now(),
-        updated_at=_utc_now(),
-    )
+        source_file = SourceFileRepository(session).get(source_file_id)
+        if source_file is None:
+            raise HTTPException(status_code=404, detail=f"Unknown source_file_id: {source_file_id}")
+        collection = CollectionRepository(session).get(source_file.collection_id)
+        intake_job = IntakeJobRepository(session).get_by_source_file_id(source_file.source_file_id)
+        scan_verdict = None
+        if source_file.scan_result_id:
+            scan_result = MalwareScanResultRepository(session).get(source_file.scan_result_id)
+            if scan_result is not None:
+                scan_verdict = scan_result.verdict
+        return SourceFileView(
+            source_file_id=source_file.source_file_id,
+            upload_id=source_file.upload_id,
+            tenant_id=(collection.tenant_id if collection is not None else "default"),
+            collection_id=source_file.collection_id,
+            filename=source_file.sanitized_name or source_file.original_name or "",
+            mime_type="application/octet-stream",
+            size_bytes=source_file.size_bytes,
+            state=source_file.state.value,
+            intake_job_id=(intake_job.intake_job_id if intake_job is not None else None),
+            scan_verdict=scan_verdict,
+            created_at=(source_file.created_at.isoformat() if source_file.created_at else _utc_now()),
+            updated_at=(source_file.updated_at.isoformat() if source_file.updated_at else _utc_now()),
+        )
+    finally:
+        session.close()
 
 
 @app.get("/internal/intake-jobs/{intake_job_id}")
 def get_intake_job(intake_job_id: str) -> IntakeJobView:
-    # Find the document by intake_job_id
-    record = None
-    for doc in service._documents.values():
-        if doc.intake_job_id == intake_job_id:
-            record = doc
-            break
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"Unknown intake_job_id: {intake_job_id}")
-    return IntakeJobView(
-        intake_job_id=record.intake_job_id,
-        source_file_id=record.source_file_id,
-        tenant_id=record.tenant_id,
-        collection_id=record.collection_id,
-        state=record.intake_job_state,
-        current_stage=None,
-        parse_snapshot_id=record.parse_snapshot_id or None,
-        ticket_id=record.approval_ticket_id or None,
-        published_document_id=None,
-        final_doc_id=None,
-        error_message=record.failure_message,
-        created_at=record.source_file_claimed_at or _utc_now(),
-        updated_at=_utc_now(),
-    )
+    from reality_rag_persistence.models import StageResultModel
+    from reality_rag_persistence.repositories.collections import CollectionRepository
+    from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+    from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
+
+    session = get_session()
+    try:
+        job = IntakeJobRepository(session).get(intake_job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Unknown intake_job_id: {intake_job_id}")
+        collection = CollectionRepository(session).get(job.collection_id)
+        parse_snapshot_id = None
+        conversion_row = (
+            session.query(StageResultModel)
+            .filter(StageResultModel.intake_job_id == intake_job_id)
+            .filter(StageResultModel.stage_name == "conversion")
+            .first()
+        )
+        if conversion_row is not None and conversion_row.summary_json:
+            parse_snapshot_id = conversion_row.summary_json.get("parse_snapshot_id")
+        published_document = None
+        if job.final_doc_id:
+            published_document = PublishedDocumentRepository(session).get_by_final_doc_id(job.final_doc_id)
+        return IntakeJobView(
+            intake_job_id=job.intake_job_id,
+            source_file_id=job.source_file_id,
+            tenant_id=(collection.tenant_id if collection is not None else "default"),
+            collection_id=job.collection_id,
+            state=job.state,
+            current_stage=job.current_stage,
+            parse_snapshot_id=parse_snapshot_id,
+            ticket_id=job.ticket_id,
+            published_document_id=(
+                published_document.published_document_id if published_document is not None else None
+            ),
+            final_doc_id=job.final_doc_id,
+            error_message=job.error_message,
+            created_at=(job.created_at.isoformat() if job.created_at else _utc_now()),
+            updated_at=(job.updated_at.isoformat() if job.updated_at else _utc_now()),
+        )
+    finally:
+        session.close()
 
 
 @app.get("/internal/published-documents/{published_document_id}")
 def get_published_document(published_document_id: str) -> PublishedDocumentView:
     """Get published document read-only view."""
-    record = None
-    for doc in service._documents.values():
-        if doc.published_document_id == published_document_id:
-            record = doc
-            break
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"Published document not found: {published_document_id}")
-    return PublishedDocumentView(
-        published_document_id=record.published_document_id,
-        final_doc_id=record.final_doc_id or "",
-        source_file_id=record.source_file_id,
-        intake_job_id=record.intake_job_id,
-        tenant_id=record.tenant_id,
-        collection_id=record.collection_id,
-        state=record.publish_state or "UNKNOWN",
-        version=1,
-        created_at=record.source_file_claimed_at or _utc_now(),
-        updated_at=_utc_now(),
-    )
+    from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+    from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
+
+    session = get_session()
+    try:
+        published_document = PublishedDocumentRepository(session).get(published_document_id)
+        if published_document is None:
+            raise HTTPException(status_code=404, detail=f"Published document not found: {published_document_id}")
+        intake_job = None
+        source_file_id = ""
+        for job in IntakeJobRepository(session).list_by_collection(published_document.collection_id):
+            if job.final_doc_id == published_document.final_doc_id:
+                intake_job = job
+                source_file_id = job.source_file_id
+                break
+        return PublishedDocumentView(
+            published_document_id=published_document.published_document_id,
+            final_doc_id=published_document.final_doc_id,
+            source_file_id=source_file_id,
+            intake_job_id=(intake_job.intake_job_id if intake_job is not None else ""),
+            tenant_id=published_document.tenant_id,
+            collection_id=published_document.collection_id,
+            state=published_document.state.value,
+            version=published_document.version,
+            created_at=(published_document.created_at.isoformat() if published_document.created_at else _utc_now()),
+            updated_at=(published_document.updated_at.isoformat() if published_document.updated_at else _utc_now()),
+        )
+    finally:
+        session.close()

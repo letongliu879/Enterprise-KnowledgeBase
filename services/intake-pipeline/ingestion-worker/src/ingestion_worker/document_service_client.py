@@ -1,9 +1,7 @@
-"""Document service client — remote-or-local fallback selector.
+"""Document service client facade.
 
-If DOCUMENT_SERVICE_URL is set, HTTP calls are forwarded to the remote
-document-service process.  Otherwise the local same-process DocumentService
-is used.  This lets the monolith run standalone while allowing gradual
-splitting of the document owner into its own deployable unit.
+`document-service` is the source-file owner. `ingestion-worker` may use a
+same-process fallback only in tests or explicit compat smoke.
 """
 
 from __future__ import annotations
@@ -12,6 +10,8 @@ import os
 from typing import Any
 
 import httpx
+
+from .split_service_policy import require_explicit_owner_url
 
 __all__ = [
     "DocumentServiceClient",
@@ -214,9 +214,7 @@ class _LocalDocumentService:
 
 
 class DocumentServiceClient:
-    """Dispatches to remote HTTP when DOCUMENT_SERVICE_URL is set,
-    otherwise delegates to the local same-process DocumentService.
-    """
+    """Dispatches to remote HTTP or, only in tests, a local compat fallback."""
 
     def __init__(self, session=None) -> None:
         self._session = session
@@ -228,6 +226,10 @@ class DocumentServiceClient:
 
     def _get_local(self) -> _LocalDocumentService:
         if self._local is None:
+            require_explicit_owner_url(
+                env_var="DOCUMENT_SERVICE_URL",
+                owner_name="document-service",
+            )
             self._local = _LocalDocumentService(self._session)
         return self._local
 

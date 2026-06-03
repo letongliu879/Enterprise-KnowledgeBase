@@ -17,8 +17,8 @@ from reality_rag_persistence.repositories.object_blobs import ObjectBlobReposito
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from reality_rag_persistence.repositories.tenants import TenantRepository
 from reality_rag_persistence.repositories.upload_sessions import UploadSessionRepository
-
-from ingestion_worker.domains.document_domain import DocumentService, _object_id_from_hash
+from reality_rag_documents import DocumentService
+from reality_rag_documents.document_domain import _object_id_from_hash
 
 
 class TestObjectIdFromHash:

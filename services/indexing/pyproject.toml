@@ -12,6 +12,7 @@ dependencies = [
     "pypdf>=6.0,<7",
     "ragflow-runtime",
     "reality-rag-contracts",
+    "reality-rag-persistence",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ where = ["src"]
 
 [tool.uv.sources]
 reality-rag-contracts = { path = "../../packages/contracts" }
+reality-rag-persistence = { path = "../../packages/persistence" }
 ragflow-runtime = { path = "../../packages/ragflow_runtime" }
 
 [tool.pytest.ini_options]

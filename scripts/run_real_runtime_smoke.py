@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Real Runtime Smoke Test for Enterprise KnowledgeBase MVP.
 
@@ -32,6 +32,7 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +83,17 @@ SERVICE_CONFIG: dict[str, dict[str, Any]] = {
         "env": {},
         "shell": False,
     },
+    "document-service": {
+        "port": 8006,
+        "health_path": "/health",
+        "cwd": ROOT / "services" / "intake-pipeline" / "document-service",
+        "cmd": [
+            PYTHON, "-m", "uvicorn", "document_service.main:app",
+            "--host", "127.0.0.1", "--port", "8006",
+        ],
+        "env": {},
+        "shell": False,
+    },
     "intake": {
         "port": 18085,
         "health_path": "/health",
@@ -89,6 +101,50 @@ SERVICE_CONFIG: dict[str, dict[str, Any]] = {
         "cmd": [
             PYTHON, "-m", "uvicorn", "intake_pipeline.main:app",
             "--host", "127.0.0.1", "--port", "18085",
+        ],
+        "env": {},
+        "shell": False,
+    },
+    "approval-service": {
+        "port": 18087,
+        "health_path": "/health",
+        "cwd": ROOT / "services" / "intake-pipeline" / "approval-service",
+        "cmd": [
+            PYTHON, "-m", "uvicorn", "approval_service.main:app",
+            "--host", "127.0.0.1", "--port", "18087",
+        ],
+        "env": {},
+        "shell": False,
+    },
+    "ingestion-worker": {
+        "port": 18088,
+        "health_path": "/health",
+        "cwd": ROOT / "services" / "intake-pipeline" / "ingestion-worker",
+        "cmd": [
+            PYTHON, "-m", "uvicorn", "ingestion_worker.main:app",
+            "--host", "127.0.0.1", "--port", "18088",
+        ],
+        "env": {},
+        "shell": False,
+    },
+    "conversion-worker": {
+        "port": 18089,
+        "health_path": "/health",
+        "cwd": ROOT / "services" / "intake-pipeline" / "conversion-worker",
+        "cmd": [
+            PYTHON, "-m", "uvicorn", "conversion_worker.main:app",
+            "--host", "127.0.0.1", "--port", "18089",
+        ],
+        "env": {},
+        "shell": False,
+    },
+    "agent-review-worker": {
+        "port": 18090,
+        "health_path": "/health",
+        "cwd": ROOT / "services" / "intake-pipeline" / "agent-review-worker",
+        "cmd": [
+            PYTHON, "-m", "uvicorn", "agent_review_worker.main:app",
+            "--host", "127.0.0.1", "--port", "18090",
         ],
         "env": {},
         "shell": False,
@@ -128,7 +184,18 @@ SERVICE_CONFIG: dict[str, dict[str, Any]] = {
     },
 }
 
-PYTHON_SERVICES = ["admin", "workbench", "indexing", "intake", "publishing"]
+PYTHON_SERVICES = [
+    "admin",
+    "workbench",
+    "indexing",
+    "document-service",
+    "approval-service",
+    "conversion-worker",
+    "agent-review-worker",
+    "publishing",
+    "ingestion-worker",
+    "intake",
+]
 JAVA_SERVICES = ["access", "retrieval"]
 
 # ---------------------------------------------------------------------------
@@ -182,6 +249,56 @@ def _http_post(url: str, payload: dict[str, Any], headers: dict[str, str] | None
         return 0, str(e)
 
 
+def _http_post_multipart(
+    url: str,
+    *,
+    fields: dict[str, str],
+    file_field: str,
+    filename: str,
+    content_bytes: bytes,
+    content_type: str,
+    headers: dict[str, str] | None = None,
+    timeout: float = 30.0,
+) -> tuple[int, dict[str, Any] | str]:
+    boundary = f"----ekbsmoke{int(time.time() * 1000)}"
+    body = bytearray()
+    for key, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(
+            f'Content-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode("utf-8")
+        )
+    body.extend(f"--{boundary}\r\n".encode("utf-8"))
+    body.extend(
+        (
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode("utf-8")
+    )
+    body.extend(content_bytes)
+    body.extend(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+
+    try:
+        req = urllib.request.Request(url, data=bytes(body), method="POST")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("Accept", "application/json")
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            try:
+                return resp.status, json.loads(raw)
+            except json.JSONDecodeError:
+                return resp.status, raw
+    except urllib.error.HTTPError as e:
+        body_text = e.read().decode("utf-8") if e.read else ""
+        try:
+            return e.code, json.loads(body_text)
+        except json.JSONDecodeError:
+            return e.code, body_text
+    except Exception as e:
+        return 0, str(e)
+
+
 def _wait_for_health(port: int, path: str, timeout: float = 60.0, interval: float = 1.0) -> dict[str, Any] | None:
     url = f"http://127.0.0.1:{port}{path}"
     deadline = time.time() + timeout
@@ -191,6 +308,12 @@ def _wait_for_health(port: int, path: str, timeout: float = 60.0, interval: floa
             return result
         time.sleep(interval)
     return None
+
+
+def _psycopg_dsn(database_url: str) -> str:
+    if database_url.startswith("postgresql+psycopg2://"):
+        return "postgresql://" + database_url.removeprefix("postgresql+psycopg2://")
+    return database_url
 
 
 def _start_service(name: str, cfg: dict[str, Any]) -> subprocess.Popen | None:
@@ -347,7 +470,7 @@ class SmokeRunner:
             cur.execute("CREATE TABLE IF NOT EXISTS tenants (tenant_id VARCHAR(64) PRIMARY KEY, name VARCHAR(255) NOT NULL)")
             cur.execute("INSERT INTO tenants (tenant_id, name) VALUES ('default', 'Default Tenant') ON CONFLICT (tenant_id) DO NOTHING")
             # Clean up ALL workbench upload sessions from prior runs to keep task projection fast.
-            # Table may not exist on a fresh database — ignore.
+            # Table may not exist on a fresh database 鈥?ignore.
             try:
                 cur.execute("DELETE FROM workbench_upload_sessions")
                 deleted = cur.rowcount
@@ -367,13 +490,18 @@ class SmokeRunner:
             "INDEXING_BASE_URL": "http://127.0.0.1:18080",
             "INTAKE_BASE_URL": "http://127.0.0.1:18085",
             "ADMIN_BASE_URL": "http://127.0.0.1:18084",
+            "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
+            "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
             "RETRIEVAL_BASE_URL": "http://127.0.0.1:18182",
             "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18182",
             "ACCESS_BASE_URL": "http://127.0.0.1:18181",
+            "PUBLISHING_WORKER_URL": "http://127.0.0.1:18086",
             "PUBLISHING_WORKER_BASE_URL": "http://127.0.0.1:18086",
             "REALITY_RAG_INDEXING_BASE_URL": "http://127.0.0.1:18080",
             "REALITY_RAG_INTAKE_RUNTIME_DIR": str(RUNTIME_DIR / "intake-real-smoke"),
-            # Do NOT override embedding / backend config — let Python services read
+            "ALLOW_LOCAL_FALLBACK_FOR_TESTS": "false",
+            "OUTBOX_POLL_INTERVAL_SECONDS": "1",
+            # Do NOT override embedding / backend config 鈥?let Python services read
             # from their local .env files so real model endpoints are used.
         }
         if self.args.require_live_backends:
@@ -406,6 +534,12 @@ class SmokeRunner:
                     siliconflow_embed_url = value.replace("/embeddings", "")
                 elif key == "INDEXING_EMBEDDING_MODEL":
                     siliconflow_embed_model = value
+                elif key == "INDEXING_CHAT_API_KEY" and value:
+                    shared_python_env.setdefault("DEEPSEEK_API_KEY", value)
+                elif key == "INDEXING_CHAT_BASE_URL" and value:
+                    shared_python_env.setdefault("DEEPSEEK_BASE_URL", value)
+                elif key == "INDEXING_CHAT_MODEL" and value:
+                    shared_python_env.setdefault("DEEPSEEK_MODEL", value)
 
         retrieval_java_env = {
             "EMBEDDING_API_KEY": siliconflow_key,
@@ -658,44 +792,55 @@ class SmokeRunner:
     # --- Phase 4: Intake / indexing flow -----------------------------------
 
     def _intake_flow(self) -> None:
-        _log("PHASE", "Intake / indexing flow")
-        base = "http://127.0.0.1:18085"
-
-        # enter_document (creates parse preview via indexing, then snapshot)
-        status, body = _http_post(f"{base}/v1/documents", {
-            "tenant_id": self.tenant_id,
-            "collection_id": self.collection_id,
-            "filename": "smoke-test.md",
-            "document_version": "v1",
-            "publish_version": "pub_001",
-            "visibility": "internal",
-            "content_text": "# Smoke Test Document\n\nThis is a test document for real runtime smoke.\n\n## Section 1\n\nSome content here.\n\n## Section 2\n\nMore content here.",
-            "source_metadata": {"author": "smoke"},
-            "scan_verdict": "clean",
-        })
+        _log("PHASE", "Intake / indexing flow (real split chain)")
+        document_base = "http://127.0.0.1:8006"
+        content = (
+            "# Smoke Test Document\n\n"
+            "This is a test document for real runtime smoke.\n\n"
+            "## Section 1\n\nSome content here.\n\n"
+            "## Section 2\n\nMore content here.\n\n"
+            f"Trace marker: {datetime.now(timezone.utc).isoformat()}\n"
+        )
+        status, body = _http_post_multipart(
+            f"{document_base}/upload",
+            fields={
+                "collection_id": self.collection_id,
+                "visibility": "INTERNAL",
+            },
+            file_field="file",
+            filename="smoke-test.md",
+            content_bytes=content.encode("utf-8"),
+            content_type="text/markdown",
+            timeout=30.0,
+        )
         if isinstance(body, dict):
             self.source_file_id = body.get("source_file_id", "")
-            self.final_doc_id = body.get("final_doc_id", "")
-        self._record("intake_enter_document", "intake", "/v1/documents", "PASS" if status == 200 else "FAIL", f"status={status} source_file_id={self.source_file_id}")
+        self._record(
+            "document_upload",
+            "document-service",
+            "/upload",
+            "PASS" if status == 200 and bool(self.source_file_id) else "FAIL",
+            f"status={status} source_file_id={self.source_file_id}",
+        )
 
         if not self.source_file_id:
-            self._record("intake_approve_publish", "intake", "/v1/documents/.../approve-and-publish", "SKIP", "no source file")
+            self._record("split_chain_publish", "pipeline", "real-chain", "SKIP", "no source file")
             self._record("indexing_chunks", "indexing", "/internal/chunks", "SKIP", "no source file")
             return
 
-        # approve and publish
-        status, body = _http_post(f"{base}/v1/documents/{self.source_file_id}/approve-and-publish", {
-            "actor_id": "admin_01",
-            "final_doc_id": self.final_doc_id or "doc_smoke_test",
-            "confirmed_tags": ["smoke"],
-            "index_profile_id": "idx_default",
-            "target_index_version_id": f"idxv_{self.collection_id}_active",
-            "activate_index_version": True,
-        }, timeout=30.0)
-        if isinstance(body, dict):
-            self.index_version_id = body.get("index_version_id", "")
-            self.final_doc_id = body.get("final_doc_id", self.final_doc_id)
-        self._record("intake_approve_publish", "intake", f"/v1/documents/{self.source_file_id}/approve-and-publish", "PASS" if status == 200 else "FAIL", f"status={status} final_doc_id={self.final_doc_id}")
+        try:
+            job_info = self._await_real_chain_terminal(self.source_file_id)
+            self.final_doc_id = job_info.get("final_doc_id", "") or self.final_doc_id
+            self.index_version_id = self._lookup_active_index_version(self.collection_id)
+            self._record(
+                "split_chain_publish",
+                "pipeline",
+                "document-service -> ingestion-worker -> approval-service -> publishing-worker -> indexing",
+                "PASS" if job_info.get("state") == "published" else "FAIL",
+                f"intake_job_id={job_info.get('intake_job_id')} state={job_info.get('state')} final_doc_id={self.final_doc_id}",
+            )
+        except Exception as exc:
+            self._record("split_chain_publish", "pipeline", "real-chain", "FAIL", str(exc)[:200])
 
         # Query chunks from indexing
         idx_base = "http://127.0.0.1:18080"
@@ -725,8 +870,9 @@ class SmokeRunner:
         return f"qd_{self.tenant_id}_{self.collection_id}_{self.index_version_id}"
 
     def _verify_opensearch_has_document(self) -> None:
-        if not self.final_doc_id:
-            self._record("opensearch_verify", "opensearch", "GET /{index}/_search", "SKIP", "no final_doc_id")
+        if not self.final_doc_id or not self.index_version_id:
+            reason = "no final_doc_id" if not self.final_doc_id else "no active index_version"
+            self._record("opensearch_verify", "opensearch", "GET /{index}/_search", "SKIP", reason)
             return
 
         index_name = self._opensearch_index_name()
@@ -765,8 +911,9 @@ class SmokeRunner:
                 raise
 
     def _verify_qdrant_has_document(self) -> None:
-        if not self.final_doc_id:
-            self._record("qdrant_verify", "qdrant", "POST /collections/{name}/points/scroll", "SKIP", "no final_doc_id")
+        if not self.final_doc_id or not self.index_version_id:
+            reason = "no final_doc_id" if not self.final_doc_id else "no active index_version"
+            self._record("qdrant_verify", "qdrant", "POST /collections/{name}/points/scroll", "SKIP", reason)
             return
 
         collection_name = self._qdrant_collection_name()
@@ -922,12 +1069,12 @@ class SmokeRunner:
             "debug_level": "basic",
         }
 
-        # Step 1: First query — cache miss baseline (cache empty or from prior purge)
+        # Step 1: First query 鈥?cache miss baseline (cache empty or from prior purge)
         status1, body1 = _http_post(f"{ret_base}/internal/retrieve", query_payload)
         evidence1 = len(body1.get("evidence_items", [])) if isinstance(body1, dict) else 0
         self._record("cache_miss_1", "retrieval", "/internal/retrieve (query 1)", "PASS" if evidence1 > 0 else "FAIL", f"evidence_items={evidence1}")
 
-        # Step 2: Second identical query — should be cache hit
+        # Step 2: Second identical query 鈥?should be cache hit
         status2, body2 = _http_post(f"{ret_base}/internal/retrieve", query_payload)
         evidence2 = len(body2.get("evidence_items", [])) if isinstance(body2, dict) else 0
         same = evidence2 == evidence1 and evidence2 > 0
@@ -942,7 +1089,7 @@ class SmokeRunner:
         purged = purge_body.get("purged_count", 0) if isinstance(purge_body, dict) else 0
         self._record("cache_purge", "retrieval", "/internal/cache/purge", "PASS" if purge_ok else "FAIL", f"purged={purged}")
 
-        # Step 4: Third query — should be cache miss after purge
+        # Step 4: Third query 鈥?should be cache miss after purge
         status3, body3 = _http_post(f"{ret_base}/internal/retrieve", query_payload)
         evidence3 = len(body3.get("evidence_items", [])) if isinstance(body3, dict) else 0
         same_after_purge = evidence3 == evidence1 and evidence3 > 0
@@ -956,8 +1103,7 @@ class SmokeRunner:
         dataset_dir = Path(self.args.dataset_dir)
         per_format = self.args.per_format
         formats = ["pdf", "docx", "pptx", "xlsx"]
-        minio_endpoint = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000")
-        bucket = "ekb-documents"
+        document_base = "http://127.0.0.1:8006"
 
         # Select files per format
         self.file_batch: dict[str, list[Path]] = {}
@@ -976,83 +1122,39 @@ class SmokeRunner:
             _log("WARN", "No dataset files found")
             return
 
-        # Upload to MinIO
-        try:
-            from minio import Minio
-            minio_client = Minio(
-                "127.0.0.1:9000",
-                access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
-                secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
-                secure=False,
-            )
-            if not minio_client.bucket_exists(bucket):
-                minio_client.make_bucket(bucket)
-        except Exception as e:
-            _log("ERROR", f"MinIO init failed: {e}")
-            for fmt, files in self.file_batch.items():
-                for f in files:
-                    self._record(f"ingest_{fmt}", "minio", "upload", "FAIL", f"MinIO unavailable: {e}")
-            return
-
         # Per-file ingestion loop
-        base = "http://127.0.0.1:18085"
         idx_base = "http://127.0.0.1:18080"
         stats: dict[str, dict] = {fmt: {"uploaded": 0, "parsed": 0, "indexed": 0, "retrieved": 0, "failed": 0} for fmt in formats}
 
         for fmt, files in self.file_batch.items():
             for file_path in files:
                 fname = file_path.name
-                storage_key = f"{fmt}/{file_path.parent.name}/{fname}"
-                s3_uri = f"s3://{bucket}/{storage_key}"
                 step_prefix = f"ingest_{fmt}"
 
-                # Upload
                 try:
-                    with open(file_path, "rb") as fh:
-                        data = fh.read()
-                    import io
-                    minio_client.put_object(bucket, storage_key, io.BytesIO(data), len(data))
+                    data = file_path.read_bytes()
                     stats[fmt]["uploaded"] += 1
-                    _log("UPLOAD", f"{fname} -> s3://{bucket}/{storage_key} ({len(data)} bytes)")
-                except Exception as e:
-                    stats[fmt]["failed"] += 1
-                    self._record(step_prefix, "minio", "upload", "FAIL", f"{fname}: {e}")
-                    continue
-
-                # Enter document (parse preview)
-                try:
-                    status, body = _http_post(f"{base}/v1/documents", {
-                        "tenant_id": self.tenant_id,
-                        "collection_id": self.collection_id,
-                        "filename": fname,
-                        "document_version": "v1",
-                        "publish_version": f"pub_{fmt}_{file_path.stem[:8]}",
-                        "visibility": "internal",
-                        "content_text": "",  # file ingestion — content is in s3_uri
-                        "source_binary_ref": s3_uri,
-                        "source_metadata": {"mime_type": f"application/{fmt}" if fmt != "pptx" else "application/vnd.openxmlformats-officedocument.presentationml.document", "filename": fname},
-                        "scan_verdict": "clean",
-                    }, timeout=30.0)
+                    status, body = _http_post_multipart(
+                        f"{document_base}/upload",
+                        fields={
+                            "collection_id": self.collection_id,
+                            "visibility": "INTERNAL",
+                        },
+                        file_field="file",
+                        filename=fname,
+                        content_bytes=data,
+                        content_type=self._mime_for_file(file_path),
+                        timeout=60.0,
+                    )
                     if status != 200 or not isinstance(body, dict) or not body.get("source_file_id"):
-                        raise RuntimeError(f"status={status} body={str(body)[:100]}")
+                        raise RuntimeError(f"upload status={status} body={str(body)[:120]}")
 
-                    source_file_id = body.get("source_file_id", "")
-                    final_doc_id = body.get("final_doc_id", f"doc_{file_path.stem[:16]}")
-
-                    # Approve and publish
-                    status2, body2 = _http_post(f"{base}/v1/documents/{source_file_id}/approve-and-publish", {
-                        "actor_id": "admin_01",
-                        "final_doc_id": final_doc_id,
-                        "confirmed_tags": [fmt],
-                        "index_profile_id": "idx_default",
-                        "target_index_version_id": f"idxv_{self.collection_id}_active",
-                        "activate_index_version": True,
-                    }, timeout=60.0)
-                    if status2 == 200 and isinstance(body2, dict):
-                        idx_version_id = body2.get("index_version_id", "")
-                        stats[fmt]["parsed"] += 1
-                    else:
-                        raise RuntimeError(f"publish status={status2} body={str(body2)[:100]}")
+                    source_file_id = body["source_file_id"]
+                    job_info = self._await_real_chain_terminal(source_file_id, timeout=180.0)
+                    if job_info.get("state") != "published":
+                        raise RuntimeError(f"terminal state={job_info.get('state')}")
+                    final_doc_id = str(job_info.get("final_doc_id") or "")
+                    stats[fmt]["parsed"] += 1
 
                     # Verify indexing
                     result = _http_get(f"{idx_base}/internal/chunks?tenant_id={self.tenant_id}&principal_id=admin_01&collection_id={self.collection_id}", timeout=10.0)
@@ -1078,8 +1180,13 @@ class SmokeRunner:
                     if isinstance(body3, dict) and len(body3.get("evidence_items", [])) > 0:
                         stats[fmt]["retrieved"] += 1
 
-                    self._record(step_prefix, "intake+index+retrieve", f"/v1/documents {fname}", "PASS",
-                                 f"chunks={chunk_count} s3={s3_uri[:40]}...")
+                    self._record(
+                        step_prefix,
+                        "document-service+workers",
+                        f"/upload {fname}",
+                        "PASS",
+                        f"chunks={chunk_count} final_doc_id={final_doc_id}",
+                    )
 
                 except Exception as e:
                     stats[fmt]["failed"] += 1
@@ -1093,6 +1200,108 @@ class SmokeRunner:
             s = stats[fmt]
             _log("STATS", f"{fmt}: uploaded={s['uploaded']} parsed={s['parsed']} indexed={s['indexed']} retrieved={s['retrieved']} failed={s['failed']}")
         self.file_ingestion_stats = stats
+
+    @staticmethod
+    def _mime_for_file(file_path: Path) -> str:
+        mapping = {
+            ".pdf": "application/pdf",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".md": "text/markdown",
+            ".txt": "text/plain",
+        }
+        return mapping.get(file_path.suffix.lower(), "application/octet-stream")
+
+    def _lookup_active_index_version(self, collection_id: str) -> str:
+        db_url = _psycopg_dsn(os.environ.get("DATABASE_URL", "postgresql://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow"))
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url, connect_timeout=5)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COALESCE(index_version, '')
+                FROM index_registry
+                WHERE collection_id = %s
+                """,
+                (collection_id,),
+            )
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            return str(row[0] or "") if row else ""
+        except Exception:
+            return ""
+
+    def _await_real_chain_terminal(self, source_file_id: str, *, timeout: float = 120.0) -> dict[str, str]:
+        approval_base = "http://127.0.0.1:18087"
+        db_url = _psycopg_dsn(os.environ.get("DATABASE_URL", "postgresql://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow"))
+        deadline = time.time() + timeout
+        approved_ticket_ids: set[str] = set()
+
+        try:
+            import psycopg2
+        except Exception as exc:
+            raise RuntimeError(f"psycopg2 is required for real-chain smoke polling: {exc}") from exc
+
+        while time.time() < deadline:
+            conn = None
+            cur = None
+            try:
+                conn = psycopg2.connect(db_url, connect_timeout=5)
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT intake_job_id, state, COALESCE(final_doc_id, ''), COALESCE(ticket_id, '')
+                    FROM intake_jobs
+                    WHERE source_file_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (source_file_id,),
+                )
+                row = cur.fetchone()
+            finally:
+                if cur is not None:
+                    cur.close()
+                if conn is not None:
+                    conn.close()
+
+            if row is None:
+                time.sleep(1.0)
+                continue
+
+            intake_job_id, state, final_doc_id, ticket_id = row
+            normalized_state = str(state or "").strip().lower()
+            info = {
+                "intake_job_id": str(intake_job_id or ""),
+                "state": normalized_state,
+                "final_doc_id": str(final_doc_id or ""),
+                "ticket_id": str(ticket_id or ""),
+            }
+
+            if normalized_state in {"published", "rejected", "failed", "cancelled", "expired"}:
+                return info
+
+            if normalized_state == "awaiting_approval" and info["ticket_id"] and info["ticket_id"] not in approved_ticket_ids:
+                status, body = _http_post(
+                    f"{approval_base}/internal/approval/{info['ticket_id']}/approve",
+                    {
+                        "actor_id": "admin_01",
+                        "confirmed_tags": ["smoke"],
+                    },
+                    timeout=30.0,
+                )
+                if status not in (200, 201):
+                    raise RuntimeError(
+                        f"manual approval failed for ticket {info['ticket_id']}: status={status} body={str(body)[:160]}"
+                    )
+                approved_ticket_ids.add(info["ticket_id"])
+
+            time.sleep(1.0)
+
+        raise RuntimeError(f"Timed out waiting for split chain to finish for source_file_id={source_file_id}")
 
     # --- Phase 7: Visibility ops -------------------------------------------
 
@@ -1148,7 +1357,9 @@ class SmokeRunner:
             ("admin service", "Real OS process, PostgreSQL DB, real HTTP", "None - full stack"),
             ("workbench service", "Real OS process, PostgreSQL DB, real HTTP", "None - full stack"),
             ("indexing service", "Real OS process, PostgreSQL DB, real HTTP", "Real SiliconFlow embedding API; hybrid OpenSearch + Qdrant index backend"),
-            ("intake service", "Real OS process, PostgreSQL DB, real HTTP", "None - full stack"),
+            ("document service", "Real OS process, PostgreSQL DB, real HTTP", "None - full stack"),
+            ("ingestion chain", "Real document-service -> ingestion-worker -> conversion/agent-review -> approval -> publishing -> indexing", "None - full split chain"),
+            ("compat intake root", "Real OS process kept only for legacy/workbench compatibility", "Not used by split-chain smoke"),
             ("publishing worker", "Real OS process, PostgreSQL DB, real HTTP", "None - full stack"),
             ("access service", "Real OS process, PostgreSQL DB, real HTTP", "Noop retrieval cache (Redis stubbed)"),
             ("retrieval service", "Real OS process, PostgreSQL DB, real HTTP", "Real OpenSearch + Qdrant recall, real SiliconFlow rerank"),
@@ -1201,10 +1412,10 @@ def main() -> int:
     parser.add_argument("--use-existing-services", action="store_true", help="Connect to already-running services instead of starting them")
     parser.add_argument("--keep-running", action="store_true", help="Keep services running after smoke completes")
     parser.add_argument("--test-profile", action="store_true", help="Use test/demo environment (default behavior)")
-    parser.add_argument("--require-live-backends", action="store_true", help="Require live OpenSearch/Qdrant/SiliconFlow — no stub fallback allowed")
-    parser.add_argument("--require-redis-cache", action="store_true", help="Require Redis retrieval cache — verify cache miss/hit/purge cycle")
+    parser.add_argument("--require-live-backends", action="store_true", help="Require live OpenSearch/Qdrant/SiliconFlow 鈥?no stub fallback allowed")
+    parser.add_argument("--require-redis-cache", action="store_true", help="Require Redis retrieval cache 鈥?verify cache miss/hit/purge cycle")
     parser.add_argument("--require-production-jwt-config", action="store_true", help="Require production JWT config (issuer/audience enforced, no default secret)")
-    parser.add_argument("--require-file-ingestion", action="store_true", help="Require real-file batch ingestion via MinIO (not content_text)")
+    parser.add_argument("--require-file-ingestion", action="store_true", help="Require real-file batch ingestion through document-service upload")
     parser.add_argument("--dataset-dir", type=str, default="", help="Path to dataset directory for file ingestion")
     parser.add_argument("--per-format", type=int, default=10, help="Max files per format for batch ingestion")
     args = parser.parse_args()
@@ -1215,3 +1426,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

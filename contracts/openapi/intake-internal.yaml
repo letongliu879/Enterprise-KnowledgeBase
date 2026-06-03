@@ -3,9 +3,10 @@ info:
   title: Reality-RAG Intake Pipeline Internal API
   version: 0.1.0
   description: |
-    Internal API for the intake-pipeline service.
-    Owner: intake-pipeline.
-    Workbench and other consumers may read and register, but never directly mutate owner state.
+    Internal owner APIs for the split intake chain.
+    `/internal/source-files*` is owned by `document-service`.
+    `/internal/intake-jobs*` is owned by `ingestion-worker`.
+    Consumers may read and register, but never directly mutate owner state.
 
 paths:
   /internal/source-files:
@@ -13,8 +14,8 @@ paths:
       operationId: registerSourceFile
       summary: Register a new source file
       description: |
-        Creates a source file and associated intake job.
-        Idempotent: duplicate idempotency_key returns the existing record without creating duplicates.
+        Creates source-file owner state in `document-service`.
+        Intake job creation happens asynchronously downstream from the FileReady event.
       requestBody:
         required: true
         content:

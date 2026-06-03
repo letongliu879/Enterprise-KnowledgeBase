@@ -22,11 +22,11 @@ from reality_rag_contracts import HealthResponse
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.outbox import OutboxDispatcher
 
-from ingestion_worker.stages.schemas import ConversionStageInput, ConversionStageOutput
-from ingestion_worker.stages.pure_stages import run_conversion_stage
-from ingestion_worker.converters.ragflow_converter import RAGFlowConverter
-from ingestion_worker.stage_runtime import execute_conversion_task
-from ingestion_worker.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from intake_runtime.stages.schemas import ConversionStageInput, ConversionStageOutput
+from intake_runtime.stages.pure_stages import run_conversion_stage
+from intake_runtime.converters.ragflow_converter import RAGFlowConverter
+from intake_runtime.stage_runtime import execute_conversion_task
+from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
 from reality_rag_contracts import StageName
 
 logger = logging.getLogger(__name__)

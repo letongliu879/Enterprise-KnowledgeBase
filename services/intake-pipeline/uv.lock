@@ -96,6 +96,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "ragflow-runtime" },
     { name = "reality-rag-contracts" },
+    { name = "reality-rag-persistence" },
 ]
 
 [package.metadata]
@@ -110,6 +111,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "ragflow-runtime", directory = "../../packages/ragflow_runtime" },
     { name = "reality-rag-contracts", directory = "../../packages/contracts" },
+    { name = "reality-rag-persistence", directory = "../../packages/persistence" },
 ]
 provides-extras = ["dev"]
 

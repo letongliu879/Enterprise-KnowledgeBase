@@ -94,6 +94,20 @@ class TestSystemDecide:
 
 
 class TestAutoApprove:
+    def test_local_fallback_requires_explicit_test_flag(self, monkeypatch, session):
+        monkeypatch.delenv("ALLOW_LOCAL_FALLBACK_FOR_TESTS", raising=False)
+        import ingestion_worker.domains.approval_domain as approval_mod
+
+        approval_mod._REMOTE_URL = None
+        svc = ApprovalService(session)
+        with pytest.raises(RuntimeError, match="APPROVAL_SERVICE_URL is required"):
+            svc.create_pending(
+                intake_job_id="ij-blocked",
+                preliminary_doc_id="doc-blocked-v1",
+                collection_id="col-1",
+            )
+        approval_mod._REMOTE_URL = None
+
     def test_creates_system_decided_ticket(self, approval_svc):
         ticket = approval_svc.submit_auto_approve(
             intake_job_id="ij-1",
