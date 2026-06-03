@@ -24,3 +24,36 @@ target/
 *.egg-info/
 *.egg
 datasets/
+
+# === 编译输出 ===
+*.class
+*.jar
+*.war
+*.ear
+
+# === 压缩包/二进制 ===
+*.zip
+tools/*.zip
+tools/apache-maven-*/
+
+# === 外部依赖/上游代码 ===
+upstream/
+
+# === 日志和临时文件 ===
+*.tmp
+*.swp
+*.swo
+*~
+
+# === 测试输出 ===
+coverage/
+htmlcov/
+.pytest_cache/
+
+# === IDE ===
+*.iml
+*.ipr
+*.iws
+
+# === OS ===
+Desktop.ini
