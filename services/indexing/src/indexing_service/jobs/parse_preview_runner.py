@@ -7,7 +7,7 @@ from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
 
-from indexing_service.domain import ParseSnapshotRecord
+from reality_rag_contracts.indexing_models import ParseSnapshotRecord
 from indexing_service.metrics import InMemoryIndexingMetrics
 from indexing_service.parse_detection import ParseHintDetector
 

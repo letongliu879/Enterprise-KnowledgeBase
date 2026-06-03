@@ -1,11 +1,13 @@
 [project]
 name = "reality-rag-intake-pipeline"
 version = "0.1.0"
-requires-python = "==3.14.*"
+requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.11,<3",
     "fastapi>=0.100",
     "httpx",
+    "sqlalchemy>=2.0",
+    "uvicorn",
     "reality-rag-contracts",
     "reality-rag-persistence",
 ]
@@ -17,8 +19,8 @@ dev = [
 ]
 
 [tool.uv.sources]
-reality-rag-contracts = { path = "../../packages/contracts" }
-reality-rag-persistence = { path = "../../packages/persistence" }
+reality-rag-contracts = { workspace = true }
+reality-rag-persistence = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

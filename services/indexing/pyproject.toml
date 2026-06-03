@@ -1,7 +1,7 @@
 [project]
 name = "enterprise-kb-indexing"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.13,<5",
     "chardet>=7.0,<8",
@@ -10,6 +10,7 @@ dependencies = [
     "markdown>=3.10,<4",
     "pydantic>=2.11,<3",
     "pypdf>=6.0,<7",
+    "uvicorn",
     "ragflow-runtime",
     "reality-rag-contracts",
     "reality-rag-persistence",
@@ -24,9 +25,9 @@ dev = [
 where = ["src"]
 
 [tool.uv.sources]
-reality-rag-contracts = { path = "../../packages/contracts" }
-reality-rag-persistence = { path = "../../packages/persistence" }
-ragflow-runtime = { path = "../../packages/ragflow_runtime" }
+reality-rag-contracts = { workspace = true }
+reality-rag-persistence = { workspace = true }
+ragflow-runtime = { workspace = true }
 
 [tool.pytest.ini_options]
 markers = [

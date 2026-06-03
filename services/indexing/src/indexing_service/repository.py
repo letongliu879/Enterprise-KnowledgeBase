@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from indexing_service.domain import (
-    BuildJobRecord,
+from indexing_service.domain import BuildJobRecord
+from reality_rag_contracts.indexing_models import (
     ChunkRecord,
     IndexVersionRecord,
     ParseSnapshotRecord,

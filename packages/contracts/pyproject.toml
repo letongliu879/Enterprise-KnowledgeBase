@@ -2,7 +2,7 @@
 name = "reality-rag-contracts"
 version = "0.1.0"
 description = "Shared contracts and schemas for Reality-RAG V2"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
 ]

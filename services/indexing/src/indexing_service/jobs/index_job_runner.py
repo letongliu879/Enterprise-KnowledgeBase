@@ -9,7 +9,7 @@ from hashlib import sha256
 import ragflow_runtime
 from indexing_service._compat import utc_now
 from indexing_service.contracts import IndexBuildRequestedCommand
-from indexing_service.domain import ChunkRecord
+from reality_rag_contracts.indexing_models import ChunkRecord
 from indexing_service.embedding.vector_text_builder import VectorTextBuilder
 from indexing_service.parser_profiles import get_parser_profile
 from indexing_service.governance_assets import (

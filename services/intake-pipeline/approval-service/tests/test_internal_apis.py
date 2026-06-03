@@ -17,7 +17,9 @@ def _db():
 @pytest.fixture
 def client():
     from approval_service.main import app
-    return TestClient(app)
+
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class TestListTickets:

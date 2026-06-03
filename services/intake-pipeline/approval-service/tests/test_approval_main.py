@@ -3,10 +3,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
+
 @pytest.fixture
 def client():
     from approval_service.main import app
-    return TestClient(app)
+
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_health_endpoint(client: TestClient):

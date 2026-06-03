@@ -4,7 +4,7 @@ from typing import Any
 
 from reality_rag_contracts import ChunkAsset, IndexAssetBundle, OpenSearchIndexRecord, QdrantPointRecord
 
-from indexing_service.domain import ChunkRecord, IndexVersionRecord
+from reality_rag_contracts.indexing_models import ChunkRecord, IndexVersionRecord
 
 
 def build_index_asset_bundle(

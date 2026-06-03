@@ -1,0 +1,19 @@
+[project]
+name = "enterprise-knowledgebase"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = [
+    "services/admin",
+    "services/indexing",
+    "services/intake-pipeline",
+    "services/workbench-api",
+    "packages/contracts",
+    "packages/persistence",
+    "packages/documents",
+    "packages/ragflow_runtime",
+]
+
+[tool.uv]
+package = false

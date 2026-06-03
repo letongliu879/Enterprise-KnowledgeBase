@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from indexing_service.domain import ChunkRecord
+from reality_rag_contracts.indexing_models import ChunkRecord
 
 from ..models import ChunkRegistryModel
 

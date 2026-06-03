@@ -2,12 +2,14 @@
 name = "reality-rag-workbench"
 version = "0.1.0"
 description = "Document processing workbench for Reality-RAG Enterprise KnowledgeBase"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",
     "pydantic>=2.11,<3",
     "python-jose[cryptography]>=3.3,<4",
+    "sqlalchemy>=2.0",
+    "uvicorn",
     "reality-rag-contracts",
     "reality-rag-persistence",
 ]
@@ -20,8 +22,8 @@ dev = [
 ]
 
 [tool.uv.sources]
-reality-rag-contracts = { path = "../../packages/contracts" }
-reality-rag-persistence = { path = "../../packages/persistence" }
+reality-rag-contracts = { workspace = true }
+reality-rag-persistence = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from indexing_service.domain import ParseSnapshotRecord
+from reality_rag_contracts.indexing_models import ParseSnapshotRecord
 
 from ..models import ParseSnapshotModel
 

@@ -53,6 +53,12 @@ from .index_naming import (
     build_qdrant_collection_name,
     build_versioned_backend_name,
 )
+from .indexing_models import (
+    ChunkRecord,
+    IndexVersionRecord,
+    IndexVersionStatus,
+    ParseSnapshotRecord,
+)
 from .models import (
     AccessRetrieveRequest,
     AccessRetrieveResponse,
@@ -196,6 +202,11 @@ __all__ = [
     "build_opensearch_index_name",
     "build_qdrant_collection_name",
     "build_versioned_backend_name",
+    # Indexing models
+    "ChunkRecord",
+    "IndexVersionRecord",
+    "IndexVersionStatus",
+    "ParseSnapshotRecord",
     # State machines
     "DocumentPublishStateMachine",
     "IndexStateMachine",

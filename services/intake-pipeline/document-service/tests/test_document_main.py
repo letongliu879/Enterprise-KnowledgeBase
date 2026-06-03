@@ -16,7 +16,9 @@ from reality_rag_persistence.repositories.source_files import SourceFileReposito
 @pytest.fixture
 def client():
     from document_service.main import app
-    return TestClient(app)
+
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_health_endpoint(client: TestClient):

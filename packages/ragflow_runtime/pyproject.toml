@@ -2,7 +2,7 @@
 name = "ragflow-runtime"
 version = "0.1.0"
 description = "Controlled RAGFlow-derived runtime for Enterprise KnowledgeBase indexing"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.13,<5",
     "chardet>=7.0,<8",

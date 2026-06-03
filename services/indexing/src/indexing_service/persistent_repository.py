@@ -9,9 +9,11 @@ from indexing_service.backends import get_index_backend
 from indexing_service.config import load_indexing_config
 from indexing_service.domain import (
     BuildJobRecord,
-    ChunkRecord,
     ChunkRevisionRecord,
     IndexBuildStatus,
+)
+from reality_rag_contracts.indexing_models import (
+    ChunkRecord,
     IndexVersionRecord,
     IndexVersionStatus,
     ParseSnapshotRecord,
