@@ -215,12 +215,14 @@ class TestAgentReviewViewSchema:
         resolver = _build_resolver()
         jsonschema.validate(instance=example, schema=schema, resolver=resolver)
 
-    def test_evidence_anchors_use_canonical_wire(self):
+    def test_findings_use_canonical_wire(self):
         schema = _load_schema("AgentReviewView.schema.json")
-        anchor_props = schema["properties"]["evidence_anchors"]["items"]["properties"]
-        assert "doc_id" in anchor_props, "Anchor must define 'doc_id'"
-        assert "evidence_id" in anchor_props, "Anchor must define 'evidence_id'"
-        assert "content" in anchor_props, "Anchor must define 'content'"
+        finding_props = schema["properties"]["findings"]["items"]["properties"]
+        assert "finding_id" in finding_props, "Finding must define 'finding_id'"
+        assert "problem_summary" in finding_props, "Finding must define 'problem_summary'"
+        assert "source_file_id" in finding_props, "Finding must define 'source_file_id'"
+        assert "parse_snapshot_id" in finding_props, "Finding must define 'parse_snapshot_id'"
+        assert "evidence_id" in finding_props, "Finding must define 'evidence_id'"
 
 
 # ── WorkbenchTaskView example validates against schema ───────────────────
@@ -248,6 +250,12 @@ class TestWorkbenchTaskViewSchema:
 
 class TestWorkbenchSchemaDriftGuard:
     """Ensure old field names do NOT reappear in workbench schemas."""
+
+    def test_agent_review_view_has_no_legacy_review_fields(self):
+        schema_text = (SCHEMAS_DIR / "AgentReviewView.schema.json").read_text(encoding="utf-8")
+        assert '"quality_findings"' not in schema_text
+        assert '"risk_flags"' not in schema_text
+        assert '"suggested_fixes"' not in schema_text
 
     def test_workbench_chunk_edit_has_no_old_names(self):
         schema_text = (SCHEMAS_DIR / "WorkbenchChunkEdit.schema.json").read_text(encoding="utf-8")

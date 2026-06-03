@@ -313,15 +313,19 @@ class TestAgentReviewProjection:
                     "decision": "REQUEST_CHANGES",
                     "source_file_id": "sf_123",
                     "parse_snapshot_id": "ps_123",
-                    "anchored_findings": [
+                    "findings": [
                         {
                             "finding_id": "finding_001",
                             "severity": "high",
+                            "category": "",
                             "problem_summary": "Needs correction",
                             "source_quote": "Quoted source text",
+                            "state": "open",
                             "confidence": 0.92,
                         }
                     ],
+                    "matched_count": 0,
+                    "unmatched_count": 1,
                 }
             )
             resp = client.get(

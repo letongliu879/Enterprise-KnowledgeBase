@@ -61,7 +61,28 @@ def _write_json_asset(asset_path: str, payload: dict) -> None:
 
 
 def seed(session=None) -> None:
-    """Seed all tables with sample dev data."""
+    """Backward-compatible entrypoint for the full development dataset."""
+    seed_dev_dataset(session=session)
+
+
+def seed_minimal_for_tests(session=None) -> None:
+    """Seed only the minimal shared facts needed by lightweight tests."""
+    own_session = session is None
+    if own_session:
+        create_all()
+        session = get_session()
+
+    try:
+        _seed_tenants(session)
+        _seed_collections(session)
+        session.commit()
+    finally:
+        if own_session:
+            session.close()
+
+
+def seed_dev_dataset(session=None) -> None:
+    """Seed the full development dataset used by demos and compat smoke."""
     own_session = session is None
     if own_session:
         create_all()

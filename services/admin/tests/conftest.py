@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from reality_rag_persistence.database import override_url_for_testing, create_all, drop_all
-from admin_service.main import app
 from admin_service.identity.service import IdentityService
 from admin_service.identity.repository import IdentityRepository
 
@@ -20,6 +19,7 @@ def _setup_db():
 
 @pytest.fixture
 def client():
+    from admin_service.main import app
     return TestClient(app)
 
 

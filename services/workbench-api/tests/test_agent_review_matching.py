@@ -44,7 +44,7 @@ class TestAgentReviewMatcher:
         projector.record_and_apply(
             {
                 "event_id": "ev_finding_match_001",
-                "event_type": "approval_pending",
+                "event_type": "ApprovalPending",
                 "tenant_id": "tenant_acme",
                 "collection_id": "col_default",
                 "aggregate_type": "agent_review",

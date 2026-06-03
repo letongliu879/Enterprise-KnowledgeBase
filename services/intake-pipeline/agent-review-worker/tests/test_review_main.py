@@ -1,13 +1,15 @@
 """Smoke tests for agent-review-worker FastAPI app."""
 
+import pytest
 from fastapi.testclient import TestClient
 
-from agent_review_worker.main import app
+@pytest.fixture
+def client():
+    from agent_review_worker.main import app
+    return TestClient(app)
 
-client = TestClient(app)
 
-
-def test_health_endpoint():
+def test_health_endpoint(client: TestClient):
     resp = client.get("/health")
     assert resp.status_code == 200
     data = resp.json()

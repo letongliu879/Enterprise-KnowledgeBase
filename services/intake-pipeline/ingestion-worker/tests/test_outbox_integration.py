@@ -12,9 +12,9 @@ from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.outbox_events import OutboxEventRepository
 from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
 
+from approval_service.approval_domain import ApprovalService
 from ingestion_worker.orchestrator import OrchestratorService
 from reality_rag_documents import DocumentService
-from ingestion_worker.domains.approval_domain import ApprovalService
 
 
 class TestOrchestratorOutboxIntegration:

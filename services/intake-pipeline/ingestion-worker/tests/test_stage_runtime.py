@@ -10,6 +10,7 @@ from reality_rag_persistence.models import IntakeJobModel, StageResultModel, Sta
 from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.object_blobs import ObjectBlobRepository
+from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from reality_rag_persistence.repositories.tenants import TenantRepository
 
@@ -121,6 +122,10 @@ def test_run_publishing_uses_final_doc_id_and_approved_publish_status():
         assert saved_doc.doc_id == "doc-final-1"
         assert saved_doc.publish_status == PublishStatus.PUBLISHED
         assert "doc-final-1" in saved_doc.asset_paths["canonical_md"]
+        published_doc = PublishedDocumentRepository(session).get_by_final_doc_id("doc-final-1")
+        assert published_doc is not None
+        assert published_doc.logical_document_id == "logical-1"
+        assert published_doc.version == 1
 
         task = (
             session.query(StageTaskModel)

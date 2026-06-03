@@ -1,7 +1,7 @@
 """Document service client facade.
 
-`document-service` is the source-file owner. `ingestion-worker` may use a
-same-process fallback only in tests or explicit compat smoke.
+`document-service` is the only source-file owner. Ingestion code must call it
+through its split-service HTTP API instead of silently falling back in-process.
 """
 
 from __future__ import annotations
@@ -11,11 +11,8 @@ from typing import Any
 
 import httpx
 
-from .split_service_policy import require_explicit_owner_url
-
 __all__ = [
     "DocumentServiceClient",
-    "get_document_service_client",
 ]
 
 _REMOTE_URL: str | None = None
@@ -28,9 +25,17 @@ def _get_remote_url() -> str | None:
     return _REMOTE_URL
 
 
-def _url(path: str) -> str:
+def _require_remote_url() -> str:
     base = _get_remote_url()
-    assert base is not None
+    if base is None:
+        raise RuntimeError(
+            "DOCUMENT_SERVICE_URL is required; document-service must run through its split-service owner."
+        )
+    return base
+
+
+def _url(path: str) -> str:
+    base = _require_remote_url()
     return f"{base}{path}"
 
 
@@ -108,130 +113,11 @@ class _RemoteDocumentService:
             {"content_hash": content_hash, "storage_key": storage_key, "size_bytes": size_bytes},
         )
 
-
-class _LocalDocumentService:
-    """Local same-process DocumentService wrapper."""
-
-    def __init__(self, session=None) -> None:
-        self._session = session
-
-    def _get_session(self):
-        if self._session is not None:
-            return self._session
-        from reality_rag_persistence.database import get_session
-
-        return get_session()
-
-    def create_source_file(
-        self,
-        collection_id: str,
-        object_id: str,
-        content_hash: str,
-    ) -> dict[str, Any]:
-        from reality_rag_documents import DocumentService
-
-        session = self._get_session()
-        svc = DocumentService(session)
-        sf = svc.create_source_file(
-            collection_id=collection_id,
-            object_id=object_id,
-            content_hash=content_hash,
-        )
-        return {
-            "source_file_id": sf.source_file_id,
-            "collection_id": sf.collection_id,
-            "object_id": sf.object_id,
-            "content_hash": sf.content_hash,
-            "state": sf.state.value if hasattr(sf.state, "value") else str(sf.state),
-        }
-
-    def claim(self, source_file_id: str, job_id: str) -> bool:
-        from reality_rag_documents import DocumentService
-
-        session = self._get_session()
-        svc = DocumentService(session)
-        return svc.claim_source_file(source_file_id, job_id)
-
-    def mark_consumed(self, source_file_id: str, job_id: str) -> bool:
-        from reality_rag_documents import DocumentService
-
-        session = self._get_session()
-        svc = DocumentService(session)
-        return svc.mark_consumed(source_file_id, job_id)
-
-    def mark_cleanable(self, source_file_id: str, job_id: str) -> bool:
-        from reality_rag_documents import DocumentService
-
-        session = self._get_session()
-        svc = DocumentService(session)
-        return svc.mark_cleanable(source_file_id, job_id)
-
-    def find_active_by_content_hash(self, content_hash: str, collection_id: str) -> dict[str, Any] | None:
-        from reality_rag_persistence.repositories.source_files import SourceFileRepository
-
-        session = self._get_session()
-        repo = SourceFileRepository(session)
-        sf = repo.find_active_by_content_hash(content_hash, collection_id)
-        if sf is None:
-            return None
-        return {
-            "source_file_id": sf.source_file_id,
-            "collection_id": sf.collection_id,
-            "object_id": sf.object_id,
-            "content_hash": sf.content_hash,
-            "state": sf.state.value if hasattr(sf.state, "value") else str(sf.state),
-        }
-
-    def get_object_blob(self, object_id: str) -> dict[str, Any] | None:
-        from reality_rag_persistence.repositories.object_blobs import ObjectBlobRepository
-
-        session = self._get_session()
-        obj = ObjectBlobRepository(session).get(object_id)
-        if obj is None:
-            return None
-        return {
-            "object_id": obj.object_id,
-            "content_hash": obj.content_hash,
-            "storage_key": obj.storage_key,
-            "ref_count": obj.ref_count,
-            "status": obj.status,
-            "size_bytes": obj.size_bytes,
-        }
-
-    def get_or_create_object_blob(self, content_hash: str, storage_key: str, size_bytes: int = 0) -> dict[str, Any]:
-        from reality_rag_documents import DocumentService
-
-        session = self._get_session()
-        svc = DocumentService(session)
-        obj = svc.get_or_create_object_blob(content_hash, storage_key, size_bytes)
-        return {
-            "object_id": obj.object_id,
-            "content_hash": obj.content_hash,
-            "storage_key": obj.storage_key,
-            "ref_count": obj.ref_count,
-            "status": obj.status,
-        }
-
-
 class DocumentServiceClient:
-    """Dispatches to remote HTTP or, only in tests, a local compat fallback."""
+    """HTTP facade for the document-service owner."""
 
     def __init__(self, session=None) -> None:
-        self._session = session
-        self._local: _LocalDocumentService | None = None
         self._remote: _RemoteDocumentService | None = None
-
-    def _use_remote(self) -> bool:
-        return _get_remote_url() is not None
-
-    def _get_local(self) -> _LocalDocumentService:
-        if self._local is None:
-            require_explicit_owner_url(
-                env_var="DOCUMENT_SERVICE_URL",
-                owner_name="document-service",
-            )
-            self._local = _LocalDocumentService(self._session)
-        return self._local
 
     def _get_remote(self) -> _RemoteDocumentService:
         if self._remote is None:
@@ -244,48 +130,22 @@ class DocumentServiceClient:
         object_id: str,
         content_hash: str,
     ) -> dict[str, Any]:
-        if self._use_remote():
-            return self._get_remote().create_source_file(collection_id, object_id, content_hash)
-        return self._get_local().create_source_file(collection_id, object_id, content_hash)
+        return self._get_remote().create_source_file(collection_id, object_id, content_hash)
 
     def claim(self, source_file_id: str, job_id: str) -> bool:
-        if self._use_remote():
-            return self._get_remote().claim(source_file_id, job_id)
-        return self._get_local().claim(source_file_id, job_id)
+        return self._get_remote().claim(source_file_id, job_id)
 
     def mark_consumed(self, source_file_id: str, job_id: str) -> bool:
-        if self._use_remote():
-            return self._get_remote().mark_consumed(source_file_id, job_id)
-        return self._get_local().mark_consumed(source_file_id, job_id)
+        return self._get_remote().mark_consumed(source_file_id, job_id)
 
     def mark_cleanable(self, source_file_id: str, job_id: str) -> bool:
-        if self._use_remote():
-            return self._get_remote().mark_cleanable(source_file_id, job_id)
-        return self._get_local().mark_cleanable(source_file_id, job_id)
+        return self._get_remote().mark_cleanable(source_file_id, job_id)
 
     def find_active_by_content_hash(self, content_hash: str, collection_id: str) -> dict[str, Any] | None:
-        if self._use_remote():
-            return self._get_remote().find_active_by_content_hash(content_hash, collection_id)
-        return self._get_local().find_active_by_content_hash(content_hash, collection_id)
+        return self._get_remote().find_active_by_content_hash(content_hash, collection_id)
 
     def get_object_blob(self, object_id: str) -> dict[str, Any] | None:
-        if self._use_remote():
-            return self._get_remote().get_object_blob(object_id)
-        return self._get_local().get_object_blob(object_id)
+        return self._get_remote().get_object_blob(object_id)
 
     def get_or_create_object_blob(self, content_hash: str, storage_key: str, size_bytes: int = 0) -> dict[str, Any]:
-        if self._use_remote():
-            return self._get_remote().get_or_create_object_blob(content_hash, storage_key, size_bytes)
-        return self._get_local().get_or_create_object_blob(content_hash, storage_key, size_bytes)
-
-
-# Singleton for ingestion-worker
-_fallback_client: DocumentServiceClient | None = None
-
-
-def get_document_service_client(session=None) -> DocumentServiceClient:
-    """Return the document service client facade (remote or local)."""
-    global _fallback_client
-    if _fallback_client is None:
-        _fallback_client = DocumentServiceClient(session)
-    return _fallback_client
+        return self._get_remote().get_or_create_object_blob(content_hash, storage_key, size_bytes)

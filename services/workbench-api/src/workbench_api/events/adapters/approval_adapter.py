@@ -1,8 +1,7 @@
 """Approval service event adapter.
 
 Maps approval owner events into workbench ticket and agent-review projections.
-The native events come from approval outbox delivery and may use either the
-legacy workbench test names or the approval outbox event names.
+Approval outbox delivery uses the canonical cross-service EventType names.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ class ApprovalEventAdapter(EventAdapter):
 
         events: list[ProjectionEvent] = []
 
-        if event_type in {"TicketCreated", "TicketUpdated", "approval_pending", "approval_decided", "ApprovalPending", "ApprovalDecided"}:
+        if event_type in {"TicketCreated", "TicketUpdated", "ApprovalPending", "ApprovalDecided"}:
             ticket_event = self._ticket_projection_event(
                 native_event=native_event,
                 event_type=event_type,
@@ -58,7 +57,7 @@ class ApprovalEventAdapter(EventAdapter):
             if task_event is not None:
                 events.append(task_event)
 
-        if event_type in {"AgentReviewCompleted", "approval_pending", "approval_decided", "ApprovalPending", "ApprovalDecided"}:
+        if event_type in {"AgentReviewCompleted", "ApprovalPending", "ApprovalDecided"}:
             events.extend(
                 self._agent_review_events(
                     native_event=native_event,
@@ -241,9 +240,9 @@ class ApprovalEventAdapter(EventAdapter):
 
     @staticmethod
     def _default_state(event_type: str, payload: dict[str, Any]) -> str:
-        if event_type in {"approval_pending", "ApprovalPending"}:
+        if event_type == "ApprovalPending":
             return "pending"
-        if event_type in {"approval_decided", "ApprovalDecided"}:
+        if event_type == "ApprovalDecided":
             decision = str(payload.get("decision", "") or "").lower()
             mapping = {
                 "approve": "approved",
