@@ -1,32 +1,27 @@
 package com.realityrag.access.security;
 
-import com.realityrag.access.support.AccessException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 
 @Component
-public class McpSessionPrincipalBindingStore {
+public class McpSessionBindingStore {
     private final ConcurrentHashMap<String, AccessRequestContext> bindings = new ConcurrentHashMap<>();
 
     public void bind(String sessionId, AccessRequestContext context) {
-        bindings.put(sessionId, context);
+        bindings.putIfAbsent(sessionId, context);
     }
 
     public AccessRequestContext get(String sessionId) {
         return bindings.get(sessionId);
     }
 
-    public void assertMatches(String sessionId, AccessRequestContext context) {
+    public boolean matches(String sessionId, AccessRequestContext context) {
         AccessRequestContext bound = bindings.get(sessionId);
         if (bound == null) {
-            return;
+            return true; // First request for this session, will be bound below
         }
-        if (!samePrincipal(bound, context)) {
-            throw new AccessException.Forbidden(
-                "MCP session principal does not match the authenticated bearer token"
-            );
-        }
+        return samePrincipal(bound, context);
     }
 
     public void remove(String sessionId) {

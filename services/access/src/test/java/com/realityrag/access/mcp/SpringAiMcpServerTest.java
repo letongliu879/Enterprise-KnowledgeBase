@@ -1,30 +1,21 @@
 package com.realityrag.access.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.realityrag.access.AccessApplication;
 import com.realityrag.access.contracts.KnowledgeContext;
 import com.realityrag.access.service.AccessGatewayService;
 import com.realityrag.access.support.TestAgentAuthFactory;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
-import io.modelcontextprotocol.spec.McpSchema;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.nio.charset.StandardCharsets;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -57,7 +48,11 @@ class SpringAiMcpServerTest {
     @Autowired
     private DataSource dataSource;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     private HttpClient httpClient;
+    private String mcpEndpoint;
 
     @BeforeAll
     static void beforeAll() {
@@ -67,6 +62,7 @@ class SpringAiMcpServerTest {
     @BeforeEach
     void setUp() {
         this.httpClient = HttpClient.newHttpClient();
+        this.mcpEndpoint = "http://127.0.0.1:" + port + "/mcp";
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS api_key_projection (
@@ -110,70 +106,41 @@ class SpringAiMcpServerTest {
     }
 
     @Test
-    void agentStyleMcpFlowListsAndCallsGovernedTool() {
-        given(accessGatewayService.retrieveWithContext(any(), any())).willReturn(new KnowledgeContext(
-            "qry_mcp_1",
-            Map.of("agent_type_id", "kb_assistant"),
-            List.of("idx_v1"),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            0,
-            Map.of("debug_level", "none")
-        ));
+    void mcpInitializeReturnsProtocolVersion() throws Exception {
+        HttpResponse<String> response = postMcpMessage(
+            TestAgentAuthFactory.API_KEY,
+            TestAgentAuthFactory.AGENT_INSTANCE_ID,
+            null,
+            """
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "initialize","params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                      "name": "agent-platform-test",
+                      "version": "1.0.0"
+                    }
+                  }
+                }
+                """
+        );
 
-        try (McpSyncClient client = buildClient(TestAgentAuthFactory.AGENT_INSTANCE_ID)) {
-            McpSchema.InitializeResult initializeResult = client.initialize();
-            assertThat(initializeResult.protocolVersion()).isEqualTo("2024-11-05");
-
-            McpSchema.ListToolsResult toolsResult = client.listTools();
-            assertThat(toolsResult.tools())
-                .extracting(McpSchema.Tool::name)
-                .contains("search_enterprise_knowledge");
-
-            McpSchema.CallToolResult toolResult = client.callTool(new McpSchema.CallToolRequest(
-                "search_enterprise_knowledge",
-                Map.of(
-                    "query", "What expenses are reimbursable?",
-                    "knowledge_scope", "col_policy",
-                    "retrieval_profile_id", "ret_default",
-                    "debug", "none"
-                )
-            ));
-
-            List<String> texts = toolResult.content().stream()
-                .filter(item -> item instanceof McpSchema.TextContent)
-                .map(item -> ((McpSchema.TextContent) item).text())
-                .toList();
-            assertThat(texts).isNotEmpty();
-            assertThat(toolResult.isError())
-                .withFailMessage("Unexpected MCP tool error content: %s", texts)
-                .isFalse();
-            assertThat(texts).anyMatch(text -> text.contains("qry_mcp_1"));
-        }
+        assertThat(response.statusCode()).isEqualTo(200);
+        JsonNode body = objectMapper.readTree(extractMcpResponseBody(response.body()));
+        assertThat(body.get("jsonrpc").asText()).isEqualTo("2.0");
+        assertThat(body.get("id").asInt()).isEqualTo(1);
+        assertThat(body.get("result").get("protocolVersion").asText()).isEqualTo("2024-11-05");
     }
 
     @Test
-    void mcpSessionRejectsAgentInstanceDrift() {
-        given(accessGatewayService.retrieveWithContext(any(), any())).willReturn(new KnowledgeContext(
-            "qry_mcp_1",
-            Map.of("agent_type_id", "kb_assistant"),
-            List.of("idx_v1"),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            0,
-            Map.of("debug_level", "none")
-        ));
-
-        try {
-            SseSession session = openSseSession("agent-instance-A");
-            String endpoint = session.endpoint();
-            String sessionId = endpoint.substring(endpoint.indexOf("sessionId=") + "sessionId=".length());
-
-            HttpResponse<String> response = postMcpMessage(sessionId, "agent-instance-B", """
+    void mcpListsSearchEnterpriseKnowledgeTool() throws Exception {
+        HttpResponse<String> initResponse = postMcpMessage(
+            TestAgentAuthFactory.API_KEY,
+            TestAgentAuthFactory.AGENT_INSTANCE_ID,
+            null,
+            """
                 {
                   "jsonrpc": "2.0",
                   "id": 1,
@@ -187,74 +154,258 @@ class SpringAiMcpServerTest {
                     }
                   }
                 }
-                """);
+                """
+        );
+        assertThat(initResponse.statusCode()).isEqualTo(200);
+        String sessionId = initResponse.headers().firstValue("Mcp-Session-Id").orElse(null);
 
-            assertThat(response.statusCode()).isEqualTo(403);
-            assertThat(response.body()).contains("principal");
-            session.close();
-        }
-        catch (Exception error) {
-            throw new RuntimeException(error);
-        }
-    }
-
-    private McpSyncClient buildClient(String agentInstanceId) {
-        String baseUrl = "http://127.0.0.1:" + port;
-        HttpClientSseClientTransport transport = new HttpClientSseClientTransport(
-            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)),
-            HttpRequest.newBuilder()
-                .header("X-API-Key", TestAgentAuthFactory.API_KEY)
-                .header("X-Agent-Instance-Id", agentInstanceId),
-            baseUrl,
-            "/sse",
-            new ObjectMapper()
+        HttpResponse<String> toolsResponse = postMcpMessage(
+            TestAgentAuthFactory.API_KEY,
+            TestAgentAuthFactory.AGENT_INSTANCE_ID,
+            sessionId,
+            """
+                {
+                  "jsonrpc": "2.0",
+                  "id": 2,
+                  "method": "tools/list"
+                }
+                """
         );
 
-        return McpClient.sync(transport)
-            .requestTimeout(Duration.ofSeconds(10))
-            .initializationTimeout(Duration.ofSeconds(10))
-            .clientInfo(new McpSchema.Implementation("agent-platform-test", "1.0.0"))
+        assertThat(toolsResponse.statusCode()).isEqualTo(200);
+        JsonNode body = objectMapper.readTree(extractMcpResponseBody(toolsResponse.body()));
+        JsonNode tools = body.get("result").get("tools");
+        assertThat(tools.isArray()).isTrue();
+        List<String> toolNames = new java.util.ArrayList<>();
+        tools.forEach(tool -> toolNames.add(tool.get("name").asText()));
+        assertThat(toolNames).contains("search_enterprise_knowledge");
+    }
+
+    @Test
+    void mcpCallsSearchEnterpriseKnowledgeTool() throws Exception {
+        given(accessGatewayService.retrieveWithContext(any(), any())).willReturn(new KnowledgeContext(
+            "qry_mcp_1",
+            Map.of("agent_type_id", "kb_assistant"),
+            List.of("idx_v1"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            0,
+            Map.of("debug_level", "none")
+        ));
+
+        HttpResponse<String> initResponse = postMcpMessage(
+            TestAgentAuthFactory.API_KEY,
+            TestAgentAuthFactory.AGENT_INSTANCE_ID,
+            null,
+            """
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "initialize",
+                  "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                      "name": "agent-platform-test",
+                      "version": "1.0.0"
+                    }
+                  }
+                }
+                """
+        );
+        assertThat(initResponse.statusCode()).isEqualTo(200);
+        String sessionId = initResponse.headers().firstValue("Mcp-Session-Id").orElse(null);
+
+        HttpResponse<String> toolResponse = postMcpMessage(
+            TestAgentAuthFactory.API_KEY,
+            TestAgentAuthFactory.AGENT_INSTANCE_ID,
+            sessionId,
+            """
+                {
+                  "jsonrpc": "2.0",
+                  "id": 3,
+                  "method": "tools/call",
+                  "params": {
+                    "name": "search_enterprise_knowledge",
+                    "arguments": {
+                      "query": "What expenses are reimbursable?",
+                      "knowledge_scope": "col_policy",
+                      "retrieval_profile_id": "ret_default",
+                      "debug": "none"
+                    }
+                  }
+                }
+                """
+        );
+
+        assertThat(toolResponse.statusCode()).isEqualTo(200);
+        JsonNode body = objectMapper.readTree(extractMcpResponseBody(toolResponse.body()));
+        JsonNode content = body.get("result").get("content");
+        assertThat(content.isArray()).isTrue();
+        assertThat(content.size()).isGreaterThan(0);
+        String text = content.get(0).get("text").asText();
+        assertThat(text).contains("qry_mcp_1");
+    }
+
+    @Test
+    void mcpRejectsUnauthenticatedRequest() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(mcpEndpoint))
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Accept", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString("""
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "initialize",
+                  "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                      "name": "test-client",
+                      "version": "1.0.0"
+                    }
+                  }
+                }
+                """))
             .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(401);
+        // Response may be SSE format or JSON depending on server behavior for auth failures
+        String responseBody = response.body();
+        assertThat(responseBody).contains("UNAUTHENTICATED");
     }
 
-    private SseSession openSseSession(String agentInstanceId) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) URI.create("http://127.0.0.1:" + port + "/sse")
-            .toURL()
-            .openConnection();
-        connection.setRequestMethod("GET");
-        TestAgentAuthFactory.headers("GET", "/sse", null, agentInstanceId)
-            .forEach(connection::setRequestProperty);
-        connection.setRequestProperty("Accept", "text/event-stream");
-        connection.connect();
-        assertThat(connection.getResponseCode()).isEqualTo(200);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
-        String line;
-        while ((line = reader.readLine()) != null) {
-            if (line.startsWith("data:")) {
-                return new SseSession(connection, reader, line.substring("data:".length()).trim());
-            }
-        }
-        connection.disconnect();
-        throw new IllegalStateException("No endpoint data found in SSE body");
+    @Test
+    void mcpRejectsInvalidApiKey() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(mcpEndpoint))
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Accept", "application/json")
+            .header("X-API-Key", "invalid-key")
+            .header("X-Agent-Instance-Id", "test-instance")
+            .POST(HttpRequest.BodyPublishers.ofString("""
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "initialize",
+                  "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                      "name": "test-client",
+                      "version": "1.0.0"
+                    }
+                  }
+                }
+                """))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(401);
+        // Response may be SSE format or JSON depending on server behavior for auth failures
+        String responseBody = response.body();
+        assertThat(responseBody).contains("UNAUTHENTICATED");
     }
 
-    private HttpResponse<String> postMcpMessage(String sessionId, String agentInstanceId, String body) throws Exception {
-        String query = "sessionId=" + sessionId;
+    @Test
+    void mcpRejectsSessionPrincipalDrift() throws Exception {
+        // Step 1: Initialize with agent-instance-A
+        HttpResponse<String> initResponse = postMcpMessage(
+            TestAgentAuthFactory.API_KEY,
+            "agent-instance-A",
+            null,
+            """
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "initialize",
+                  "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                      "name": "agent-platform-test",
+                      "version": "1.0.0"
+                    }
+                  }
+                }
+                """
+        );
+        assertThat(initResponse.statusCode()).isEqualTo(200);
+        String sessionId = initResponse.headers().firstValue("Mcp-Session-Id").orElse(null);
+        assertThat(sessionId).isNotNull();
+
+        // Step 2: Reuse sessionId but with agent-instance-B - should be rejected
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(mcpEndpoint))
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Accept", "application/json")
+            .header("X-API-Key", TestAgentAuthFactory.API_KEY)
+            .header("X-Agent-Instance-Id", "agent-instance-B")
+            .header("Mcp-Session-Id", sessionId)
+            .POST(HttpRequest.BodyPublishers.ofString("""
+                {
+                  "jsonrpc": "2.0",
+                  "id": 2,
+                  "method": "tools/list"
+                }
+                """))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(403);
+        String responseBody = response.body();
+        assertThat(responseBody).containsIgnoringCase("principal");
+    }
+
+    private HttpResponse<String> postMcpMessage(String apiKey, String agentInstanceId, String sessionId, String body) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
-            .uri(URI.create("http://127.0.0.1:" + port + "/mcp/messages?" + query))
-            .header("Content-Type", "application/json");
-        TestAgentAuthFactory.headers("POST", "/mcp/messages", query, agentInstanceId)
-            .forEach(builder::header);
+            .uri(URI.create(mcpEndpoint))
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Accept", "application/json");
+
+        if (sessionId != null && !sessionId.isBlank()) {
+            builder.header("Mcp-Session-Id", sessionId);
+        }
+
+        if (apiKey != null) {
+            builder.header("X-API-Key", apiKey);
+        }
+        if (agentInstanceId != null) {
+            builder.header("X-Agent-Instance-Id", agentInstanceId);
+        }
+
         return httpClient.send(
             builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
             HttpResponse.BodyHandlers.ofString()
         );
     }
 
-    private record SseSession(HttpURLConnection connection, BufferedReader reader, String endpoint) {
-        void close() throws Exception {
-            reader.close();
-            connection.disconnect();
+    /**
+     * Parse MCP Streamable HTTP response body.
+     * The server may return either:
+     * - Plain JSON (when Accept includes application/json and no SSE streaming is needed)
+     * - SSE format (when Accept includes text/event-stream)
+     * This method handles both for test compatibility.
+     */
+    private String extractMcpResponseBody(String responseBody) {
+        // Plain JSON response
+        if (responseBody.trim().startsWith("{")) {
+            return responseBody;
         }
+        // SSE format: extract data line
+        for (String line : responseBody.split("\n")) {
+            if (line.startsWith("data:")) {
+                return line.substring("data:".length()).trim();
+            }
+        }
+        throw new IllegalStateException("Unable to parse MCP response: " + responseBody);
     }
 }

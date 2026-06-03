@@ -19,11 +19,12 @@ spring:
         name: reality-rag-access
         version: 0.1.0
         type: SYNC
+        protocol: STREAMABLE
         instructions: Enterprise KnowledgeBase access MCP server.
-        sse-message-endpoint: /mcp/messages
-        stdio: false
         resource-change-notification: false
         tool-change-notification: false
+        streamable-http:
+          mcp-endpoint: /mcp
 
 management:
   endpoints:

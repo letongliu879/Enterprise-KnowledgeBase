@@ -14,18 +14,19 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ContentCachingResponseWrapper;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class AccessRequestContextFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(AccessRequestContextFilter.class);
     private final AccessAuthenticator accessAuthenticator;
-    private final McpSessionPrincipalBindingStore sessionBindingStore;
+    private final McpSessionBindingStore sessionBindingStore;
     private final ObjectMapper objectMapper;
 
     public AccessRequestContextFilter(
         AccessAuthenticator accessAuthenticator,
-        McpSessionPrincipalBindingStore sessionBindingStore,
+        McpSessionBindingStore sessionBindingStore,
         ObjectMapper objectMapper
     ) {
         this.accessAuthenticator = accessAuthenticator;
@@ -61,23 +62,31 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
         FilterChain filterChain
     ) throws ServletException, IOException {
         String path = request.getRequestURI();
+        ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
         try {
             AccessRequestContext context = accessAuthenticator.authenticate(request);
-            if (path != null && path.startsWith("/mcp/messages")) {
-                String sessionId = request.getParameter("sessionId");
-                if (sessionId != null && !sessionId.isBlank()) {
-                    sessionBindingStore.assertMatches(sessionId, context);
-                    AccessRequestContext boundContext = sessionBindingStore.get(sessionId);
-                    if (boundContext != null) {
-                        context = boundContext;
-                    }
+
+            // Streamable HTTP session principal drift detection:
+            // If client sends an existing session id but with a different principal,
+            // reject the request to prevent session hijacking.
+            String mcpSessionId = request.getHeader("Mcp-Session-Id");
+            if (mcpSessionId != null && !mcpSessionId.isBlank()) {
+                if (!sessionBindingStore.matches(mcpSessionId, context)) {
+                    throw new AccessException.Forbidden(
+                        "MCP session principal does not match the authenticated identity"
+                    );
                 }
             }
+
             AccessRequestContextHolder.set(context);
-            if (path != null && path.startsWith("/sse")) {
-                request.setAttribute(AccessRequestContext.class.getName(), context);
+            filterChain.doFilter(request, wrappedResponse);
+
+            // Bind server-allocated sessionId to the authenticated principal
+            // so that subsequent requests with a different principal are rejected.
+            String responseSessionId = wrappedResponse.getHeader("Mcp-Session-Id");
+            if (responseSessionId != null) {
+                sessionBindingStore.bind(responseSessionId, context);
             }
-            filterChain.doFilter(request, response);
         } catch (AccessException error) {
             log.warn(
                 "ACCESS_AUDIT event=auth_failure method={} path={} status_code={} error_code={} error_message={} api_key_id={} agent_instance_id={}",
@@ -92,6 +101,7 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
             writeError(response, error);
         } finally {
             AccessRequestContextHolder.clear();
+            wrappedResponse.copyBodyToResponse();
         }
     }
 

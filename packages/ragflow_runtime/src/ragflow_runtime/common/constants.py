@@ -164,11 +164,10 @@ VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, 
 
 
 class MCPServerType(StrEnum):
-    SSE = "sse"
     STREAMABLE_HTTP = "streamable-http"
 
 
-VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
+VALID_MCP_SERVER_TYPES = {MCPServerType.STREAMABLE_HTTP}
 
 
 class Storage(Enum):

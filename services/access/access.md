@@ -79,10 +79,9 @@
 
 ### 4.2 MCP
 
-当前 transport 是 Spring AI WebMVC SSE：
+当前 transport 是 Spring AI WebMVC Streamable HTTP：
 
-- `GET /sse`
-- `POST /mcp/messages?sessionId=...`
+- `POST /mcp`
 
 当前 tool：
 
@@ -100,8 +99,8 @@ tool 参数：
 
 - MCP tool 当前一次只查一个 `knowledge_scope`
 - `McpKnowledgeScopeMapper` 会把它转成单元素 `collection_scope`
-- `McpSessionPrincipalBindingStore` 会把 session 绑定到 `api_key + agent_instance_id`
-- 如果同一 session 中途换了实例身份，会拒绝请求
+- 每个 MCP 请求独立携带 `X-API-Key` + `X-Agent-Instance-Id`，由 `AccessRequestContextFilter` 统一认证
+- Streamable HTTP 使用 `Mcp-Session-Id` header 维护会话状态
 
 协议版本说明：
 
