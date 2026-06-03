@@ -87,6 +87,14 @@ class IndexingRepository(Protocol):
 
     def get_parse_snapshot(self, parse_snapshot_id: str) -> ParseSnapshotRecord: ...
 
+    def list_parse_snapshot_chunks(
+        self,
+        parse_snapshot_id: str,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[dict[str, object]], int]: ...
+
     def stable_chunk_hash(self, content: str) -> str: ...
 
     def list_chunk_revisions_by_doc(

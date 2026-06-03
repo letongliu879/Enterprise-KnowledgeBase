@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -29,6 +29,7 @@ interface ChunkEditorWorkbenchProps {
   mode: "pre-publish" | "post-publish";
   title?: string;
   description?: string;
+  focusEvidenceId?: string | null;
 }
 
 export function ChunkEditorWorkbench({
@@ -36,11 +37,13 @@ export function ChunkEditorWorkbench({
   mode,
   title = "Chunk editor",
   description = "Edit parsed chunks.",
+  focusEvidenceId,
 }: ChunkEditorWorkbenchProps) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [editingChunk, setEditingChunk] = useState<ChunkView | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const activeQuery = searchQuery.trim() || focusEvidenceId || "";
 
   const {
     data: chunksData,
@@ -55,8 +58,8 @@ export function ChunkEditorWorkbench({
 
   const filteredChunks =
     chunksData?.items.filter((chunk) => {
-      if (!searchQuery.trim()) return true;
-      const query = searchQuery.toLowerCase();
+      if (!activeQuery) return true;
+      const query = activeQuery.toLowerCase();
       return (
         String(chunk.content || "").toLowerCase().includes(query) ||
         String(chunk.evidence_id || "").toLowerCase().includes(query)
@@ -157,6 +160,7 @@ export function ChunkEditorWorkbench({
               key={chunk.evidence_id}
               chunk={chunk}
               onEdit={() => handleEdit(chunk)}
+              highlighted={focusEvidenceId === chunk.evidence_id}
             />
           ))}
         </div>
@@ -180,19 +184,31 @@ export function ChunkEditorWorkbench({
 function ChunkCard({
   chunk,
   onEdit,
+  highlighted = false,
 }: {
   chunk: ChunkView;
   onEdit: () => void;
+  highlighted?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const content = chunk.content || "";
   const previewText =
     content.length > 300 && !expanded
       ? content.slice(0, 300) + "..."
       : content;
 
+  useEffect(() => {
+    if (highlighted) {
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlighted]);
+
   return (
-    <Card className="rounded-2xl">
+    <Card
+      ref={cardRef}
+      className={`rounded-2xl ${highlighted ? "ring-2 ring-sky-500 ring-offset-2" : ""}`}
+    >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1">

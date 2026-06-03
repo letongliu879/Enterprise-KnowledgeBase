@@ -169,36 +169,27 @@ export interface TicketDecisionResult {
 
 export interface AgentReviewView {
   ticket_id: string;
-  decision: "PASS" | "FAIL" | "REVIEW" | "DEGRADED";
-  quality_findings: Array<{
+  decision?: string | null;
+  source_file_id?: string | null;
+  parse_snapshot_id?: string | null;
+  findings: Array<{
+    finding_id: string;
+    severity: "critical" | "high" | "medium" | "low" | "info";
     category: string;
-    severity: "critical" | "major" | "minor" | "info";
-    message: string;
-    evidence_anchor?: string;
-  }>;
-  risk_flags: Array<{
-    flag_type: string;
-    description: string;
+    problem_summary: string;
+    source_quote?: string;
+    evidence_id?: string;
+    doc_id?: string;
+    source_file_id?: string;
+    parse_snapshot_id?: string;
+    page_from?: number;
+    page_to?: number;
+    state: "open" | "resolved";
     confidence?: number;
   }>;
-  evidence_anchors: Array<{
-    anchor_id: string;
-    doc_id: string;
-    evidence_id: string;
-    content?: string;
-    page_span?: { page_from: number; page_to: number };
-  }>;
-  model?: string;
-  version?: string;
-  prompt_hash?: string;
-  suggested_fixes: Array<{
-    fix_type: string;
-    description: string;
-    target_evidence_id?: string;
-  }>;
-  degraded_reason?: string | null;
-  failure_reason?: string | null;
-  created_at: string;
+  matched_count?: number;
+  unmatched_count?: number;
+  source?: "projection" | "approval";
 }
 
 export interface ChunkView {

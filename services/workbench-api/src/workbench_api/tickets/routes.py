@@ -21,10 +21,64 @@ def _get_service() -> TicketService:
     return TicketService(ApprovalClient())
 
 
+def _normalize_projection_finding(finding) -> dict:
+    return {
+        "finding_id": finding.finding_id,
+        "severity": finding.severity or "medium",
+        "category": finding.category or "",
+        "problem_summary": finding.problem_summary or "",
+        "source_quote": finding.source_quote,
+        "evidence_id": finding.evidence_id,
+        "doc_id": finding.doc_id,
+        "source_file_id": finding.source_file_id,
+        "parse_snapshot_id": finding.parse_snapshot_id,
+        "page_from": finding.page_from,
+        "page_to": finding.page_to,
+        "state": finding.state,
+        "confidence": finding.confidence,
+    }
+
+
+def _normalize_approval_agent_review(result: dict) -> dict:
+    anchored_findings = result.get("anchored_findings")
+    if not isinstance(anchored_findings, list):
+        anchored_findings = result.get("findings", [])
+    findings = []
+    for finding in anchored_findings if isinstance(anchored_findings, list) else []:
+        if not isinstance(finding, dict):
+            continue
+        findings.append({
+            "finding_id": finding.get("finding_id"),
+            "severity": finding.get("severity", "medium"),
+            "category": finding.get("category", ""),
+            "problem_summary": finding.get("problem_summary", ""),
+            "source_quote": finding.get("source_quote"),
+            "evidence_id": finding.get("evidence_id"),
+            "doc_id": finding.get("doc_id"),
+            "source_file_id": finding.get("source_file_id", result.get("source_file_id")),
+            "parse_snapshot_id": finding.get("parse_snapshot_id", result.get("parse_snapshot_id")),
+            "page_from": finding.get("page_from"),
+            "page_to": finding.get("page_to"),
+            "state": finding.get("state", "open"),
+            "confidence": finding.get("confidence"),
+        })
+    matched_count = sum(1 for finding in findings if finding.get("evidence_id"))
+    return {
+        "ticket_id": result.get("ticket_id", ""),
+        "decision": result.get("decision"),
+        "source_file_id": result.get("source_file_id"),
+        "parse_snapshot_id": result.get("parse_snapshot_id"),
+        "findings": findings,
+        "matched_count": matched_count,
+        "unmatched_count": max(0, len(findings) - matched_count),
+    }
+
+
 @router.get("")
 async def list_tickets(
     collection_id: str | None = None,
     state: str | None = None,
+    status: str | None = None,
     priority: str | None = None,
     assignee: str | None = None,
     page: int = Query(1, ge=1),
@@ -47,7 +101,7 @@ async def list_tickets(
     items, total = repo.list(
         tenant_id=user.tenant_id,
         collection_ids=collection_ids,
-        state=state,
+        state=status or state,
         offset=offset,
         limit=page_size,
     )
@@ -57,7 +111,7 @@ async def list_tickets(
             {
                 "ticket_id": item.ticket_id,
                 "collection_id": item.collection_id,
-                "state": item.state,
+                "status": item.state,
                 "priority": item.priority,
                 "assignee_user_id": item.assignee_user_id,
                 "title": item.title,
@@ -96,7 +150,7 @@ async def get_ticket(
         return {
             "ticket_id": projection.ticket_id,
             "collection_id": projection.collection_id,
-            "state": projection.state,
+            "status": projection.state,
             "priority": projection.priority,
             "assignee_user_id": projection.assignee_user_id,
             "title": projection.title,
@@ -109,6 +163,7 @@ async def get_ticket(
             "agent_risk_level": projection.agent_risk_level,
             "agent_finding_count": projection.agent_finding_count,
             "agent_blocking_finding_count": projection.agent_blocking_finding_count,
+            "tenant_id": projection.tenant_id,
             "created_at": projection.created_at.isoformat() if projection.created_at else None,
             "updated_at": projection.updated_at.isoformat() if projection.updated_at else None,
             "projection_updated_at": projection.projection_updated_at.isoformat() if projection.projection_updated_at else None,
@@ -144,30 +199,25 @@ async def get_agent_review(
     from ..projections.repository import AgentReviewProjectionRepository
 
     repo = AgentReviewProjectionRepository(db)
+    ticket_projection = TicketProjectionRepository(db).get(ticket_id)
+    if ticket_projection and not user.can_access_collection(ticket_projection.collection_id):
+        raise not_found("Ticket not found")
     findings = repo.list_by_ticket(ticket_id, user.tenant_id)
 
     if findings:
+        matched_count = sum(1 for finding in findings if finding.evidence_id)
         return {
             "ticket_id": ticket_id,
-            "findings": [
-                {
-                    "finding_id": f.finding_id,
-                    "severity": f.severity,
-                    "category": f.category,
-                    "problem_summary": f.problem_summary,
-                    "evidence_id": f.evidence_id,
-                    "doc_id": f.doc_id,
-                    "page_from": f.page_from,
-                    "page_to": f.page_to,
-                    "state": f.state,
-                    "confidence": f.confidence,
-                }
-                for f in findings
-            ],
+            "decision": ticket_projection.agent_decision if ticket_projection else None,
+            "source_file_id": ticket_projection.source_file_id if ticket_projection else findings[0].source_file_id,
+            "parse_snapshot_id": ticket_projection.parse_snapshot_id if ticket_projection else findings[0].parse_snapshot_id,
+            "findings": [_normalize_projection_finding(finding) for finding in findings],
+            "matched_count": matched_count,
+            "unmatched_count": max(0, len(findings) - matched_count),
             "source": "projection",
         }
 
     # Fallback to approval service
     service = _get_service()
     result = await service.get_agent_review(ticket_id, user)
-    return {**result, "source": "approval"}
+    return {**_normalize_approval_agent_review(result), "source": "approval"}

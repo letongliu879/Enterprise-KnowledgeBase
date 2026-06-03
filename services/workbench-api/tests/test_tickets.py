@@ -61,7 +61,7 @@ class TestTicketsProjection:
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["ticket_id"] == "ticket_123"
-        assert data["items"][0]["state"] == "pending"
+        assert data["items"][0]["status"] == "pending"
 
     def test_list_tickets_filters_inaccessible_collections(self, client: TestClient, db_session: Session):
         self._create_ticket_projection(db_session, "ticket_123", collection_id="col_default")
@@ -273,6 +273,9 @@ class TestAgentReviewProjection:
                 "severity": "high",
                 "category": "factual_error",
                 "problem_summary": "Test finding",
+                "source_quote": "Quoted source text",
+                "parse_snapshot_id": "ps_123",
+                "source_file_id": "sf_123",
                 "confidence": 0.95,
                 "state": "open",
             },
@@ -292,6 +295,8 @@ class TestAgentReviewProjection:
         assert data["source"] == "projection"
         assert len(data["findings"]) == 1
         assert data["findings"][0]["finding_id"] == "finding_001"
+        assert data["findings"][0]["source_quote"] == "Quoted source text"
+        assert data["parse_snapshot_id"] == "ps_123"
 
     def test_get_agent_review_fallback(self, client: TestClient, reviewer_token: str):
         """When no projection findings exist, fallback to approval service."""
@@ -303,7 +308,21 @@ class TestAgentReviewProjection:
                 }
             )
             respx.get("http://localhost:8004/internal/tickets/ticket_123/agent-review").respond(
-                200, json={"findings": [], "status": "completed"}
+                200, json={
+                    "ticket_id": "ticket_123",
+                    "decision": "REQUEST_CHANGES",
+                    "source_file_id": "sf_123",
+                    "parse_snapshot_id": "ps_123",
+                    "anchored_findings": [
+                        {
+                            "finding_id": "finding_001",
+                            "severity": "high",
+                            "problem_summary": "Needs correction",
+                            "source_quote": "Quoted source text",
+                            "confidence": 0.92,
+                        }
+                    ],
+                }
             )
             resp = client.get(
                 "/workbench/tickets/ticket_123/agent-review",
@@ -312,3 +331,5 @@ class TestAgentReviewProjection:
             assert resp.status_code == 200
             data = resp.json()
             assert data["source"] == "approval"
+            assert data["decision"] == "REQUEST_CHANGES"
+            assert data["findings"][0]["source_quote"] == "Quoted source text"

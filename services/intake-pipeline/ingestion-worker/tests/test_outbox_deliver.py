@@ -208,6 +208,49 @@ class TestOutboxDeliverCallbacks:
         finally:
             session.close()
 
+    def test_approval_pending_forwards_event_to_workbench(self):
+        deliver = make_deliver_callback()
+        session = get_session()
+        try:
+            from ingestion_worker.orchestrator import OrchestratorService
+
+            job = OrchestratorService(session).create_intake_job("src-appr-fwd", "obj-appr-fwd", "col-1")
+            session.commit()
+        finally:
+            session.close()
+
+        evt = self._make_event(
+            EventType.APPROVAL_PENDING,
+            aggregate_id=job.intake_job_id,
+            payload={
+                "intake_job_id": job.intake_job_id,
+                "ticket_id": "t-pending",
+                "tenant_id": "tenant_acme",
+                "collection_id": "col-1",
+                "state": "pending",
+                "ticket_event_version": 1,
+            },
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "WORKBENCH_API_BASE_URL": "http://workbench:18083",
+                "WORKBENCH_EVENT_KEY_APPROVAL": "approval-secret",
+            },
+            clear=False,
+        ):
+            with patch("httpx.post") as mock_post:
+                mock_post.return_value.status_code = 200
+                mock_post.return_value.text = "ok"
+                mock_post.return_value.json.return_value = {"errors": 0}
+                assert deliver(evt) is True
+                assert mock_post.call_args.args[0] == "http://workbench:18083/internal/events/approval"
+                assert mock_post.call_args.kwargs["headers"]["X-Service-Key"] == "approval-secret"
+                forwarded = mock_post.call_args.kwargs["json"][0]
+                assert forwarded["event_type"] == EventType.APPROVAL_PENDING.value
+                assert forwarded["aggregate_version"] == 1
+                assert forwarded["payload"]["ticket_id"] == "t-pending"
+
     def test_stage_completed_conversion_marks_consumed_and_queues_review(self):
         deliver = make_deliver_callback()
         session = get_session()

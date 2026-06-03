@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,7 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { workbenchApi } from "@/lib/api/client";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
-import type { Finding, FindingSeverity } from "@/features/workbench/types/finding";
+import type { Finding } from "@/features/workbench/types/finding";
 import {
   formatFailureStageLabel,
   formatNextActionLabel,
@@ -85,7 +85,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
   const [decisionReason, setDecisionReason] = useState("");
   const [activeTab, setActiveTab] = useState("source");
   const [searchText, setSearchText] = useState("");
-  const docViewerRef = useRef<{ searchAndHighlight?: (text: string) => void }>({});
+  const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
 
   const {
     data: ticket,
@@ -124,7 +124,6 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
 
   const {
     data: chunks,
-    isLoading: chunksLoading,
     error: chunksError,
   } = useQuery({
     queryKey: ["review-viewer-chunks", parseSnapshotId],
@@ -172,58 +171,18 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
     [chunkEdits?.items.length]
   );
 
-  // Convert legacy AgentReviewView to new Finding format
-  const convertAgentReviewToFindings = (review: typeof agentReview): Finding[] => {
-    if (!review) return [];
-    
-    const findings: Finding[] = [];
-
-    // Convert quality_findings
-    review.quality_findings?.forEach((item, index) => {
-      findings.push({
-        finding_id: `qf_${index}`,
-        severity: (item.severity as FindingSeverity) || "medium",
-        category: item.category,
-        problem_summary: item.message,
-        source_quote: item.evidence_anchor,
-        state: "open",
-      });
-    });
-
-    // Convert risk_flags
-    review.risk_flags?.forEach((item, index) => {
-      findings.push({
-        finding_id: `rf_${index}`,
-        severity: "high",
-        category: item.flag_type,
-        problem_summary: item.description,
-        confidence: item.confidence,
-        state: "open",
-      });
-    });
-
-    // Convert suggested_fixes
-    review.suggested_fixes?.forEach((item, index) => {
-      findings.push({
-        finding_id: `sf_${index}`,
-        severity: "medium",
-        category: item.fix_type,
-        problem_summary: item.description,
-        evidence_id: item.target_evidence_id,
-        state: "open",
-      });
-    });
-
-    return findings;
-  };
+  const reviewFindings = useMemo<Finding[]>(
+    () => agentReview?.findings ?? [],
+    [agentReview?.findings]
+  );
 
   const reviewSummary = useMemo(
     () => ({
-      findings: agentReview?.quality_findings.length ?? 0,
-      risks: agentReview?.risk_flags.length ?? 0,
-      fixes: agentReview?.suggested_fixes.length ?? 0,
+      findings: reviewFindings.length,
+      risks: reviewFindings.filter((item) => ["critical", "high"].includes(item.severity)).length,
+      fixes: reviewFindings.filter((item) => Boolean(item.evidence_id)).length,
     }),
-    [agentReview]
+    [reviewFindings]
   );
 
   const systemActionLabel = useMemo(() => {
@@ -467,6 +426,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                   mode="pre-publish"
                   title="Draft corrections"
                   description="Tighten chunk wording, restore broken structure, and submit governed draft edits before the human decision."
+                  focusEvidenceId={focusedEvidenceId}
                 />
               )}
             </TabsContent>
@@ -487,14 +447,15 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                 <Skeleton className="h-44 rounded-2xl" />
               ) : (
                 <AgentReviewPanel
-                  findings={convertAgentReviewToFindings(agentReview)}
+                  findings={reviewFindings}
                   onSearchInDocument={(quote) => {
+                    setFocusedEvidenceId(null);
                     setSearchText(quote);
                     setActiveTab("source");
                   }}
                   onJumpToChunk={(evidenceId) => {
+                    setFocusedEvidenceId(evidenceId);
                     setActiveTab("drafts");
-                    toast.info(`Navigate to chunk ${evidenceId}`);
                   }}
                 />
               )}

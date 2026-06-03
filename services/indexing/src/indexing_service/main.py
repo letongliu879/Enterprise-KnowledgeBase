@@ -41,7 +41,27 @@ def create_parse_preview(command: ParsePreviewRequestedCommand) -> dict[str, obj
 
 @app.get("/internal/parse-snapshots/{parse_snapshot_id}")
 def get_parse_snapshot(parse_snapshot_id: str) -> dict[str, object]:
-    return repository.get_parse_snapshot(parse_snapshot_id).model_dump(mode="json")
+    try:
+        return repository.get_parse_snapshot(parse_snapshot_id).model_dump(mode="json")
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@app.get("/internal/parse-snapshots/{parse_snapshot_id}/chunks")
+def get_parse_snapshot_chunks(
+    parse_snapshot_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+) -> dict[str, object]:
+    try:
+        items, total = repository.list_parse_snapshot_chunks(
+            parse_snapshot_id,
+            page=page,
+            page_size=page_size,
+        )
+        return {"items": items, "total": total}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @app.get("/internal/chunks")

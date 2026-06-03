@@ -17,7 +17,7 @@ class ApprovalClient:
         if collection_id:
             params["collection_id"] = collection_id
         if status:
-            params["status"] = status
+            params["state"] = status
         return await self._get(url, params)
 
     async def get_ticket(self, ticket_id: str) -> dict:

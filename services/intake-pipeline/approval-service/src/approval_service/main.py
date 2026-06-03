@@ -10,7 +10,6 @@ This service owns:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -19,6 +18,7 @@ from reality_rag_contracts import HealthResponse, PublishStatus, StageName
 from reality_rag_persistence.database import get_session
 
 from .approval_domain import ApprovalService, system_decide
+from .review_artifacts import load_review_artifact_payload, utc_now_iso
 
 app = FastAPI(
     title="Approval Service",
@@ -369,63 +369,10 @@ def _ticket_to_view(ticket: ApprovalTicket, *, session=None) -> ApprovalTicketVi
 
 
 def _utc_now() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_iso()
 
 
-def _latest_stage_result(session, intake_job_id: str, stage_name: StageName):
-    from reality_rag_persistence.models import StageResultModel
-
-    return (
-        session.query(StageResultModel)
-        .filter(StageResultModel.intake_job_id == intake_job_id)
-        .filter(StageResultModel.stage_name == stage_name.value)
-        .order_by(StageResultModel.created_at.desc())
-        .first()
-    )
-
-
-def _load_review_artifact_payload(session, intake_job_id: str) -> dict | None:
-    row = _latest_stage_result(session, intake_job_id, StageName.AGENT_REVIEW)
-    if row is None:
-        return None
-
-    if row.result_ref:
-        path = Path(row.result_ref)
-        if path.exists() and path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
-
-    review_summary = row.summary_json or {}
-    review_context = (
-        review_summary.get("review_context", {})
-        if isinstance(review_summary.get("review_context"), dict)
-        else {}
-    )
-    artifact_metadata = (
-        review_context.get("artifact_metadata", {})
-        if isinstance(review_context.get("artifact_metadata"), dict)
-        else {}
-    )
-    agent_review = (
-        review_summary.get("agent_review", {})
-        if isinstance(review_summary.get("agent_review"), dict)
-        else {}
-    )
-    return {
-        "review_run_id": row.stage_attempt_id,
-        "intake_job_id": intake_job_id,
-        "source_file_id": artifact_metadata.get("source_file_id"),
-        "parse_snapshot_id": artifact_metadata.get("parse_snapshot_id"),
-        "artifact_version": "v1",
-        "result_hash": row.result_hash,
-        "review_model": artifact_metadata.get("review_model", ""),
-        "prompt_version": artifact_metadata.get("prompt_version", ""),
-        "artifact_schema_version": artifact_metadata.get("artifact_schema_version", "v2"),
-        "generated_at": artifact_metadata.get("generated_at", row.created_at.isoformat() if row.created_at else _utc_now()),
-        "agent_review": agent_review,
-        "review_context": review_context,
-        "agent_review_ref": row.result_ref,
-    }
+_load_review_artifact_payload = load_review_artifact_payload
 
 
 def _build_agent_review_artifact(ticket_id: str, payload: dict) -> AgentReviewArtifact:

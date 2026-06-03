@@ -36,6 +36,7 @@ from reality_rag_contracts import (
     VersionDecision,
 )
 from reality_rag_persistence import EventPublisher
+from .review_artifacts import build_ticket_event_payload
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -117,6 +118,7 @@ class ApprovalService:
             ApprovalAuditLogRepository,
         )
 
+        self._session = session
         self._ticket_repo = ApprovalTicketRepository(session)
         self._audit_repo = ApprovalAuditLogRepository(session)
         self._event_publisher = EventPublisher(session)
@@ -169,20 +171,11 @@ class ApprovalService:
             after_state=ApprovalTicketState.SYSTEM_DECIDED.value,
             reason="满足自动入库策略",
         )
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_DECIDED,
-            aggregate_type="intake_job",
-            aggregate_id=intake_job_id,
-            payload={
-                "intake_job_id": intake_job_id,
-                "ticket_id": created_ticket.ticket_id,
-                "decision": "approve",
-                "decision_actor": "system",
-                "auto_approved": True,
-                "final_doc_id": final_doc_id,
-                "confirmed_tags": confirmed_tags or [],
-            },
-            idempotency_key=f"{intake_job_id}:approval_decided:{created_ticket.ticket_id}",
+        self._publish_decided_event(
+            created_ticket,
+            auto_approved=True,
+            manual_override=False,
+            ticket_event_version=1,
         )
         return created_ticket
 
@@ -219,19 +212,12 @@ class ApprovalService:
             after_state=ApprovalTicketState.SYSTEM_DECIDED.value,
             reason=rejection_reason,
         )
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_DECIDED,
-            aggregate_type="intake_job",
-            aggregate_id=intake_job_id,
-            payload={
-                "intake_job_id": intake_job_id,
-                "ticket_id": created_ticket.ticket_id,
-                "decision": "reject",
-                "decision_actor": "system",
-                "auto_approved": True,
-                "reason": rejection_reason,
-            },
-            idempotency_key=f"{intake_job_id}:approval_decided:{created_ticket.ticket_id}",
+        self._publish_decided_event(
+            created_ticket,
+            auto_approved=True,
+            manual_override=False,
+            ticket_event_version=1,
+            extra={"reason": rejection_reason},
         )
         return created_ticket
 
@@ -261,21 +247,7 @@ class ApprovalService:
             created_at=datetime.now(timezone.utc),
         )
         created = self._ticket_repo.create(ticket)
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_PENDING,
-            aggregate_type="intake_job",
-            aggregate_id=intake_job_id,
-            payload={
-                "intake_job_id": intake_job_id,
-                "ticket_id": created.ticket_id,
-                "approval_round": created.approval_round,
-                "state": ApprovalTicketState.PENDING.value,
-                "expires_at": (
-                    created.expires_at.isoformat() if created.expires_at else None
-                ),
-            },
-            idempotency_key=f"{intake_job_id}:approval_pending:{created.ticket_id}",
-        )
+        self._publish_pending_event(created)
         return created
 
     def approve(
@@ -321,21 +293,11 @@ class ApprovalService:
             after_state=ApprovalTicketState.APPROVED.value,
             reason=None,
         )
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_DECIDED,
-            aggregate_type="intake_job",
-            aggregate_id=updated.intake_job_id,
-            payload={
-                "intake_job_id": updated.intake_job_id,
-                "ticket_id": updated.ticket_id,
-                "decision": "approve",
-                "decision_actor": actor_id,
-                "auto_approved": False,
-                "manual_override": True,
-                "final_doc_id": updated.final_doc_id,
-                "confirmed_tags": updated.confirmed_tags or [],
-            },
-            idempotency_key=f"{updated.intake_job_id}:approval_decided:{updated.ticket_id}",
+        self._publish_decided_event(
+            updated,
+            auto_approved=False,
+            manual_override=True,
+            ticket_event_version=2,
         )
         return updated
 
@@ -368,20 +330,12 @@ class ApprovalService:
             after_state=ApprovalTicketState.REJECTED.value,
             reason=rejection_reason,
         )
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_DECIDED,
-            aggregate_type="intake_job",
-            aggregate_id=updated.intake_job_id,
-            payload={
-                "intake_job_id": updated.intake_job_id,
-                "ticket_id": updated.ticket_id,
-                "decision": "reject",
-                "decision_actor": actor_id,
-                "auto_approved": False,
-                "manual_override": True,
-                "reason": rejection_reason,
-            },
-            idempotency_key=f"{updated.intake_job_id}:approval_decided:{updated.ticket_id}",
+        self._publish_decided_event(
+            updated,
+            auto_approved=False,
+            manual_override=True,
+            ticket_event_version=2,
+            extra={"reason": rejection_reason},
         )
         return updated
 
@@ -433,38 +387,18 @@ class ApprovalService:
             created_at=datetime.now(timezone.utc),
         )
         created_new = self._ticket_repo.create(new_ticket)
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_DECIDED,
-            aggregate_type="intake_job",
-            aggregate_id=updated.intake_job_id,
-            payload={
-                "intake_job_id": updated.intake_job_id,
-                "ticket_id": updated.ticket_id,
-                "decision": "return",
-                "decision_actor": actor_id,
-                "auto_approved": False,
-                "manual_override": True,
+        self._publish_decided_event(
+            updated,
+            auto_approved=False,
+            manual_override=True,
+            ticket_event_version=2,
+            extra={
                 "return_target_stage": return_target_stage,
                 "return_reason": return_reason,
                 "new_ticket_id": created_new.ticket_id,
             },
-            idempotency_key=f"{updated.intake_job_id}:approval_decided:{updated.ticket_id}",
         )
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_PENDING,
-            aggregate_type="intake_job",
-            aggregate_id=created_new.intake_job_id,
-            payload={
-                "intake_job_id": created_new.intake_job_id,
-                "ticket_id": created_new.ticket_id,
-                "approval_round": created_new.approval_round,
-                "state": ApprovalTicketState.PENDING.value,
-                "expires_at": (
-                    created_new.expires_at.isoformat() if created_new.expires_at else None
-                ),
-            },
-            idempotency_key=f"{created_new.intake_job_id}:approval_pending:{created_new.ticket_id}",
-        )
+        self._publish_pending_event(created_new)
         return updated, created_new
 
     def expire(
@@ -493,19 +427,11 @@ class ApprovalService:
             after_state=ApprovalTicketState.EXPIRED.value,
             reason="????",
         )
-        self._event_publisher.publish(
-            event_type=EventType.APPROVAL_DECIDED,
-            aggregate_type="intake_job",
-            aggregate_id=updated.intake_job_id,
-            payload={
-                "intake_job_id": updated.intake_job_id,
-                "ticket_id": updated.ticket_id,
-                "decision": "expire",
-                "decision_actor": "system",
-                "auto_approved": False,
-                "manual_override": False,
-            },
-            idempotency_key=f"{updated.intake_job_id}:approval_decided:{updated.ticket_id}",
+        self._publish_decided_event(
+            updated,
+            auto_approved=False,
+            manual_override=False,
+            ticket_event_version=2,
         )
         return updated
 
@@ -568,6 +494,63 @@ class ApprovalService:
             reason=reason,
             payload_hash=payload_hash,
         )
+
+    def _publish_pending_event(self, ticket: ApprovalTicket) -> None:
+        payload = self._base_ticket_event_payload(ticket)
+        payload.update({
+            "approval_round": ticket.approval_round,
+            "expires_at": ticket.expires_at.isoformat() if ticket.expires_at else None,
+            "ticket_event_version": 1,
+        })
+        self._event_publisher.publish(
+            event_type=EventType.APPROVAL_PENDING,
+            aggregate_type="intake_job",
+            aggregate_id=ticket.intake_job_id,
+            payload=payload,
+            idempotency_key=f"{ticket.intake_job_id}:approval_pending:{ticket.ticket_id}",
+        )
+
+    def _publish_decided_event(
+        self,
+        ticket: ApprovalTicket,
+        *,
+        auto_approved: bool,
+        manual_override: bool,
+        ticket_event_version: int,
+        extra: dict[str, object] | None = None,
+    ) -> None:
+        payload = self._base_ticket_event_payload(ticket)
+        payload.update({
+            "auto_approved": auto_approved,
+            "manual_override": manual_override,
+            "ticket_event_version": ticket_event_version,
+        })
+        if extra:
+            payload.update(extra)
+        self._event_publisher.publish(
+            event_type=EventType.APPROVAL_DECIDED,
+            aggregate_type="intake_job",
+            aggregate_id=ticket.intake_job_id,
+            payload=payload,
+            idempotency_key=f"{ticket.intake_job_id}:approval_decided:{ticket.ticket_id}",
+        )
+
+    def _base_ticket_event_payload(self, ticket: ApprovalTicket) -> dict[str, object]:
+        payload = build_ticket_event_payload(self._session, ticket)
+        payload.update({
+            "intake_job_id": ticket.intake_job_id,
+            "ticket_id": ticket.ticket_id,
+            "approval_round": ticket.approval_round,
+            "state": ticket.state.value,
+            "decision": ticket.decision,
+            "decision_actor": ticket.decision_actor,
+            "decision_reason": ticket.decision_reason,
+            "final_doc_id": ticket.final_doc_id,
+            "confirmed_tags": ticket.confirmed_tags or [],
+            "return_target_stage": ticket.return_target_stage,
+            "return_reason": ticket.return_reason,
+        })
+        return payload
 
 
 # ------------------------------------------------------------------

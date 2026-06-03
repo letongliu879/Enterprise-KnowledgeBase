@@ -254,6 +254,17 @@ class AgentReviewProjectionRepository:
             .all()
         )
 
+    def list_unmatched(self, limit: int = 100) -> list[WorkbenchAgentReviewProjectionModel]:
+        return (
+            self._session.query(WorkbenchAgentReviewProjectionModel)
+            .filter(WorkbenchAgentReviewProjectionModel.evidence_id.is_(None))
+            .filter(WorkbenchAgentReviewProjectionModel.parse_snapshot_id.is_not(None))
+            .filter(WorkbenchAgentReviewProjectionModel.source_quote.is_not(None))
+            .order_by(WorkbenchAgentReviewProjectionModel.projection_updated_at.asc())
+            .limit(limit)
+            .all()
+        )
+
     def upsert_with_version_check(self, row: dict[str, Any]) -> bool:
         finding_id = row.get("finding_id")
         existing = self.get(finding_id) if finding_id else None
@@ -267,6 +278,29 @@ class AgentReviewProjectionRepository:
         for key, value in row.items():
             if hasattr(existing, key):
                 setattr(existing, key, value)
+        existing.projection_updated_at = _utcnow()
+        return True
+
+    def update_match_with_version_check(
+        self,
+        finding_id: str,
+        *,
+        expected_version: int,
+        evidence_id: str,
+        page_from: int | None,
+        page_to: int | None,
+        chunk_quote: str | None,
+        source_anchor_json: dict[str, Any] | None,
+    ) -> bool:
+        existing = self.get(finding_id)
+        if existing is None or existing.version != expected_version:
+            return False
+        existing.evidence_id = evidence_id
+        existing.page_from = page_from
+        existing.page_to = page_to
+        existing.chunk_quote = chunk_quote
+        existing.source_anchor_json = source_anchor_json
+        existing.version = expected_version + 1
         existing.projection_updated_at = _utcnow()
         return True
 

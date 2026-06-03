@@ -43,7 +43,7 @@ class TicketService:
                 items.append(TicketItem(
                     ticket_id=r.get("ticket_id", ""),
                     collection_id=item_collection_id,
-                    status=r.get("status", ""),
+                    status=r.get("status") or r.get("state", ""),
                     doc_id=r.get("doc_id"),
                     source_file_id=r.get("source_file_id"),
                     created_at=r.get("created_at", ""),
@@ -64,10 +64,11 @@ class TicketService:
         return TicketDetail(
             ticket_id=r.get("ticket_id", ""),
             collection_id=collection_id,
-            status=r.get("status", ""),
+            status=r.get("status") or r.get("state", ""),
             doc_id=r.get("doc_id"),
             source_file_id=r.get("source_file_id"),
             parse_snapshot_id=r.get("parse_snapshot_id"),
+            filename=r.get("filename"),
             decision=r.get("decision"),
             decision_reason=r.get("decision_reason"),
             decided_by=r.get("decided_by"),

@@ -21,6 +21,7 @@ from reality_rag_contracts import (
     VersionDecision,
 )
 from reality_rag_persistence.database import create_all, drop_all, override_url_for_testing
+from reality_rag_persistence.models import StageResultModel
 from reality_rag_persistence.repositories.approval_audit_log import ApprovalAuditLogRepository
 from reality_rag_persistence.repositories.approval_tickets import ApprovalTicketRepository
 from reality_rag_persistence.repositories.outbox_events import OutboxEventRepository
@@ -144,6 +145,54 @@ class TestAutoApprove:
             confirmed_tags=["financial_report"],
         )
         assert ticket.confirmed_tags == ["financial_report"]
+
+    def test_pending_event_includes_artifact_findings(self, approval_svc, session):
+        session.add(
+            StageResultModel(
+                stage_result_id="res_review_001",
+                stage_task_id="task_review_001",
+                stage_attempt_id="att_review_001",
+                intake_job_id="ij-1",
+                stage_name="agent_review",
+                idempotency_key="review:key",
+                result_hash="hash:review",
+                summary_json={
+                    "agent_review": {
+                        "decision": "request_changes",
+                        "anchored_findings": [
+                            {
+                                "finding_id": "finding_001",
+                                "source_quote": "Original quote",
+                                "problem_summary": "Needs correction",
+                                "severity": "high",
+                                "confidence": 0.91,
+                            }
+                        ],
+                    },
+                    "review_context": {
+                        "artifact_metadata": {
+                            "source_file_id": "sf_001",
+                            "parse_snapshot_id": "ps_001",
+                        }
+                    },
+                },
+            )
+        )
+        session.flush()
+        ticket = approval_svc.create_pending(
+            intake_job_id="ij-1",
+            preliminary_doc_id="doc-test-v1",
+            collection_id="col-1",
+        )
+        events = OutboxEventRepository(session).list_pending(limit=20)
+        evt = next(
+            e for e in events
+            if e.event_type == EventType.APPROVAL_PENDING.value and e.payload["ticket_id"] == ticket.ticket_id
+        )
+        assert evt.payload["source_file_id"] == "sf_001"
+        assert evt.payload["parse_snapshot_id"] == "ps_001"
+        assert evt.payload["agent_finding_count"] == 1
+        assert evt.payload["findings"][0]["finding_id"] == "finding_001"
 
 
 class TestAutoReject:

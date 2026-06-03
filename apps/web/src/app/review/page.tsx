@@ -30,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { BackendGap } from "@/components/backend-gap";
 import { isBackendGap, isApiError, getErrorMessage } from "@/lib/api/errors";
+import { normalizeStatus } from "@/lib/status";
 
 export default function ReviewQueuePage() {
   const [collectionFilter, setCollectionFilter] = useState("");
@@ -121,7 +122,9 @@ export default function ReviewQueuePage() {
         />
       ) : (
         <div className="space-y-2">
-          {tickets.map((ticket, i) => (
+          {tickets.map((ticket, i) => {
+            const ticketStatus = normalizeStatus(ticket.status);
+            return (
             <motion.div
               key={ticket.ticket_id}
               initial={{ opacity: 0, y: 8 }}
@@ -132,11 +135,11 @@ export default function ReviewQueuePage() {
                 <Card className="hover:border-primary/50 transition-colors cursor-pointer">
                   <CardContent className="p-4 flex items-center gap-4">
                     <div className="shrink-0">
-                      {ticket.status === "PENDING" ? (
+                      {ticketStatus === "pending" ? (
                         <Clock className="h-5 w-5 text-amber-500" />
-                      ) : ticket.status === "APPROVED" ? (
+                      ) : ticketStatus === "approved" ? (
                         <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                      ) : ticket.status === "REJECTED" ? (
+                      ) : ticketStatus === "rejected" ? (
                         <XCircle className="h-5 w-5 text-red-500" />
                       ) : (
                         <AlertCircle className="h-5 w-5 text-muted-foreground" />
@@ -161,9 +164,9 @@ export default function ReviewQueuePage() {
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge
                         variant={
-                          ticket.status === "PENDING"
+                          ticketStatus === "pending"
                             ? "secondary"
-                            : ticket.status === "APPROVED"
+                            : ticketStatus === "approved"
                             ? "default"
                             : "destructive"
                         }
@@ -176,7 +179,8 @@ export default function ReviewQueuePage() {
                 </Card>
               </Link>
             </motion.div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

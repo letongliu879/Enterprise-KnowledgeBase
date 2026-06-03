@@ -695,6 +695,22 @@ class PersistentIndexingRepository:
         self.parse_snapshots_by_id[parse_snapshot_id] = snapshot
         return snapshot
 
+    def list_parse_snapshot_chunks(
+        self,
+        parse_snapshot_id: str,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[dict[str, object]], int]:
+        snapshot = self.get_parse_snapshot(parse_snapshot_id)
+        page = max(1, int(page))
+        page_size = max(1, int(page_size))
+        items = [_snapshot_chunk_view(parse_snapshot_id, snapshot, chunk, ordinal) for ordinal, chunk in enumerate(snapshot.upstream_chunks)]
+        total = len(items)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return items[start:end], total
+
     @staticmethod
     def stable_chunk_hash(content: str) -> str:
         return "sha256:" + sha256(content.encode("utf-8")).hexdigest()
@@ -742,6 +758,58 @@ def _to_contract_job_state(status: IndexBuildStatus):
         IndexBuildStatus.FAILED: IndexBuildJobState.FAILED,
     }
     return mapping[status]
+
+
+def _snapshot_chunk_view(
+    parse_snapshot_id: str,
+    snapshot: ParseSnapshotRecord,
+    chunk: dict[str, object],
+    ordinal: int,
+) -> dict[str, object]:
+    content = str(chunk.get("content_with_weight", "") or "").strip()
+    evidence_id = "psc_" + sha256(
+        f"{parse_snapshot_id}:{ordinal}:{content}".encode("utf-8")
+    ).hexdigest()[:24]
+    page_spans = _snapshot_page_spans(chunk)
+    first_span = page_spans[0] if page_spans else {"page_from": None, "page_to": None}
+    metadata = {
+        key: value
+        for key, value in chunk.items()
+        if key not in {"content_with_weight", "section_path", "page_num_int", "position_int"}
+    }
+    return {
+        "evidence_id": evidence_id,
+        "doc_id": snapshot.source_file_id,
+        "content": content,
+        "section_path": list(chunk.get("section_path", []) or []),
+        "page_spans": page_spans,
+        "page_from": first_span.get("page_from"),
+        "page_to": first_span.get("page_to"),
+        "chunk_type": str(chunk.get("doc_type_kwd", "text") or "text"),
+        "metadata": metadata,
+        "ordinal": ordinal,
+    }
+
+
+def _snapshot_page_spans(chunk: dict[str, object]) -> list[dict[str, int]]:
+    page_numbers = [
+        int(value)
+        for value in list(chunk.get("page_num_int", []) or [])
+        if str(value).strip()
+    ]
+    if page_numbers:
+        return [{"page_from": min(page_numbers), "page_to": max(page_numbers)}]
+    positions = list(chunk.get("position_int", []) or [])
+    extracted_pages: list[int] = []
+    for position in positions:
+        if isinstance(position, (list, tuple)) and len(position) >= 5:
+            try:
+                extracted_pages.append(int(position[4]))
+            except (TypeError, ValueError):
+                continue
+    if extracted_pages:
+        return [{"page_from": min(extracted_pages), "page_to": max(extracted_pages)}]
+    return []
 
 
 def _synthesize_missing_index_versions(

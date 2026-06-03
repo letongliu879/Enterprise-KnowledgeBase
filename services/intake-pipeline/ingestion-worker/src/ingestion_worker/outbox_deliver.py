@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -29,43 +30,114 @@ _APPROVAL_EVENT_CONSUMER_ID = "ingestion-worker:approval-event"
 _PUBLISH_EVENT_CONSUMER_ID = "ingestion-worker:publish-event"
 
 
+def _workbench_events_url(service: str) -> str | None:
+    base_url = str(
+        os.environ.get("WORKBENCH_API_BASE_URL")
+        or os.environ.get("WORKBENCH_BASE_URL")
+        or ""
+    ).rstrip("/")
+    if not base_url:
+        return None
+    return f"{base_url}/internal/events/{service}"
+
+
+def _workbench_service_key(service: str) -> str:
+    return str(os.environ.get(f"WORKBENCH_EVENT_KEY_{service.upper()}", "")).strip()
+
+
+def _serialize_workbench_native_event(event: OutboxEvent, *, aggregate_version: int) -> dict[str, Any]:
+    payload = dict(event.payload_json or {})
+    native_event = event.model_dump(mode="json")
+    native_event["payload"] = payload
+    native_event["tenant_id"] = payload.get("tenant_id", "")
+    native_event["collection_id"] = payload.get("collection_id")
+    native_event["aggregate_version"] = aggregate_version
+    native_event["occurred_at"] = native_event.get("created_at") or native_event.get("sent_at")
+    return native_event
+
+
+def _forward_event_to_workbench(service: str, event: OutboxEvent, *, aggregate_version: int) -> bool:
+    import httpx
+
+    url = _workbench_events_url(service)
+    api_key = _workbench_service_key(service)
+    if not url or not api_key:
+        return True
+
+    native_event = _serialize_workbench_native_event(event, aggregate_version=aggregate_version)
+    try:
+        response = httpx.post(
+            url,
+            json=[native_event],
+            headers={"X-Service-Key": api_key},
+            timeout=30.0,
+        )
+    except Exception:
+        logger.exception("outbox: failed to forward %s event %s to workbench", service, event.event_id)
+        return False
+
+    if response.status_code >= 400:
+        logger.error(
+            "outbox: workbench rejected %s event %s with status %s: %s",
+            service,
+            event.event_id,
+            response.status_code,
+            response.text,
+        )
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    if int(body.get("errors", 0) or 0) > 0:
+        logger.error("outbox: workbench reported projection errors for %s event %s: %s", service, event.event_id, body)
+        return False
+    return True
+
+
 def _deliver_approval_event(event: OutboxEvent) -> bool:
     """Forward approval requests or consume approval outcomes."""
     from .domains.approval_domain import _get_remote_url, ApprovalService
 
     if event.event_type in {EventType.APPROVAL_PENDING.value, EventType.APPROVAL_DECIDED.value}:
+        local_success = False
         session = get_session()
         try:
             idem_repo = ConsumerIdempotencyRepository(session)
             if idem_repo.is_processed(_APPROVAL_EVENT_CONSUMER_ID, event.event_id):
-                return True
-
-            intake_job_id = event.payload_json["intake_job_id"]
-            orch = OrchestratorService(session)
-            from reality_rag_persistence.models import IntakeJobModel
-            row = session.get(IntakeJobModel, intake_job_id)
-            if row is not None:
-                row.ticket_id = event.payload_json.get("ticket_id")
-                row.final_doc_id = event.payload_json.get("final_doc_id")
-
-            if event.event_type == EventType.APPROVAL_PENDING.value:
-                orch.advance_state(intake_job_id, IntakeJobState.AWAITING_APPROVAL)
+                local_success = True
             else:
-                apply_approval_decision(orch, intake_job_id, event.payload_json)
+                intake_job_id = event.payload_json["intake_job_id"]
+                orch = OrchestratorService(session)
+                from reality_rag_persistence.models import IntakeJobModel
+                row = session.get(IntakeJobModel, intake_job_id)
+                if row is not None:
+                    row.ticket_id = event.payload_json.get("ticket_id")
+                    row.final_doc_id = event.payload_json.get("final_doc_id")
 
-            idem_repo.record_processed(
-                _APPROVAL_EVENT_CONSUMER_ID,
-                event.event_id,
-                event.idempotency_key,
-            )
-            session.commit()
-            return True
+                if event.event_type == EventType.APPROVAL_PENDING.value:
+                    orch.advance_state(intake_job_id, IntakeJobState.AWAITING_APPROVAL)
+                else:
+                    apply_approval_decision(orch, intake_job_id, event.payload_json)
+
+                idem_repo.record_processed(
+                    _APPROVAL_EVENT_CONSUMER_ID,
+                    event.event_id,
+                    event.idempotency_key,
+                )
+                session.commit()
+                local_success = True
         except Exception:
             session.rollback()
             logger.exception("outbox: failed to process approval event")
             return False
         finally:
             session.close()
+
+        if not local_success:
+            return False
+        aggregate_version = int(event.payload_json.get("ticket_event_version") or (1 if event.event_type == EventType.APPROVAL_PENDING.value else 2))
+        return _forward_event_to_workbench("approval", event, aggregate_version=aggregate_version)
 
     remote_url = _get_remote_url()
     if remote_url is None:

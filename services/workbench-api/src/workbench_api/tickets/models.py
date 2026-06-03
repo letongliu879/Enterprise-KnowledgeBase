@@ -30,6 +30,7 @@ class TicketDetail(BaseModel):
     doc_id: str | None = None
     source_file_id: str | None = None
     parse_snapshot_id: str | None = None
+    filename: str | None = None
     decision: str | None = None
     decision_reason: str | None = None
     decided_by: str | None = None

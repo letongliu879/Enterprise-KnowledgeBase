@@ -10,7 +10,9 @@ concurrency, and cursor-based pagination to avoid full table scans.
 from __future__ import annotations
 
 import asyncio
+import difflib
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +24,7 @@ from ..downstream_clients import ApprovalClient, IndexingClient, IntakeClient
 from ..downstream_clients.errors import DownstreamError
 from .projector import ProjectionProjector
 from .repository import (
+    AgentReviewProjectionRepository,
     ReconcileRunRepository,
     TaskProjectionRepository,
     TicketProjectionRepository,
@@ -53,6 +56,7 @@ class ProjectionReconciler:
         self._indexing_client = indexing_client
         self._task_repo = TaskProjectionRepository(session)
         self._ticket_repo = TicketProjectionRepository(session)
+        self._agent_review_repo = AgentReviewProjectionRepository(session)
         self._reconcile_repo = ReconcileRunRepository(session)
         self._projector = ProjectionProjector(session)
 
@@ -290,6 +294,118 @@ class ProjectionReconciler:
 
         return {"run_id": run_id, "scanned": scanned, "updated": 0, "failed": 0, "degraded": 0}
 
+    async def reconcile_agent_reviews(self, tenant_id: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """Match unmatched agent-review findings back to parse-snapshot chunks."""
+        run_id = f"rec_{uuid.uuid4().hex[:16]}"
+        self._reconcile_repo.create({
+            "run_id": run_id,
+            "tenant_id": tenant_id,
+            "aggregate_type": "agent_review",
+            "started_at": _utcnow(),
+            "status": "running",
+            "trace_id": run_id,
+        })
+
+        scanned = 0
+        updated = 0
+        failed = 0
+        degraded = 0
+
+        if self._session.bind is not None and self._session.bind.dialect.name == "sqlite":
+            rows = [
+                {"finding_id": finding.finding_id}
+                for finding in self._agent_review_repo.list_unmatched(limit=limit)
+                if not tenant_id or finding.tenant_id == tenant_id
+            ]
+        else:
+            sql = text("""
+                SELECT finding_id, tenant_id, version
+                FROM workbench_agent_review_projection
+                WHERE evidence_id IS NULL
+                  AND parse_snapshot_id IS NOT NULL
+                  AND source_quote IS NOT NULL
+                  {tenant_filter}
+                ORDER BY projection_updated_at ASC
+                LIMIT :limit
+                FOR UPDATE SKIP LOCKED
+            """.format(tenant_filter="AND tenant_id = :tenant_id" if tenant_id else ""))
+            params = {"limit": limit}
+            if tenant_id:
+                params["tenant_id"] = tenant_id
+            rows = self._session.execute(sql, params).mappings().all()
+        for row in rows:
+            from reality_rag_persistence.models import WorkbenchAgentReviewProjectionModel
+
+            finding = self._session.query(WorkbenchAgentReviewProjectionModel).filter_by(
+                finding_id=row["finding_id"]
+            ).first()
+            if finding is None:
+                continue
+            scanned += 1
+            try:
+                chunks = await self._fetch_all_snapshot_chunks(str(finding.parse_snapshot_id or ""))
+                match = _best_chunk_match(str(finding.source_quote or ""), chunks)
+                if match is None:
+                    degraded += 1
+                    continue
+                ok = self._agent_review_repo.update_match_with_version_check(
+                    finding.finding_id,
+                    expected_version=finding.version,
+                    evidence_id=str(match["evidence_id"]),
+                    page_from=match.get("page_from"),
+                    page_to=match.get("page_to"),
+                    chunk_quote=str(match.get("content", "") or ""),
+                    source_anchor_json=_source_anchor_json(match),
+                )
+                if ok:
+                    updated += 1
+                else:
+                    degraded += 1
+            except DownstreamError:
+                failed += 1
+            except Exception:
+                failed += 1
+
+        self._reconcile_repo.update(run_id, {
+            "completed_at": _utcnow(),
+            "scanned_count": scanned,
+            "updated_count": updated,
+            "failed_count": failed,
+            "degraded_count": degraded,
+            "status": "completed",
+        })
+        return {
+            "run_id": run_id,
+            "scanned": scanned,
+            "updated": updated,
+            "failed": failed,
+            "degraded": degraded,
+        }
+
+    async def _fetch_all_snapshot_chunks(self, parse_snapshot_id: str) -> list[dict[str, Any]]:
+        if not parse_snapshot_id:
+            return []
+        page = 1
+        page_size = 200
+        items: list[dict[str, Any]] = []
+        while True:
+            result = await self._indexing_client.get_parse_snapshot_chunks(
+                parse_snapshot_id,
+                page=page,
+                page_size=page_size,
+            )
+            if isinstance(result, list):
+                batch = result
+                total = len(batch)
+            else:
+                batch = list(result.get("items", []))
+                total = int(result.get("total", len(batch)) or len(batch))
+            items.extend(item for item in batch if isinstance(item, dict))
+            if not batch or len(items) >= total:
+                break
+            page += 1
+        return items
+
     async def _rebuild_task_payload(self, row: Any) -> dict[str, Any]:
         """Requery owner services and rebuild a task projection payload."""
         payload: dict[str, Any] = {
@@ -507,7 +623,7 @@ async def reconciliation_loop() -> None:
                     indexing_client=IndexingClient(),
                 )
 
-                for aggregate_type in ["task", "ticket", "document", "chunk"]:
+                for aggregate_type in ["task", "ticket", "document", "chunk", "agent_review"]:
                     try:
                         if aggregate_type == "task":
                             await reconciler.reconcile_tasks(limit=RECONCILE_BATCH_SIZE)
@@ -517,6 +633,8 @@ async def reconciliation_loop() -> None:
                             await reconciler.reconcile_documents(limit=RECONCILE_BATCH_SIZE)
                         elif aggregate_type == "chunk":
                             await reconciler.reconcile_chunks(limit=RECONCILE_BATCH_SIZE)
+                        elif aggregate_type == "agent_review":
+                            await reconciler.reconcile_agent_reviews(limit=RECONCILE_BATCH_SIZE)
                     except Exception as e:
                         # Log and continue with next aggregate type
                         import logging
@@ -529,3 +647,53 @@ async def reconciliation_loop() -> None:
             import logging
             logging.getLogger(__name__).error(f"Reconciliation loop crashed: {e}")
             await asyncio.sleep(60)  # Short retry on crash
+
+
+def _best_chunk_match(source_quote: str, chunks: list[dict[str, Any]]) -> dict[str, Any] | None:
+    quote = _normalize_match_text(source_quote)
+    if not quote:
+        return None
+    best_chunk: dict[str, Any] | None = None
+    best_score = 0.0
+    for chunk in chunks:
+        content = _normalize_match_text(str(chunk.get("content", "") or ""))
+        if not content:
+            continue
+        score = _similarity_score(quote, content)
+        if score > best_score:
+            best_score = score
+            best_chunk = chunk
+    if best_chunk is None or best_score < 0.55:
+        return None
+    return best_chunk
+
+
+def _similarity_score(quote: str, content: str) -> float:
+    if quote == content:
+        return 1.0
+    if quote in content:
+        return 0.99
+
+    quote_tokens = set(token for token in re.split(r"\W+", quote) if token)
+    content_tokens = set(token for token in re.split(r"\W+", content) if token)
+    overlap = len(quote_tokens & content_tokens) / max(1, len(quote_tokens))
+    sequence_ratio = difflib.SequenceMatcher(None, quote, content).ratio()
+    longest = difflib.SequenceMatcher(None, quote, content).find_longest_match(0, len(quote), 0, len(content)).size
+    coverage = longest / max(1, len(quote))
+    return max(sequence_ratio, (0.45 * overlap) + (0.55 * coverage))
+
+
+def _normalize_match_text(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _source_anchor_json(chunk: dict[str, Any]) -> dict[str, Any] | None:
+    section_path = chunk.get("section_path")
+    page_spans = chunk.get("page_spans")
+    anchor = {
+        "section_path": section_path if isinstance(section_path, list) else [],
+        "page_spans": page_spans if isinstance(page_spans, list) else [],
+    }
+    if not anchor["section_path"] and not anchor["page_spans"]:
+        return None
+    return anchor
