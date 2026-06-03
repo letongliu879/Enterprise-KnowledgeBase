@@ -11,9 +11,11 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -130,6 +132,17 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _run_coroutine_blocking(coro_factory):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro_factory())
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: asyncio.run(coro_factory()))
+        return future.result()
 
 
 def _safe_text(value: object) -> str:
@@ -833,9 +846,7 @@ class _RemoteIndexingService:
             collection_id=collection_id,
             index_version=index_version,
         )
-        import asyncio
-
-        return asyncio.get_event_loop().run_until_complete(self._activate_async(req))
+        return _run_coroutine_blocking(lambda: self._activate_async(req))
 
     async def _activate_async(self, request: IndexSwitchRequest) -> IndexSwitchResult:
         target_index_version = request.index_version or self._latest_index_version(request.collection_id)
@@ -861,9 +872,7 @@ class _RemoteIndexingService:
             collection_id=collection_id,
             index_version=index_version,
         )
-        import asyncio
-
-        return asyncio.get_event_loop().run_until_complete(self._rollback_async(req))
+        return _run_coroutine_blocking(lambda: self._rollback_async(req))
 
     async def _rollback_async(self, request: IndexSwitchRequest) -> IndexSwitchResult:
         target_index_version = request.index_version or self._active_index_version(request.collection_id)

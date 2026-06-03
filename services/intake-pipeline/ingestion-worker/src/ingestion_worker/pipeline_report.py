@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from intake_runtime.stages.protocol import StageContext
 from reality_rag_contracts import ConversionReport, ConversionResult, ConversionStatus, JobStatus
-
-from .stages.protocol import StageContext
 
 
 def build_conversion_report(job_id: str, contexts: list[StageContext]) -> ConversionReport:

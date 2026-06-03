@@ -210,6 +210,14 @@ class PIIItem(BaseModel):
     severity: str = "low"
 
 
+class AnchoredFinding(BaseModel):
+    finding_id: str = ""
+    source_quote: str = ""
+    problem_summary: str = ""
+    severity: str = "medium"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class AgentReview(BaseModel):
     doc_id: str
     decision: Optional[ReviewDecision] = None
@@ -223,6 +231,7 @@ class AgentReview(BaseModel):
     suggested_authority_level: int = Field(default=0, ge=0, le=10)
     detected_pii: list[PIIItem] = Field(default_factory=list)
     diff_summary: str = ""
+    anchored_findings: list[AnchoredFinding] = Field(default_factory=list)
 
 
 class ProcessingRecord(BaseModel):

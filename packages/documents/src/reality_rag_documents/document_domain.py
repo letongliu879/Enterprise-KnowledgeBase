@@ -144,7 +144,7 @@ class DocumentService:
         if existing is not None:
             return existing
 
-        object_id = _object_id_from_hash(content_hash)
+        object_id = object_id_from_hash(content_hash)
         return self._object_repo.create(
             object_id=object_id,
             content_hash=content_hash,
@@ -399,12 +399,14 @@ def _generate_scan_result_id() -> str:
     return _SCAN_PREFIX + secrets.token_hex(12)
 
 
-def _object_id_from_hash(content_hash: str) -> str:
-    """Generate object_id from content_hash.
-
-    Strips any prefix (e.g. 'sha256:') and uses the hex digest.
-    """
+def object_id_from_hash(content_hash: str) -> str:
+    """Generate a stable object ID from a content hash."""
     # Remove any prefix like 'sha256:'
     if ":" in content_hash:
         content_hash = content_hash.split(":", 1)[1]
     return f"obj_sha256_{content_hash}"
+
+
+def _object_id_from_hash(content_hash: str) -> str:
+    """Backward-compatible alias for the public object_id_from_hash helper."""
+    return object_id_from_hash(content_hash)

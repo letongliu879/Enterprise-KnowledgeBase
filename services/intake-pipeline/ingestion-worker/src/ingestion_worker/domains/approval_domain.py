@@ -1,11 +1,7 @@
-"""Approval domain — remote-or-local fallback selector.
+"""Approval domain facade.
 
-If APPROVAL_SERVICE_URL is set, HTTP calls are forwarded to the remote
-approval-service process.  Otherwise the local same-process ApprovalService
-is used.  This lets the monolith run standalone while allowing gradual
-splitting of the approval owner into its own deployable unit.
-
-API contract (request/response models) is unchanged.
+`approval-service` is the approval owner. `ingestion-worker` may use a
+same-process fallback only in tests or explicit compat smoke.
 """
 
 from __future__ import annotations
@@ -14,6 +10,7 @@ import os
 from typing import Any
 
 import httpx
+from ingestion_worker.split_service_policy import require_explicit_owner_url
 
 from reality_rag_contracts import (
     AgentReview,
@@ -244,9 +241,7 @@ class _RemoteApprovalService:
 # ── Fallback facade ───────────────────────────────────────────────────
 
 class ApprovalService:
-    """Dispatches to remote HTTP when APPROVAL_SERVICE_URL is set,
-    otherwise delegates to the local same-process ApprovalService.
-    """
+    """Dispatches to remote HTTP or, only in tests, a local compat fallback."""
 
     def __init__(self, session=None) -> None:
         self._session = session
@@ -262,6 +257,10 @@ class ApprovalService:
 
             if self._session is None:
                 raise RuntimeError("ApprovalService requires a session in local mode")
+            require_explicit_owner_url(
+                env_var="APPROVAL_SERVICE_URL",
+                owner_name="approval-service",
+            )
             self._local = _NativeApprovalService(self._session)
         return self._local
 

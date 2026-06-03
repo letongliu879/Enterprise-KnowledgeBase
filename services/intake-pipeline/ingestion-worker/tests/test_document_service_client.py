@@ -153,6 +153,16 @@ class TestDocumentServiceClientLocal:
         finally:
             session.close()
 
+    def test_local_fallback_requires_explicit_test_flag(self, monkeypatch):
+        monkeypatch.delenv("ALLOW_LOCAL_FALLBACK_FOR_TESTS", raising=False)
+        import ingestion_worker.document_service_client as client_mod
+
+        client_mod._REMOTE_URL = None
+        client = DocumentServiceClient(session=object())
+        with pytest.raises(RuntimeError, match="DOCUMENT_SERVICE_URL is required"):
+            client.create_source_file("col-doc-client", "obj_sha256_blocked", "sha256:blocked")
+        client_mod._REMOTE_URL = None
+
 
 class TestDocumentServiceClientRemote:
     def test_create_source_file_remote(self, monkeypatch):

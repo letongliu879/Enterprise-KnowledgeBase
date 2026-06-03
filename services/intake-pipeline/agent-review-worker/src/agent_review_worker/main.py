@@ -21,12 +21,12 @@ from reality_rag_contracts import HealthResponse, StageName
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.outbox import OutboxDispatcher
 
-from ingestion_worker.stages.schemas import ReviewStageInput, ReviewStageOutput
-from ingestion_worker.stages.pure_stages import run_review_stage
-from ingestion_worker.agent_reviewer import get_agent_reviewer, AgentReviewConfigurationError
-from ingestion_worker.agent_review_cache import get_agent_review_cache
-from ingestion_worker.stage_runtime import execute_review_task
-from ingestion_worker.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from intake_runtime.stages.schemas import ReviewStageInput, ReviewStageOutput
+from intake_runtime.stages.pure_stages import run_review_stage
+from intake_runtime.agent_review_cache import get_agent_review_cache
+from intake_runtime.agent_reviewer import get_agent_reviewer, AgentReviewConfigurationError
+from intake_runtime.stage_runtime import execute_review_task
+from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
 
 logger = logging.getLogger(__name__)
 

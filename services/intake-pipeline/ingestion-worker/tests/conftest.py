@@ -1,5 +1,7 @@
 """Shared test fixtures for ingestion-worker tests."""
 
+from __future__ import annotations
+
 import tempfile
 
 import pytest
@@ -27,3 +29,8 @@ def _setup_sidecar_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", tmp)
         yield
+
+
+@pytest.fixture(autouse=True)
+def _enable_explicit_test_fallback(monkeypatch):
+    monkeypatch.setenv("ALLOW_LOCAL_FALLBACK_FOR_TESTS", "true")

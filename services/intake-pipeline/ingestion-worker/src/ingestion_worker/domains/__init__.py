@@ -15,16 +15,21 @@ Domain modules may NOT write tables owned by other domains.
 
 from __future__ import annotations
 
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
+
 from .approval_domain import system_decide, ApprovalService
-from .document_domain import DocumentService
-from .indexing_domain import (
-    IndexBuildInput,
-    IndexBuildOutput,
-    IndexJobError,
-    IndexingService,
-    PerDocumentIndexResult,
-)
 from .publishing_domain import persist_document_and_policy
+
+if TYPE_CHECKING:
+    from reality_rag_documents import DocumentService
+    from ..indexing_service import (
+        IndexBuildInput,
+        IndexBuildOutput,
+        IndexJobError,
+        IndexingService,
+        PerDocumentIndexResult,
+    )
 
 __all__ = [
     "system_decide",
@@ -37,3 +42,18 @@ __all__ = [
     "IndexingService",
     "PerDocumentIndexResult",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "DocumentService":
+        return getattr(import_module("reality_rag_documents"), name)
+    if name in {
+        "IndexBuildInput",
+        "IndexBuildOutput",
+        "IndexJobError",
+        "IndexingService",
+        "PerDocumentIndexResult",
+    }:
+        module = import_module("ingestion_worker.indexing_service")
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

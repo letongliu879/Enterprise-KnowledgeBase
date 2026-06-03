@@ -1,290 +1,293 @@
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+import asyncio
 
 from fastapi.testclient import TestClient
 
-from reality_rag_contracts import AgentReview, IndexJobRequest, IndexStatus, PublishStatus, ReviewDecision
-from reality_rag_persistence.database import get_session
-from reality_rag_persistence.repositories.collections import CollectionRepository
-from reality_rag_persistence.repositories.documents import DocumentRepository
-from reality_rag_persistence.repositories.index_registry import IndexRegistryRepository
-from reality_rag_persistence.repositories.jobs import JobRepository
-from reality_rag_persistence.repositories.tenants import TenantRepository
-from reality_rag_contracts import Collection, Tenant
+from reality_rag_contracts import IndexJobRequest
 
-from ingestion_worker.domains.indexing_domain import IndexBuildInput, PerDocumentIndexResult
+import ingestion_worker.indexing_service as mod
 from ingestion_worker.main import app
-from ingestion_worker.indexing_service import IndexingService
 
 
 client = TestClient(app)
 
 
-class _FakeIndexBackend:
-    mode = "noop-test"
-
-    def __init__(self):
-        self.bundles = []
-
-    async def index_bundle(self, bundle):
-        self.bundles.append(bundle)
-        return len(bundle.opensearch_records), len(bundle.qdrant_points)
+class _FakeIndexedDocument:
+    def __init__(self, chunk_count: int):
+        self.chunk_count = chunk_count
 
 
-def _approving_reviewer():
-    reviewer = MagicMock()
-    reviewer.review.return_value = AgentReview(
-        doc_id="doc-approved",
-        decision=ReviewDecision.APPROVE,
-        confidence=0.99,
-        reasons=["Approved for publication"],
-        risk_tags=[],
-        suggested_actions=[],
-        publish_recommendation=PublishStatus.PUBLISHED,
-        sections_requiring_review=[],
+class _FakeIndexedDocumentRepository:
+    def __init__(self, session):
+        self._session = session
+
+    def get_by_final_doc_and_version(self, final_doc_id: str, index_version: str):
+        return _FakeIndexedDocument(chunk_count=7)
+
+
+class _FakeSession:
+    def close(self):
+        return None
+
+
+def _prepared_document(*, parse_snapshot_id: str = "") -> mod._PreparedIndexDocument:
+    return mod._PreparedIndexDocument(
+        source_file_id="src-1",
+        intake_job_id="job-1",
+        tenant_id="default",
+        collection_id="col-1",
+        filename="policy.md",
+        visibility="internal",
+        trace_id="trace-1",
+        parse_snapshot_id=parse_snapshot_id,
+        final_doc_id="doc-1",
+        document_version="v1",
+        publish_version="v1",
+        source_binary_ref="C:/tmp/policy.md",
+        canonical_asset_ref="C:/tmp/policy.md",
+        sanitized_asset_ref="C:/tmp/policy.md",
+        quality_report_ref=None,
+        metadata_ref="C:/tmp/meta.json",
+        approval_ref="C:/tmp/approval.json",
+        governance_overlay_ref="C:/tmp/governance.json",
+        source_metadata={"source_file_id": "src-1"},
     )
-    return reviewer
 
 
-def _build_success_job(monkeypatch, tmp_path):
-    from tests.fake_converter import FakeConverter
-    from ingestion_worker.pipeline import IngestionPipeline
+class _FakeResponse:
+    def __init__(self, payload, status_code=200, text=""):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text or str(payload)
 
-    monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", str(tmp_path))
+    def json(self):
+        return self._payload
 
-    # Seed tenant + collection with authority_level > 0
-    session = get_session()
-    try:
-        TenantRepository(session).save(Tenant(tenant_id="default", name="Default Tenant"))
-        CollectionRepository(session).save(
-            Collection(
-                collection_id="col-1",
-                tenant_id="default",
-                name="Test Collection",
-                authority_level=5,
-            )
-        )
-        session.commit()
-    finally:
-        session.close()
-
-    canonical = "# Travel Policy\n\n" + ("Employees may reimburse travel and keep receipts. " * 8)
-    converter = FakeConverter(canonical_md=canonical)
-    pipeline = IngestionPipeline(converters=[converter], agent_reviewer=_approving_reviewer())
-
-    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
-        f.write(canonical)
-        source_path = f.name
-
-    try:
-        job = pipeline.run("col-1", [source_path])
-    finally:
-        Path(source_path).unlink()
-
-    return job
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.text)
 
 
-def test_indexing_service_updates_registry_and_document(monkeypatch, tmp_path):
-    job = _build_success_job(monkeypatch, tmp_path)
-    backend = _FakeIndexBackend()
+def test_indexing_service_run_forwards_to_modern_owner(monkeypatch):
+    calls: list[tuple[str, str]] = []
+    updates: list[tuple[str, str, str]] = []
+
+    class FakeAsyncClient:
+        def __init__(self, timeout=180.0, **kwargs):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json=None):
+            calls.append(("POST", url))
+            if url.endswith("/internal/parse-previews"):
+                return _FakeResponse({"parse_snapshot_id": "snap-1"})
+            if url.endswith("/internal/index-jobs"):
+                return _FakeResponse({"build_job_id": "build-1"})
+            if url.endswith("/internal/index-versions/ver-1/activate"):
+                return _FakeResponse({})
+            raise AssertionError(f"unexpected POST {url}")
+
+        async def get(self, url):
+            calls.append(("GET", url))
+            if url.endswith("/internal/index-jobs/build-1"):
+                return _FakeResponse(
+                    {
+                        "build_job_id": "build-1",
+                        "status": "READY",
+                        "index_version_id": "ver-1",
+                    }
+                )
+            raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setenv("INDEXING_SERVICE_URL", "http://indexing-owner:18080")
+    monkeypatch.setattr(mod, "_REMOTE_URL", None)
+    monkeypatch.setattr(mod, "_load_prepared_documents", lambda request: [_prepared_document()])
+    monkeypatch.setattr(mod, "get_session", lambda: _FakeSession())
+    monkeypatch.setattr(mod, "IndexedDocumentRepository", _FakeIndexedDocumentRepository)
     monkeypatch.setattr(
-        "reality_rag_indexing.backends.get_index_backend", lambda: backend
+        mod,
+        "_update_document_index_state",
+        lambda final_doc_id, *, index_version_id, status: updates.append(
+            (final_doc_id, index_version_id, status.value)
+        ),
     )
+    monkeypatch.setattr(
+        mod,
+        "_build_publish_request_payload",
+        lambda *, document, parse_snapshot_id, index_profile_id, target_index_version_id=None: {
+            "document_id": document.final_doc_id,
+            "parse_snapshot_id": parse_snapshot_id,
+            "index_profile_id": index_profile_id,
+            "target_index_version_id": target_index_version_id,
+        },
+    )
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
 
-    service = IndexingService()
-
-    import asyncio
-
-    index_result = asyncio.run(
-        service.run(
+    result = asyncio.run(
+        mod.IndexingService().run(
             IndexJobRequest(
-                job_id=job.job_id,
+                job_id="job-1",
                 collection_id="col-1",
-                index_version="col-1-v-final",
+                index_version="ver-1",
                 options={},
             )
         )
     )
 
-    assert index_result.status.value == "completed"
-    assert index_result.documents_indexed == 1
-    assert index_result.chunks_indexed >= 1
-    assert index_result.backend_mode == "noop-test"
-
-    detail = job.conversion_report.details[0]
-    session = get_session()
-    try:
-        document = DocumentRepository(session).get(detail.doc_id)
-        registry = IndexRegistryRepository(session).get("col-1")
-        job_info = JobRepository(session).get(index_result.job_id)
-    finally:
-        session.close()
-
-    assert document is not None
-    assert document.index_status == IndexStatus.INDEXED
-    assert registry is not None
-    assert registry.index_version == "col-1-v-final"
-    assert registry.status == "indexed"
-    assert job_info is not None
-    assert job_info.status.value == "completed"
-    assert backend.bundles[0].opensearch_records[0].index_name == "reality-rag-col-1-v-final"
-    assert backend.bundles[0].qdrant_points[0].collection_name == "reality-rag-col-1-v-final"
-    assert backend.bundles[0].opensearch_records[0].body["chunk_metadata"]["index_status"] == "indexed"
+    assert result.status.value == "completed"
+    assert result.documents_indexed == 1
+    assert result.chunks_indexed == 7
+    assert result.backend_mode == "modern-indexing-service"
+    assert updates == [("doc-1", "ver-1", "indexed")]
+    assert calls == [
+        ("POST", "http://indexing-owner:18080/internal/parse-previews"),
+        ("POST", "http://indexing-owner:18080/internal/index-jobs"),
+        ("GET", "http://indexing-owner:18080/internal/index-jobs/build-1"),
+        ("POST", "http://indexing-owner:18080/internal/index-versions/ver-1/activate"),
+    ]
 
 
-def test_indexing_endpoint_runs_index_job(monkeypatch, tmp_path):
-    job = _build_success_job(monkeypatch, tmp_path)
+def test_run_intake_job_skips_preview_when_snapshot_exists(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakeAsyncClient:
+        def __init__(self, timeout=180.0, **kwargs):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json=None):
+            calls.append(("POST", url))
+            if url.endswith("/internal/index-jobs"):
+                return _FakeResponse({"build_job_id": "build-2"})
+            raise AssertionError(f"unexpected POST {url}")
+
+        async def get(self, url):
+            calls.append(("GET", url))
+            if url.endswith("/internal/index-jobs/build-2"):
+                return _FakeResponse(
+                    {
+                        "build_job_id": "build-2",
+                        "status": "READY",
+                        "index_version_id": "ver-2",
+                    }
+                )
+            raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setenv("INDEXING_SERVICE_URL", "http://indexing-owner:18080")
+    monkeypatch.setattr(mod, "_REMOTE_URL", None)
     monkeypatch.setattr(
-        "reality_rag_indexing.backends.get_index_backend", lambda: _FakeIndexBackend()
+        mod,
+        "_load_prepared_document_for_intake_job",
+        lambda intake_job_id, publish_version_override=None: _prepared_document(parse_snapshot_id="snap-existing"),
     )
-
-    resp = client.post(
-        "/internal/indexing/run",
-        json={
-            "job_id": job.job_id,
-            "collection_id": "col-1",
-            "index_version": "col-1-v-api",
-            "options": {},
+    monkeypatch.setattr(mod, "get_session", lambda: _FakeSession())
+    monkeypatch.setattr(mod, "IndexedDocumentRepository", _FakeIndexedDocumentRepository)
+    monkeypatch.setattr(mod, "_update_document_index_state", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        mod,
+        "_build_publish_request_payload",
+        lambda *, document, parse_snapshot_id, index_profile_id, target_index_version_id=None: {
+            "document_id": document.final_doc_id,
+            "parse_snapshot_id": parse_snapshot_id,
+            "index_profile_id": index_profile_id,
+            "target_index_version_id": target_index_version_id,
         },
     )
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["collection_id"] == "col-1"
-    assert data["index_version"] == "col-1-v-api"
-    assert data["status"] == "completed"
-    assert data["documents_indexed"] == 1
-    assert data["backend_mode"] == "noop-test"
-
-
-def test_indexing_activate_and_rollback_endpoints(monkeypatch, tmp_path):
-    job = _build_success_job(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        "reality_rag_indexing.backends.get_index_backend", lambda: _FakeIndexBackend()
+    result = asyncio.run(
+        mod.IndexingService().run_intake_job(
+            intake_job_id="job-2",
+            collection_id="col-1",
+            index_version="ver-2",
+            options={"activate_index_version": False},
+        )
     )
 
-    index_resp = client.post(
+    assert result.status.value == "completed"
+    assert result.documents_indexed == 1
+    assert calls == [
+        ("POST", "http://indexing-owner:18080/internal/index-jobs"),
+        ("GET", "http://indexing-owner:18080/internal/index-jobs/build-2"),
+    ]
+
+
+def test_activate_and_rollback_use_remote_owner(monkeypatch):
+    calls: list[str] = []
+
+    class FakeAsyncClient:
+        def __init__(self, timeout=30.0, **kwargs):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url):
+            calls.append(url)
+            return _FakeResponse({})
+
+    monkeypatch.setenv("INDEXING_SERVICE_URL", "http://indexing-owner:18080")
+    monkeypatch.setattr(mod, "_REMOTE_URL", None)
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(mod._RemoteIndexingService, "_active_index_version", staticmethod(lambda collection_id: "ver-active"))
+    monkeypatch.setattr(mod._RemoteIndexingService, "_latest_index_version", staticmethod(lambda collection_id: "ver-latest"))
+    monkeypatch.setattr(mod._RemoteIndexingService, "_previous_index_version", staticmethod(lambda index_version_id: "ver-previous"))
+
+    service = mod.IndexingService()
+    activated = service.activate("col-1")
+    rolled_back = service.rollback("col-1", "ver-active")
+
+    assert activated.active_index_version == "ver-latest"
+    assert activated.previous_index_version == "ver-active"
+    assert rolled_back.active_index_version == "ver-previous"
+    assert rolled_back.previous_index_version == "ver-active"
+    assert calls == [
+        "http://indexing-owner:18080/internal/index-versions/ver-latest/activate",
+        "http://indexing-owner:18080/internal/index-versions/ver-active/rollback",
+    ]
+
+
+def test_indexing_endpoints_delegate_to_service(monkeypatch):
+    class FakeIndexingService:
+        async def run(self, request):
+            return {"job_id": request.job_id, "collection_id": request.collection_id, "index_version": request.index_version, "status": "completed", "documents_indexed": 1, "chunks_indexed": 2, "backend_mode": "fake"}
+
+        def activate(self, collection_id, index_version):
+            return {"collection_id": collection_id, "active_index_version": index_version, "previous_index_version": "old", "target_index_version": index_version, "status": "indexed"}
+
+        def rollback(self, collection_id, index_version):
+            return {"collection_id": collection_id, "active_index_version": "old", "previous_index_version": index_version, "target_index_version": "old", "status": "indexed"}
+
+    monkeypatch.setattr("ingestion_worker.main.get_indexing_service", lambda: FakeIndexingService())
+
+    run_resp = client.post(
         "/internal/indexing/run",
-        json={
-            "job_id": job.job_id,
-            "collection_id": "col-1",
-            "index_version": "col-1-v-next",
-            "options": {},
-        },
+        json={"job_id": "job-1", "collection_id": "col-1", "index_version": "ver-1", "options": {}},
     )
-    assert index_resp.status_code == 200
-
     activate_resp = client.post(
         "/internal/indexing/activate",
-        json={"collection_id": "col-1", "index_version": "col-1-v-next"},
+        json={"collection_id": "col-1", "index_version": "ver-1"},
     )
-    assert activate_resp.status_code == 200
-    activate_data = activate_resp.json()
-    assert activate_data["active_index_version"] == "col-1-v-next"
-    assert activate_data["status"] == "indexed"
-
     rollback_resp = client.post(
         "/internal/indexing/rollback",
-        json={"collection_id": "col-1", "index_version": "col-1-v1"},
+        json={"collection_id": "col-1", "index_version": "ver-1"},
     )
+
+    assert run_resp.status_code == 200
+    assert run_resp.json()["backend_mode"] == "fake"
+    assert activate_resp.status_code == 200
+    assert activate_resp.json()["active_index_version"] == "ver-1"
     assert rollback_resp.status_code == 200
-    rollback_data = rollback_resp.json()
-    assert rollback_data["active_index_version"] == "col-1-v1"
-    assert rollback_data["status"] == "indexed"
-
-
-def test_run_build_consumes_explicit_input_without_ingestion_context(monkeypatch, tmp_path):
-    """Core _run_build takes explicit doc_ids — it does NOT query IngestionRepository."""
-    job = _build_success_job(monkeypatch, tmp_path)
-    backend = _FakeIndexBackend()
-    monkeypatch.setattr(
-        "reality_rag_indexing.backends.get_index_backend", lambda: backend
-    )
-
-    service = IndexingService()
-
-    # Extract the published doc_id directly from the ingestion job result.
-    detail = job.conversion_report.details[0]
-    doc_id = detail.doc_id
-
-    # Prepare session and mark registry as indexing (normally done by run() adapter).
-    session = get_session()
-    try:
-        registry_repo = IndexRegistryRepository(session)
-        registry_repo.mark_indexing("col-1", "col-1-v-explicit")
-        session.commit()
-
-        build_input = IndexBuildInput(
-            collection_id="col-1",
-            index_version="col-1-v-explicit",
-            doc_ids=[doc_id],
-        )
-
-        import asyncio
-
-        output = asyncio.run(
-            service._run_build(build_input, session=session, backend=backend)
-        )
-
-        # Verify output structure seeds future IndexReady.
-        assert output.documents_indexed == 1
-        assert output.chunks_indexed >= 1
-        assert output.backend_mode == "noop-test"
-        assert output.indexed_doc_ids == [doc_id]
-        assert len(output.per_document_results) == 1
-        assert output.per_document_results[0].doc_id == doc_id
-        assert output.per_document_results[0].indexed is True
-        assert output.per_document_results[0].chunk_count >= 1
-
-        # Verify document was updated in DB.
-        document = DocumentRepository(session).get(doc_id)
-        assert document.index_status == IndexStatus.INDEXED
-
-        # Verify registry was NOT activated by _run_build (caller responsibility).
-        registry = registry_repo.get("col-1")
-        assert registry.status == "indexing"  # still indexing, not activated yet
-    finally:
-        session.close()
-
-
-def test_run_build_skips_unpublished_and_missing_docs(monkeypatch, tmp_path):
-    """_run_build gracefully skips docs that are missing or not published."""
-    job = _build_success_job(monkeypatch, tmp_path)
-    backend = _FakeIndexBackend()
-    monkeypatch.setattr(
-        "reality_rag_indexing.backends.get_index_backend", lambda: backend
-    )
-
-    service = IndexingService()
-    detail = job.conversion_report.details[0]
-
-    session = get_session()
-    try:
-        registry_repo = IndexRegistryRepository(session)
-        registry_repo.mark_indexing("col-1", "col-1-v-skip")
-        session.commit()
-
-        build_input = IndexBuildInput(
-            collection_id="col-1",
-            index_version="col-1-v-skip",
-            doc_ids=[detail.doc_id, "missing-doc-id"],
-        )
-
-        import asyncio
-
-        output = asyncio.run(
-            service._run_build(build_input, session=session, backend=backend)
-        )
-
-        assert output.documents_indexed == 1
-        assert output.missing_doc_ids == ["missing-doc-id"]
-        assert output.indexed_doc_ids == [detail.doc_id]
-
-        # Per-document results include both indexed and skipped.
-        assert len(output.per_document_results) == 2
-        by_doc = {r.doc_id: r for r in output.per_document_results}
-        assert by_doc[detail.doc_id].indexed is True
-        assert by_doc["missing-doc-id"].skip_reason == "missing"
-    finally:
-        session.close()
+    assert rollback_resp.json()["active_index_version"] == "old"

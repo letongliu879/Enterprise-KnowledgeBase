@@ -23,6 +23,65 @@ from reality_rag_persistence.repositories.document_policies import DocumentPolic
 from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
 
 
+def persist_document_and_policy(
+    canonical_metadata: CanonicalMetadata,
+    *,
+    document_repo=None,
+    policy_repo=None,
+    collection_authority_level: int = 0,
+) -> tuple[bool, bool]:
+    """Persist canonical metadata and optional policy.
+
+    When repos are provided, use the caller's transaction boundary.
+    Otherwise fall back to the owner service entrypoint.
+    """
+    if document_repo is None and policy_repo is None:
+        return PublishingService().persist(
+            canonical_metadata,
+            collection_authority_level=collection_authority_level,
+        )
+
+    document_persisted = False
+    policy_persisted = False
+
+    if document_repo is not None:
+        document_repo.save(canonical_metadata)
+        document_persisted = True
+
+    if policy_repo is not None and canonical_metadata.publish_status == PublishStatus.PUBLISHED:
+        policy_id = f"dp-{canonical_metadata.doc_id}"
+        existing = policy_repo.get(policy_id)
+        if existing is None:
+            from reality_rag_contracts import PolicyCondition, PolicySubject
+
+            policy = DocumentPolicy(
+                policy_id=policy_id,
+                tenant_id=canonical_metadata.tenant_id,
+                collection_id=canonical_metadata.collection_id,
+                doc_id=canonical_metadata.doc_id,
+                effect="allow",
+                subjects=[
+                    PolicySubject(
+                        subject_type="tenant",
+                        subject_id=canonical_metadata.tenant_id,
+                    )
+                ],
+                conditions=[
+                    PolicyCondition(
+                        field="clearance_level",
+                        operator="gte",
+                        value=collection_authority_level,
+                    )
+                ],
+                priority=100,
+                policy_version="v1",
+            )
+            policy_repo.save(policy)
+            policy_persisted = True
+
+    return document_persisted, policy_persisted
+
+
 class PublishingService:
     """Publishing service — persists documents and policies.
 
@@ -44,42 +103,12 @@ class PublishingService:
             document_repo = DocumentRepository(session)
             policy_repo = DocumentPolicyRepository(session)
 
-            document_persisted = False
-            policy_persisted = False
-
-            document_repo.save(canonical_metadata)
-            document_persisted = True
-
-            if canonical_metadata.publish_status == PublishStatus.PUBLISHED:
-                policy_id = f"dp-{canonical_metadata.doc_id}"
-                existing = policy_repo.get(policy_id)
-                if existing is None:
-                    from reality_rag_contracts import PolicyCondition, PolicySubject
-
-                    policy = DocumentPolicy(
-                        policy_id=policy_id,
-                        tenant_id=canonical_metadata.tenant_id,
-                        collection_id=canonical_metadata.collection_id,
-                        doc_id=canonical_metadata.doc_id,
-                        effect="allow",
-                        subjects=[
-                            PolicySubject(
-                                subject_type="tenant",
-                                subject_id=canonical_metadata.tenant_id,
-                            )
-                        ],
-                        conditions=[
-                            PolicyCondition(
-                                field="clearance_level",
-                                operator="gte",
-                                value=collection_authority_level,
-                            )
-                        ],
-                        priority=100,
-                        policy_version="v1",
-                    )
-                    policy_repo.save(policy)
-                    policy_persisted = True
+            document_persisted, policy_persisted = persist_document_and_policy(
+                canonical_metadata,
+                document_repo=document_repo,
+                policy_repo=policy_repo,
+                collection_authority_level=collection_authority_level,
+            )
 
             session.commit()
             return document_persisted, policy_persisted

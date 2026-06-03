@@ -72,7 +72,7 @@ def test_reviewer_surfaces_connection_failure(monkeypatch):
 
 
 class _FakeDeepSeekBackend:
-    """Fake _call_deepseek that returns predefined JSON per subtask keyword."""
+    """Fake _call_deepseek that returns predefined JSON per prompt keyword."""
 
     def __init__(self, responses):
         self._responses = responses
@@ -86,14 +86,11 @@ class _FakeDeepSeekBackend:
         return "{}", {"latency_ms": 0}
 
 
-def test_reviewer_runs_5_parallel_subtasks(monkeypatch):
-    """R1-001: review() should dispatch 5 parallel subtasks and aggregate results."""
+def test_reviewer_runs_main_review_and_conditional_findings(monkeypatch):
+    """The formal reviewer runs one main review, then one findings extraction pass."""
     backend = _FakeDeepSeekBackend([
-        ("document classifier", '{"document_type": "policy", "subtype": "travel", "rationale": "travel rules"}'),
-        ("governance analyst", '{"suggested_authority_level": 5, "rationale": "confidential"}'),
-        ("personally identifiable information", '{"has_pii": true, "detected_pii": [{"pii_type": "email", "description": "user@example.com", "severity": "medium"}]}'),
-        ("quality analyst", '{"diff_summary": "Travel policy doc", "conversion_quality_assessment": "good"}'),
-        ("governed RAG system", '{"decision": "approve", "confidence": 0.95, "reasons": ["clean"], "risk_tags": [], "suggested_actions": [], "publish_recommendation": "published", "sections_requiring_review": []}'),
+        ("single-pass enterprise document reviewer", '{"document_type": "policy", "suggested_authority_level": 5, "detected_pii": [{"pii_type": "email", "description": "user@example.com", "severity": "medium"}], "diff_summary": "Travel policy doc", "decision": "request_changes", "confidence": 0.95, "reasons": ["clean"], "risk_tags": [], "suggested_actions": [], "publish_recommendation": "pending_review", "sections_requiring_review": []}'),
+        ("extracting anchored findings", '{"anchored_findings": [{"source_quote": "...travel reimbursement policy...", "problem_summary": "Policy wording needs review.", "severity": "medium", "confidence": 0.81}]}'),
     ])
     monkeypatch.setattr("ingestion_worker.agent_reviewer._call_deepseek", backend)
 
@@ -122,12 +119,10 @@ def test_reviewer_runs_5_parallel_subtasks(monkeypatch):
         event_hook=lambda **event: events.append(event),
     )
 
-    # All 5 subtasks should have been dispatched
-    assert backend.call_count == 5
+    assert backend.call_count == 2
 
-    # Verify aggregated review fields
     assert review.doc_id == "doc-5-subtasks"
-    assert review.decision.value == "approve"
+    assert review.decision.value == "request_changes"
     assert review.confidence == 0.95
     assert review.document_type == "policy"
     assert review.suggested_authority_level == 5
@@ -135,20 +130,14 @@ def test_reviewer_runs_5_parallel_subtasks(monkeypatch):
     assert review.detected_pii[0].pii_type == "email"
     assert review.detected_pii[0].severity == "medium"
     assert review.diff_summary == "Travel policy doc"
-
-    # Event sequence
+    assert len(review.anchored_findings) == 1
     assert [event["event_type"] for event in events] == ["review.started", "review.completed"]
 
 
 def test_reviewer_auto_elevates_critical_pii(monkeypatch):
-    """R1-001: If critical PII is detected but decision subtask says approve,
-    the aggregator should auto-elevate to quarantine."""
+    """Critical PII still auto-elevates an approve decision to quarantine."""
     backend = _FakeDeepSeekBackend([
-        ("document classifier", '{"document_type": "employee_record", "subtype": "", "rationale": ""}'),
-        ("governance analyst", '{"suggested_authority_level": 7, "rationale": ""}'),
-        ("personally identifiable information", '{"has_pii": true, "detected_pii": [{"pii_type": "salary", "description": "salary 100k", "severity": "critical"}]}'),
-        ("quality analyst", '{"diff_summary": "", "conversion_quality_assessment": ""}'),
-        ("governed RAG system", '{"decision": "approve", "confidence": 0.9, "reasons": ["looks ok"], "risk_tags": [], "suggested_actions": [], "publish_recommendation": "published", "sections_requiring_review": []}'),
+        ("single-pass enterprise document reviewer", '{"document_type": "employee_record", "suggested_authority_level": 7, "detected_pii": [{"pii_type": "salary", "description": "salary 100k", "severity": "critical"}], "diff_summary": "", "decision": "approve", "confidence": 0.9, "reasons": ["looks ok"], "risk_tags": [], "suggested_actions": [], "publish_recommendation": "published", "sections_requiring_review": []}'),
     ])
     monkeypatch.setattr("ingestion_worker.agent_reviewer._call_deepseek", backend)
 

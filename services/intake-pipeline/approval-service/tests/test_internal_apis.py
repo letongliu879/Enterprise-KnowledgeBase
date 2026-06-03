@@ -125,7 +125,7 @@ class TestAgentReview:
         resp = client.get("/internal/tickets/nonexistent/agent-review")
         assert resp.status_code == 404
 
-    def test_get_agent_review_read_only(self, client: TestClient):
+    def test_get_agent_review_read_only(self, client: TestClient, monkeypatch):
         # Create a ticket first
         resp = client.post(
             "/internal/approval/auto-approve",
@@ -140,9 +140,52 @@ class TestAgentReview:
         assert resp.status_code == 200
         ticket_id = resp.json()["ticket_id"]
 
+        monkeypatch.setattr(
+            "approval_service.main._load_review_artifact_payload",
+            lambda session, intake_job_id: {
+                "review_run_id": "att-1",
+                "intake_job_id": intake_job_id,
+                "source_file_id": "src-1",
+                "parse_snapshot_id": "pss-1",
+                "agent_review_ref": "C:/tmp/review.json",
+                "artifact_version": "v1",
+                "review_model": "deepseek-chat",
+                "prompt_version": "v2",
+                "artifact_schema_version": "v2",
+                "generated_at": "2026-06-03T00:00:00Z",
+                "review_context": {
+                    "llm_call_records": [{"request_hash": "sha256:req"}]
+                },
+                "agent_review": {
+                    "decision": "request_changes",
+                    "confidence": 0.91,
+                    "reasons": ["needs update"],
+                    "risk_tags": ["policy_gap"],
+                    "publish_recommendation": "pending_review",
+                    "document_type": "policy",
+                    "suggested_authority_level": 5,
+                    "detected_pii": [],
+                    "diff_summary": "summary",
+                    "anchored_findings": [
+                        {
+                            "finding_id": "finding-1",
+                            "source_quote": "quote",
+                            "problem_summary": "problem",
+                            "severity": "high",
+                            "confidence": 0.8,
+                        }
+                    ],
+                },
+            },
+        )
+
         review_resp = client.get(f"/internal/tickets/{ticket_id}/agent-review")
         assert review_resp.status_code == 200
         data = review_resp.json()
         assert data["ticket_id"] == ticket_id
-        assert "decision" in data
+        assert data["decision"] == "REQUEST_CHANGES"
+        assert data["review_run_id"] == "att-1"
+        assert data["source_file_id"] == "src-1"
+        assert data["parse_snapshot_id"] == "pss-1"
+        assert len(data["anchored_findings"]) == 1
         assert "quality_findings" in data

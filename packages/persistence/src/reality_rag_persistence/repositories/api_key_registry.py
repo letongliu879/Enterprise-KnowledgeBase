@@ -35,6 +35,27 @@ class ApiKeyRegistryRepository:
         )
         return [self._to_legacy_contract(row) for row in rows]
 
+    def save(self, entry: ApiKeyRegistryEntry) -> None:
+        row = ApiKeyRegistryModel(
+            api_key_id=entry.api_key_id,
+            tenant_id="default",
+            display_name=entry.display_name,
+            agent_type_id=entry.agent_type_id,
+            key_hash="",
+            knowledge_scopes=entry.knowledge_scopes,
+            roles=entry.roles,
+            debug_permission=entry.debug_permission,
+            max_context_tokens=entry.max_context_tokens,
+            token_budget_limit=entry.max_context_tokens,
+            state=("active" if entry.enabled else "disabled"),
+            created_by="seed",
+            created_at=entry.created_at,
+            updated_by="seed",
+            updated_at=entry.updated_at,
+        )
+        self._session.merge(row)
+        self._session.flush()
+
     # -- admin control panel -----------------------------------------------
 
     def get_admin(self, api_key_id: str) -> ApiKeyRegistryEntryAdmin | None:

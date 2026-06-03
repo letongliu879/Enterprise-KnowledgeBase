@@ -161,7 +161,8 @@ _COLORS = {
 # ---------------------------------------------------------------------------
 # Service definitions
 # ---------------------------------------------------------------------------
-# NOTE: ingestion-worker src is also on PYTHONPATH for publishing-worker / agent-review-worker / conversion-worker
+# NOTE: ingestion-worker src is still on PYTHONPATH for publishing-worker /
+# agent-review-worker / conversion-worker until runtime boundaries are made explicit.
 _BASE_PYTHONPATH_DIRS = [
     ROOT / "packages" / "contracts" / "src",
     ROOT / "packages" / "persistence" / "src",
@@ -459,13 +460,29 @@ def _rotate_log(path: Path) -> None:
 
 def _build_pythonpath(svc: dict[str, Any]) -> str:
     dirs = list(_BASE_PYTHONPATH_DIRS)
-    # Service own src
+    name = svc["name"]
     dirs.append(svc["cwd"] / "src")
-    # Add all other Python service src dirs (for cross-imports)
-    for s in PYTHON_SERVICES:
-        dirs.append(s["cwd"] / "src")
-    # ingestion-worker src needed by publishing-worker / agent-review-worker / conversion-worker
-    dirs.append(ROOT / "services" / "intake-pipeline" / "ingestion-worker" / "src")
+
+    explicit_extra_dirs: dict[str, list[Path]] = {
+        "conversion-worker": [
+            ROOT / "services" / "intake-pipeline" / "src",
+        ],
+        "agent-review-worker": [
+            ROOT / "services" / "intake-pipeline" / "src",
+        ],
+        "publishing-worker": [
+            ROOT / "services" / "intake-pipeline" / "src",
+        ],
+        "ingestion-worker": [
+            ROOT / "services" / "intake-pipeline" / "src",
+        ],
+        "workbench-api": [
+            ROOT / "services" / "admin" / "src",
+            ROOT / "services" / "indexing" / "src",
+        ],
+    }
+    dirs.extend(explicit_extra_dirs.get(name, []))
+
     existing = os.environ.get("PYTHONPATH", "")
     if existing:
         for part in existing.split(os.pathsep):
@@ -478,6 +495,18 @@ def _build_pythonpath(svc: dict[str, Any]) -> str:
             seen.add(p)
             unique.append(p)
     return os.pathsep.join(unique)
+
+
+def _service_env_overrides(name: str) -> dict[str, str]:
+    if name != "ingestion-worker":
+        return {}
+    return {
+        "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
+        "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
+        "PUBLISHING_WORKER_URL": "http://127.0.0.1:18086",
+        "INDEXING_SERVICE_URL": "http://127.0.0.1:18080",
+        "ALLOW_LOCAL_FALLBACK_FOR_TESTS": "false",
+    }
 
 
 def _topo_sort(services: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -641,6 +670,7 @@ def _start_service(svc: dict[str, Any], reload: bool = False, job: _WinJobObject
     env = os.environ.copy()
     if svc.get("language") == "python":
         env["PYTHONPATH"] = _build_pythonpath(svc)
+        env.update(_service_env_overrides(name))
         cmd = list(svc["cmd"])
         if reload:
             cmd.append("--reload")

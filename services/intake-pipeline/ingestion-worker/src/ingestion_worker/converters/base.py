@@ -1,17 +1,9 @@
-"""Abstract base class for file converters."""
+"""Compatibility alias for shared converter base types."""
 
-from abc import ABC, abstractmethod
+from __future__ import annotations
 
-from reality_rag_contracts import ConversionRequest, ConversionResult
+import sys
 
+from intake_runtime.converters import base as _impl
 
-class BaseConverter(ABC):
-    """Converter interface. Each converter handles a set of file extensions."""
-
-    @abstractmethod
-    def convert(self, request: ConversionRequest) -> ConversionResult:
-        """Convert a source file to canonical markdown."""
-
-    @abstractmethod
-    def supported_extensions(self) -> list[str]:
-        """Return the list of file extensions this converter can handle."""
+sys.modules[__name__] = _impl

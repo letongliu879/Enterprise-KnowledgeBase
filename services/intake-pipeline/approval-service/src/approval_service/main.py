@@ -9,10 +9,13 @@ This service owns:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from reality_rag_contracts import HealthResponse, PublishStatus
+from reality_rag_contracts import HealthResponse, PublishStatus, StageName
 from reality_rag_persistence.database import get_session
 
 from .approval_domain import ApprovalService, system_decide
@@ -289,11 +292,28 @@ class DecideTicketRequest(BaseModel):
 
 class AgentReviewArtifact(BaseModel):
     ticket_id: str
+    review_run_id: str | None = None
+    intake_job_id: str = ""
+    source_file_id: str | None = None
+    parse_snapshot_id: str | None = None
+    agent_review_ref: str | None = None
+    artifact_version: str | None = None
     decision: str = "REVIEW"
+    confidence: float = 0.0
+    reasons: list[str] = Field(default_factory=list)
+    risk_tags: list[str] = Field(default_factory=list)
+    publish_recommendation: str | None = None
+    document_type: str = ""
+    suggested_authority_level: int = 0
+    detected_pii: list[dict] = Field(default_factory=list)
+    diff_summary: str = ""
+    anchored_findings: list[dict] = Field(default_factory=list)
     quality_findings: list[dict] = Field(default_factory=list)
     risk_flags: list[dict] = Field(default_factory=list)
     evidence_anchors: list[dict] = Field(default_factory=list)
     model: str | None = None
+    prompt_version: str | None = None
+    artifact_schema_version: str | None = None
     version: str | None = None
     prompt_hash: str | None = None
     suggested_fixes: list[dict] = Field(default_factory=list)
@@ -306,7 +326,27 @@ class AgentReviewArtifact(BaseModel):
 _decision_idempotency: dict[str, dict] = {}  # idempotency_key -> decision result
 
 
-def _ticket_to_view(ticket: ApprovalTicket) -> ApprovalTicketView:
+def _ticket_to_view(ticket: ApprovalTicket, *, session=None) -> ApprovalTicketView:
+    source_file_id = None
+    parse_snapshot_id = None
+    agent_review_ref = None
+    owns_session = session is None
+    if session is None:
+        session = get_session()
+    try:
+        from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+
+        job = IntakeJobRepository(session).get(ticket.intake_job_id)
+        if job is not None:
+            source_file_id = job.source_file_id
+        payload = _load_review_artifact_payload(session, ticket.intake_job_id)
+        if payload is not None:
+            parse_snapshot_id = payload.get("parse_snapshot_id")
+            agent_review_ref = payload.get("agent_review_ref")
+    finally:
+        if owns_session:
+            session.close()
+
     return ApprovalTicketView(
         ticket_id=ticket.ticket_id,
         intake_job_id=ticket.intake_job_id,
@@ -315,9 +355,9 @@ def _ticket_to_view(ticket: ApprovalTicket) -> ApprovalTicketView:
         state=ticket.state.value,
         preliminary_doc_id=ticket.preliminary_doc_id,
         final_doc_id=ticket.final_doc_id,
-        source_file_id=None,
-        parse_snapshot_id=None,
-        agent_review_ref=None,
+        source_file_id=source_file_id,
+        parse_snapshot_id=parse_snapshot_id,
+        agent_review_ref=agent_review_ref,
         decision=ticket.decision,
         decision_reason=ticket.decision_reason,
         decided_by=ticket.decision_actor,
@@ -331,6 +371,110 @@ def _ticket_to_view(ticket: ApprovalTicket) -> ApprovalTicketView:
 def _utc_now() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
+
+
+def _latest_stage_result(session, intake_job_id: str, stage_name: StageName):
+    from reality_rag_persistence.models import StageResultModel
+
+    return (
+        session.query(StageResultModel)
+        .filter(StageResultModel.intake_job_id == intake_job_id)
+        .filter(StageResultModel.stage_name == stage_name.value)
+        .order_by(StageResultModel.created_at.desc())
+        .first()
+    )
+
+
+def _load_review_artifact_payload(session, intake_job_id: str) -> dict | None:
+    row = _latest_stage_result(session, intake_job_id, StageName.AGENT_REVIEW)
+    if row is None:
+        return None
+
+    if row.result_ref:
+        path = Path(row.result_ref)
+        if path.exists() and path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+
+    review_summary = row.summary_json or {}
+    review_context = (
+        review_summary.get("review_context", {})
+        if isinstance(review_summary.get("review_context"), dict)
+        else {}
+    )
+    artifact_metadata = (
+        review_context.get("artifact_metadata", {})
+        if isinstance(review_context.get("artifact_metadata"), dict)
+        else {}
+    )
+    agent_review = (
+        review_summary.get("agent_review", {})
+        if isinstance(review_summary.get("agent_review"), dict)
+        else {}
+    )
+    return {
+        "review_run_id": row.stage_attempt_id,
+        "intake_job_id": intake_job_id,
+        "source_file_id": artifact_metadata.get("source_file_id"),
+        "parse_snapshot_id": artifact_metadata.get("parse_snapshot_id"),
+        "artifact_version": "v1",
+        "result_hash": row.result_hash,
+        "review_model": artifact_metadata.get("review_model", ""),
+        "prompt_version": artifact_metadata.get("prompt_version", ""),
+        "artifact_schema_version": artifact_metadata.get("artifact_schema_version", "v2"),
+        "generated_at": artifact_metadata.get("generated_at", row.created_at.isoformat() if row.created_at else _utc_now()),
+        "agent_review": agent_review,
+        "review_context": review_context,
+        "agent_review_ref": row.result_ref,
+    }
+
+
+def _build_agent_review_artifact(ticket_id: str, payload: dict) -> AgentReviewArtifact:
+    agent_review = payload.get("agent_review", {}) if isinstance(payload.get("agent_review"), dict) else {}
+    review_context = payload.get("review_context", {}) if isinstance(payload.get("review_context"), dict) else {}
+    llm_records = review_context.get("llm_call_records", []) if isinstance(review_context.get("llm_call_records"), list) else []
+    anchored_findings = agent_review.get("anchored_findings", []) if isinstance(agent_review.get("anchored_findings"), list) else []
+    return AgentReviewArtifact(
+        ticket_id=ticket_id,
+        review_run_id=payload.get("review_run_id"),
+        intake_job_id=str(payload.get("intake_job_id", "") or ""),
+        source_file_id=payload.get("source_file_id"),
+        parse_snapshot_id=payload.get("parse_snapshot_id"),
+        agent_review_ref=payload.get("agent_review_ref"),
+        artifact_version=payload.get("artifact_version"),
+        decision=str(agent_review.get("decision", "REVIEW") or "REVIEW").upper(),
+        confidence=float(agent_review.get("confidence", 0.0) or 0.0),
+        reasons=agent_review.get("reasons", []) if isinstance(agent_review.get("reasons"), list) else [],
+        risk_tags=agent_review.get("risk_tags", []) if isinstance(agent_review.get("risk_tags"), list) else [],
+        publish_recommendation=agent_review.get("publish_recommendation"),
+        document_type=str(agent_review.get("document_type", "") or ""),
+        suggested_authority_level=int(agent_review.get("suggested_authority_level", 0) or 0),
+        detected_pii=agent_review.get("detected_pii", []) if isinstance(agent_review.get("detected_pii"), list) else [],
+        diff_summary=str(agent_review.get("diff_summary", "") or ""),
+        anchored_findings=anchored_findings,
+        quality_findings=[
+            {
+                "finding_id": finding.get("finding_id"),
+                "problem_summary": finding.get("problem_summary"),
+                "severity": finding.get("severity"),
+                "confidence": finding.get("confidence"),
+            }
+            for finding in anchored_findings
+            if isinstance(finding, dict)
+        ],
+        risk_flags=[{"tag": tag} for tag in agent_review.get("risk_tags", []) if isinstance(tag, str)],
+        evidence_anchors=[],
+        model=str(payload.get("review_model", "") or "") or None,
+        prompt_version=str(payload.get("prompt_version", "") or "") or None,
+        artifact_schema_version=str(payload.get("artifact_schema_version", "") or "") or None,
+        version=str(payload.get("artifact_version", "") or "") or None,
+        prompt_hash=(
+            str(llm_records[0].get("request_hash", "") or "")
+            if llm_records and isinstance(llm_records[0], dict)
+            else None
+        ),
+        suggested_fixes=[],
+        created_at=str(payload.get("generated_at", "") or _utc_now()),
+    )
 
 
 @app.get("/internal/tickets")
@@ -347,7 +491,7 @@ async def list_tickets(
         all_tickets = repo.list_all()
         items = []
         for t in all_tickets:
-            view = _ticket_to_view(t)
+            view = _ticket_to_view(t, session=session)
             # Fail closed: filter by tenant
             if view.tenant_id != tenant_id:
                 continue
@@ -369,7 +513,7 @@ async def get_ticket_internal(ticket_id: str) -> dict:
         ticket = svc._ticket_repo.get(ticket_id)
         if ticket is None:
             raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
-        return _ticket_to_view(ticket).model_dump(mode="json")
+        return _ticket_to_view(ticket, session=session).model_dump(mode="json")
     finally:
         session.close()
 
@@ -414,7 +558,7 @@ async def decide_ticket_internal(ticket_id: str, request: DecideTicketRequest) -
             raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
 
         session.commit()
-        view = _ticket_to_view(result_ticket)
+        view = _ticket_to_view(result_ticket, session=session)
         result = view.model_dump(mode="json")
         _decision_idempotency[request.idempotency_key] = result
         return result
@@ -440,21 +584,14 @@ async def get_agent_review_internal(ticket_id: str) -> dict:
         ticket = svc._ticket_repo.get(ticket_id)
         if ticket is None:
             raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
+        payload = _load_review_artifact_payload(session, ticket.intake_job_id)
+        if payload is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Agent review artifact not found for intake_job_id: {ticket.intake_job_id}",
+            )
 
-        # Return a stub AgentReview artifact
-        # In production this would query the agent-review-worker output
-        artifact = AgentReviewArtifact(
-            ticket_id=ticket_id,
-            decision="PASS" if ticket.state.value == "system_decided" else "REVIEW",
-            quality_findings=[],
-            risk_flags=[],
-            evidence_anchors=[],
-            model="claude-sonnet-4-6",
-            version="v2.1.0",
-            prompt_hash="sha256:stub",
-            suggested_fixes=[],
-            created_at=_utc_now(),
-        )
+        artifact = _build_agent_review_artifact(ticket_id, payload)
         return artifact.model_dump(mode="json")
     finally:
         session.close()

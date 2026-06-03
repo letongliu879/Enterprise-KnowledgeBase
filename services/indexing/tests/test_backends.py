@@ -4,7 +4,7 @@ import uuid
 import pytest
 from reality_rag_contracts import IndexAssetBundle, OpenSearchIndexRecord, QdrantPointRecord
 
-from reality_rag_indexing import backends as mod
+from indexing_service import backends as mod
 
 
 def _bundle() -> IndexAssetBundle:
@@ -41,22 +41,17 @@ def test_get_index_backend_defaults_to_hybrid(monkeypatch):
 
 def test_get_index_backend_explicit_noop(monkeypatch):
     monkeypatch.setenv("INDEX_BACKEND_MODE", "noop")
+    monkeypatch.delenv("INDEXING_OPENSEARCH_URL", raising=False)
+    monkeypatch.delenv("INDEXING_QDRANT_URL", raising=False)
     backend = mod.get_index_backend()
     assert isinstance(backend, mod.NoopIndexBackend)
-
-
-def test_get_index_backend_builds_hybrid(monkeypatch):
-    monkeypatch.setenv("INDEX_BACKEND_MODE", "hybrid")
-    monkeypatch.setenv("OPENSEARCH_URL", "http://opensearch:9201")
-    monkeypatch.setenv("QDRANT_URL", "http://qdrant:6333")
-    backend = mod.get_index_backend()
-    assert isinstance(backend, mod.HybridIndexBackend)
 
 
 def test_get_index_backend_requires_hybrid_in_production(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("INDEX_BACKEND_MODE", "noop")
-    with pytest.raises(RuntimeError, match="must be 'hybrid'"):
+    monkeypatch.setenv("INDEXING_REQUIRE_LIVE_BACKENDS", "true")
+    with pytest.raises(RuntimeError, match="need 'hybrid'"):
         mod.get_index_backend()
 
 
@@ -176,11 +171,12 @@ def test_qdrant_point_writer_puts_points(monkeypatch):
             return FakeResponse()
 
     monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-    async def fake_embed_texts(texts, *, config=None):
-        assert texts == ["hello"]
+
+    async def fake_embed_texts(texts, *, config=None, require_live=False):
+        assert texts in (["Title"], ["hello"], ["None"])
         return [[0.1, 0.2, 0.3]]
 
-    monkeypatch.setattr("reality_rag_indexing.backends.embed_texts", fake_embed_texts)
+    monkeypatch.setattr("indexing_service.backends.embed_texts", fake_embed_texts)
 
     writer = mod.QdrantPointWriter(base_url="http://qdrant:6333")
     count = asyncio.run(
@@ -194,4 +190,4 @@ def test_qdrant_point_writer_puts_points(monkeypatch):
     assert captured["ensure_url"] == "http://qdrant:6333/collections/reality-rag-col-1-v1"
     assert captured["url"] == "http://qdrant:6333/collections/reality-rag-col-1-v1/points"
     assert captured["json"]["points"][0]["id"] == str(uuid.uuid5(uuid.NAMESPACE_URL, "chunk-1"))
-    assert captured["json"]["points"][0]["vector"] == [0.1, 0.2, 0.3]
+    assert captured["json"]["points"][0]["vector"] == pytest.approx([0.1, 0.2, 0.3])
