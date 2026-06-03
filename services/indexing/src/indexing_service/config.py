@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
-
-
-_ENV_LOADED = False
 
 
 @dataclass(frozen=True)
@@ -33,50 +32,102 @@ class IndexingConfig:
     backend: IndexBackendConfig
 
 
-def load_indexing_config() -> IndexingConfig:
-    _load_local_env()
+def load_indexing_config(
+    *,
+    env: Mapping[str, str] | None = None,
+    include_local_env: bool = True,
+) -> IndexingConfig:
+    env_source = env if env is not None else os.environ
+    local_env = _read_local_env_file() if include_local_env else {}
     chat_api_key = _first_non_empty(
-        "INDEXING_CHAT_API_KEY",
-        "INDEXING_LLM_API_KEY",
-        "OPENAI_API_KEY",
-        "DEEPSEEK_API_KEY",
+        (
+            "INDEXING_CHAT_API_KEY",
+            "INDEXING_LLM_API_KEY",
+            "OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+        ),
+        env=env_source,
+        fallback_env=local_env,
     )
     chat_base_url = _normalize_base_url(
         _first_non_empty(
-            "INDEXING_CHAT_BASE_URL",
-            "INDEXING_LLM_BASE_URL",
-            "OPENAI_BASE_URL",
-            "DEEPSEEK_BASE_URL",
+            (
+                "INDEXING_CHAT_BASE_URL",
+                "INDEXING_LLM_BASE_URL",
+                "OPENAI_BASE_URL",
+                "DEEPSEEK_BASE_URL",
+            ),
+            env=env_source,
+            fallback_env=local_env,
         )
     )
     chat_model = _first_non_empty(
-        "INDEXING_CHAT_MODEL",
-        "DEEPSEEK_MODEL",
-        "OPENAI_CHAT_MODEL",
+        (
+            "INDEXING_CHAT_MODEL",
+            "DEEPSEEK_MODEL",
+            "OPENAI_CHAT_MODEL",
+        ),
+        env=env_source,
+        fallback_env=local_env,
         default="deepseek-chat",
     )
     embedding_api_key = _first_non_empty(
-        "INDEXING_EMBEDDING_API_KEY",
-        "EMBEDDING_API_KEY",
-        "OPENAI_API_KEY",
+        (
+            "INDEXING_EMBEDDING_API_KEY",
+            "EMBEDDING_API_KEY",
+            "OPENAI_API_KEY",
+        ),
+        env=env_source,
+        fallback_env=local_env,
     )
     embedding_base_url = _normalize_base_url(
         _first_non_empty(
-            "INDEXING_EMBEDDING_BASE_URL",
-            "EMBEDDING_BASE_URL",
-            "OPENAI_BASE_URL",
+            (
+                "INDEXING_EMBEDDING_BASE_URL",
+                "EMBEDDING_BASE_URL",
+                "OPENAI_BASE_URL",
+            ),
+            env=env_source,
+            fallback_env=local_env,
         )
     )
     embedding_model = _first_non_empty(
-        "INDEXING_EMBEDDING_MODEL",
-        "EMBEDDING_MODEL",
+        (
+            "INDEXING_EMBEDDING_MODEL",
+            "EMBEDDING_MODEL",
+        ),
+        env=env_source,
+        fallback_env=local_env,
         default="text-embedding-3-large",
     )
-    embedding_batch_size = _int_env("INDEXING_EMBEDDING_BATCH_SIZE", default=16)
-    backend_mode = _first_non_empty("INDEXING_BACKEND_MODE", "INDEX_BACKEND_MODE", default="noop").lower()
-    opensearch_url = _first_non_empty("INDEXING_OPENSEARCH_URL", "OPENSEARCH_URL")
-    qdrant_url = _first_non_empty("INDEXING_QDRANT_URL", "QDRANT_URL")
-    require_live_backends = os.environ.get("INDEXING_REQUIRE_LIVE_BACKENDS", "").lower() in ("1", "true", "yes")
+    embedding_batch_size = _int_env(
+        ("INDEXING_EMBEDDING_BATCH_SIZE",),
+        env=env_source,
+        fallback_env=local_env,
+        default=16,
+    )
+    backend_mode = _first_non_empty(
+        ("INDEXING_BACKEND_MODE", "INDEX_BACKEND_MODE"),
+        env=env_source,
+        fallback_env=local_env,
+        default="noop",
+    ).lower()
+    opensearch_url = _first_non_empty(
+        ("INDEXING_OPENSEARCH_URL", "OPENSEARCH_URL"),
+        env=env_source,
+        fallback_env=local_env,
+    )
+    qdrant_url = _first_non_empty(
+        ("INDEXING_QDRANT_URL", "QDRANT_URL"),
+        env=env_source,
+        fallback_env=local_env,
+    )
+    require_live_backends = _bool_env(
+        ("INDEXING_REQUIRE_LIVE_BACKENDS",),
+        env=env_source,
+        fallback_env=local_env,
+        default=False,
+    )
     return IndexingConfig(
         models=IndexingModelConfig(
             chat_api_key=chat_api_key,
@@ -96,16 +147,31 @@ def load_indexing_config() -> IndexingConfig:
     )
 
 
-def _first_non_empty(*names: str, default: str = "") -> str:
-    for name in names:
-        value = os.environ.get(name, "").strip()
-        if value:
-            return value
+def _first_non_empty(
+    names: tuple[str, ...],
+    *,
+    env: Mapping[str, str],
+    fallback_env: Mapping[str, str] | None = None,
+    default: str = "",
+) -> str:
+    for source in (env, fallback_env):
+        if source is None:
+            continue
+        for name in names:
+            value = str(source.get(name, "")).strip()
+            if value:
+                return value
     return default
 
 
-def _int_env(name: str, *, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
+def _int_env(
+    names: tuple[str, ...],
+    *,
+    env: Mapping[str, str],
+    fallback_env: Mapping[str, str] | None = None,
+    default: int,
+) -> int:
+    raw = _first_non_empty(names, env=env, fallback_env=fallback_env)
     if not raw:
         return default
     try:
@@ -151,14 +217,25 @@ def normalize_embedding_model(model: str, *, base_url: str = "") -> str:
     return normalized
 
 
-def _load_local_env() -> None:
-    global _ENV_LOADED
-    if _ENV_LOADED:
-        return
+def _bool_env(
+    names: tuple[str, ...],
+    *,
+    env: Mapping[str, str],
+    fallback_env: Mapping[str, str] | None = None,
+    default: bool,
+) -> bool:
+    raw = _first_non_empty(names, env=env, fallback_env=fallback_env)
+    if not raw:
+        return default
+    return raw.lower() in ("1", "true", "yes")
+
+
+@lru_cache(maxsize=1)
+def _read_local_env_file() -> dict[str, str]:
     env_path = Path(__file__).resolve().parents[2] / ".env"
     if not env_path.exists():
-        _ENV_LOADED = True
-        return
+        return {}
+    values: dict[str, str] = {}
     for line in env_path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
@@ -170,5 +247,5 @@ def _load_local_env() -> None:
             continue
         if value.startswith(("\"", "'")) and value.endswith(("\"", "'")) and len(value) >= 2:
             value = value[1:-1]
-        os.environ.setdefault(key, value)
-    _ENV_LOADED = True
+        values[key] = value
+    return values

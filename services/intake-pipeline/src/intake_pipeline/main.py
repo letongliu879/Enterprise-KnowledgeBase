@@ -917,8 +917,10 @@ class SourceFileView(BaseModel):
     updated_at: str
 
 
-# Source-file owner APIs were retired from the compat root service.
-# document-service is the only supported owner for mutation on /internal/source-files*.
+# Source-file owner mutation APIs were retired from the compat root service.
+# document-service is the only supported owner for writes and lifecycle transitions
+# on /internal/source-files*. The compat root retains read-only diagnostic views
+# until the legacy smoke/helpers are fully retired.
 
 
 @app.get("/internal/source-files/{source_file_id}")

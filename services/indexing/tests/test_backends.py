@@ -4,6 +4,7 @@ import uuid
 import pytest
 from reality_rag_contracts import IndexAssetBundle, OpenSearchIndexRecord, QdrantPointRecord
 
+from indexing_service import config as config_mod
 from indexing_service import backends as mod
 
 
@@ -31,7 +32,31 @@ def _bundle() -> IndexAssetBundle:
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_backend_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config_mod, "_read_local_env_file", lambda: {})
+    for name in (
+        "APP_ENV",
+        "INDEXING_BACKEND_MODE",
+        "INDEX_BACKEND_MODE",
+        "INDEXING_OPENSEARCH_URL",
+        "OPENSEARCH_URL",
+        "INDEXING_QDRANT_URL",
+        "QDRANT_URL",
+        "INDEXING_REQUIRE_LIVE_BACKENDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_get_index_backend_defaults_to_hybrid(monkeypatch):
+    monkeypatch.setenv("INDEXING_BACKEND_MODE", "hybrid")
+    monkeypatch.setenv("INDEXING_OPENSEARCH_URL", "http://opensearch:9201")
+    monkeypatch.setenv("INDEXING_QDRANT_URL", "http://qdrant:6333")
+    backend = mod.get_index_backend()
+    assert isinstance(backend, mod.HybridIndexBackend)
+
+
+def test_get_index_backend_accepts_legacy_aliases(monkeypatch):
     monkeypatch.setenv("INDEX_BACKEND_MODE", "hybrid")
     monkeypatch.setenv("OPENSEARCH_URL", "http://opensearch:9201")
     monkeypatch.setenv("QDRANT_URL", "http://qdrant:6333")
@@ -40,16 +65,14 @@ def test_get_index_backend_defaults_to_hybrid(monkeypatch):
 
 
 def test_get_index_backend_explicit_noop(monkeypatch):
-    monkeypatch.setenv("INDEX_BACKEND_MODE", "noop")
-    monkeypatch.delenv("INDEXING_OPENSEARCH_URL", raising=False)
-    monkeypatch.delenv("INDEXING_QDRANT_URL", raising=False)
+    monkeypatch.setenv("INDEXING_BACKEND_MODE", "noop")
     backend = mod.get_index_backend()
     assert isinstance(backend, mod.NoopIndexBackend)
 
 
 def test_get_index_backend_requires_hybrid_in_production(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("INDEX_BACKEND_MODE", "noop")
+    monkeypatch.setenv("INDEXING_BACKEND_MODE", "noop")
     monkeypatch.setenv("INDEXING_REQUIRE_LIVE_BACKENDS", "true")
     with pytest.raises(RuntimeError, match="need 'hybrid'"):
         mod.get_index_backend()

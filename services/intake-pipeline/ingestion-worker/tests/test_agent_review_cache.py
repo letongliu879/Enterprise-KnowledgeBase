@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
-from reality_rag_contracts import AgentReview, PIIItem, PublishStatus, QualityReport, ReviewDecision
+from reality_rag_contracts import AgentReview, PublishStatus, QualityReport, ReviewDecision
 
 from ingestion_worker.agent_review_cache import (
+    CACHE_KEY_PREFIX,
+    CACHE_SCHEMA_VERSION,
     InMemoryAgentReviewCache,
-    build_cache_key,
     _ttl_for_review,
+    build_cache_key,
     clear_agent_review_cache,
     get_agent_review_cache,
 )
@@ -40,7 +41,7 @@ def test_build_cache_key_is_deterministic():
         model="deepseek-chat",
     )
     assert key1 == key2
-    assert key1.startswith("reality-rag:agent-review:v1:")
+    assert key1.startswith(f"{CACHE_KEY_PREFIX}:{CACHE_SCHEMA_VERSION}:")
 
 
 def test_build_cache_key_changes_on_content():
