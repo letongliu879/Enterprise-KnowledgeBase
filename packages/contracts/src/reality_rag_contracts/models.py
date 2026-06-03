@@ -1603,18 +1603,40 @@ class WorkbenchTicketDecision(BaseModel):
     collection_id: str
 
 
+class AgentReviewFindingView(BaseModel):
+    """Workbench-facing finding view enriched with optional evidence backfill."""
+
+    finding_id: str
+    severity: str = Field(default="medium", description="critical | high | medium | low | info")
+    category: str = ""
+    problem_summary: str
+    source_quote: Optional[str] = None
+    evidence_id: Optional[str] = None
+    doc_id: Optional[str] = None
+    source_file_id: Optional[str] = None
+    parse_snapshot_id: Optional[str] = None
+    page_from: Optional[int] = None
+    page_to: Optional[int] = None
+    state: str = Field(default="open", description="open | resolved")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
 class AgentReviewView(BaseModel):
-    """Read-only view of AgentReview artifact for workbench display."""
+    """Read-only view of AgentReview findings for approval/workbench display."""
 
     ticket_id: str
-    decision: str = Field(default="REVIEW", description="PASS | FAIL | REVIEW | DEGRADED")
-    quality_findings: list[dict[str, Any]] = Field(default_factory=list)
-    risk_flags: list[dict[str, Any]] = Field(default_factory=list)
-    evidence_anchors: list[dict[str, Any]] = Field(default_factory=list)
+    review_run_id: Optional[str] = None
+    source_file_id: Optional[str] = None
+    parse_snapshot_id: Optional[str] = None
+    decision: str = Field(default="REVIEW", description="APPROVE | REJECT | QUARANTINE | REVIEW | REQUEST_CHANGES | DEGRADED")
+    findings: list[AgentReviewFindingView] = Field(default_factory=list)
+    matched_count: int = Field(default=0, ge=0)
+    unmatched_count: int = Field(default=0, ge=0)
     model: Optional[str] = None
+    prompt_version: Optional[str] = None
     version: Optional[str] = None
     prompt_hash: Optional[str] = None
-    suggested_fixes: list[dict[str, Any]] = Field(default_factory=list)
+    artifact_schema_version: Optional[str] = None
     degraded_reason: Optional[str] = None
     failure_reason: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

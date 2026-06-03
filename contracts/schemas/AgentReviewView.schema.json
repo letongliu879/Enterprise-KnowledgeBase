@@ -4,142 +4,192 @@
   "title": "AgentReviewView",
   "type": "object",
   "additionalProperties": false,
-  "description": "Read-only view of AgentReview artifact. Workbench displays but does not modify.",
+  "description": "Read-only view of agent review findings for approval/workbench display.",
   "properties": {
     "ticket_id": {
       "type": "string",
       "minLength": 1
     },
+    "review_run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_file_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parse_snapshot_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "decision": {
       "type": "string",
       "enum": [
-        "PASS",
-        "FAIL",
+        "APPROVE",
+        "REJECT",
+        "QUARANTINE",
         "REVIEW",
+        "REQUEST_CHANGES",
         "DEGRADED"
       ]
     },
-    "quality_findings": {
+    "findings": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "category": {
-            "type": "string"
+          "finding_id": {
+            "type": "string",
+            "minLength": 1
           },
           "severity": {
             "type": "string",
             "enum": [
               "critical",
-              "major",
-              "minor",
+              "high",
+              "medium",
+              "low",
               "info"
             ]
           },
-          "message": {
+          "category": {
             "type": "string"
           },
-          "evidence_anchor": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "category",
-          "severity",
-          "message"
-        ]
-      }
-    },
-    "risk_flags": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "flag_type": {
-            "type": "string"
+          "problem_summary": {
+            "type": "string",
+            "minLength": 1
           },
-          "description": {
-            "type": "string"
+          "source_quote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doc_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_file_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parse_snapshot_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_from": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "page_to": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ]
           },
           "confidence": {
-            "type": "number",
+            "type": [
+              "number",
+              "null"
+            ],
             "minimum": 0,
             "maximum": 1
           }
         },
         "required": [
-          "flag_type",
-          "description"
+          "finding_id",
+          "severity",
+          "category",
+          "problem_summary",
+          "source_quote",
+          "evidence_id",
+          "doc_id",
+          "source_file_id",
+          "parse_snapshot_id",
+          "page_from",
+          "page_to",
+          "state",
+          "confidence"
         ]
       }
     },
-    "evidence_anchors": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "anchor_id": {
-            "type": "string"
-          },
-          "doc_id": {
-            "type": "string"
-          },
-          "evidence_id": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "page_span": {
-            "$ref": "./common.schema.json#/$defs/page_span"
-          }
-        },
-        "required": [
-          "anchor_id",
-          "doc_id",
-          "evidence_id"
-        ]
-      }
+    "matched_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unmatched_count": {
+      "type": "integer",
+      "minimum": 0
     },
     "model": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prompt_version": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "version": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "prompt_hash": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
-    "suggested_fixes": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "fix_type": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "target_evidence_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "fix_type",
-          "description"
-        ]
-      }
+    "artifact_schema_version": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "degraded_reason": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "failure_reason": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "created_at": {
       "type": "string",
@@ -149,10 +199,9 @@
   "required": [
     "ticket_id",
     "decision",
-    "quality_findings",
-    "risk_flags",
-    "evidence_anchors",
-    "suggested_fixes",
+    "findings",
+    "matched_count",
+    "unmatched_count",
     "created_at"
   ]
 }

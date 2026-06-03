@@ -104,32 +104,13 @@ def build_ticket_event_payload(session, ticket: ApprovalTicket) -> dict[str, Any
         parse_snapshot_id = getattr(intake_job, "parse_snapshot_id", None)
 
     ticket_doc_id = ticket.final_doc_id or ticket.preliminary_doc_id
-    enriched_findings: list[dict[str, Any]] = []
-    for finding in findings:
-        if not isinstance(finding, dict):
-            continue
-        enriched_findings.append({
-            "finding_id": str(finding.get("finding_id", "") or ""),
-            "source_quote": str(finding.get("source_quote", "") or ""),
-            "problem_summary": str(finding.get("problem_summary", "") or ""),
-            "severity": str(finding.get("severity", "medium") or "medium"),
-            "confidence": float(finding.get("confidence", 0.0) or 0.0),
-            "ticket_id": ticket.ticket_id,
-            "doc_id": ticket_doc_id,
-            "source_file_id": source_file_id,
-            "parse_snapshot_id": parse_snapshot_id,
-            "evidence_id": None,
-            "page_from": None,
-            "page_to": None,
-            "state": "open",
-            "category": "",
-            "problem_detail": None,
-            "chunk_quote": None,
-            "source_anchor_json": None,
-            "why_wrong": None,
-            "suggested_fix": None,
-            "suggested_operation": None,
-        })
+    enriched_findings = normalize_agent_review_findings(
+        findings,
+        ticket_id=ticket.ticket_id,
+        doc_id=ticket_doc_id,
+        source_file_id=source_file_id,
+        parse_snapshot_id=parse_snapshot_id,
+    )
 
     return {
         "ticket_id": ticket.ticket_id,
@@ -164,6 +145,46 @@ def build_ticket_event_payload(session, ticket: ApprovalTicket) -> dict[str, Any
     }
 
 
+def normalize_agent_review_findings(
+    findings: list[Any],
+    *,
+    ticket_id: str,
+    doc_id: str | None,
+    source_file_id: str | None,
+    parse_snapshot_id: str | None,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        finding_id = str(finding.get("finding_id", "") or "").strip()
+        if not finding_id:
+            continue
+        normalized.append({
+            "finding_id": finding_id,
+            "source_quote": _optional_text(finding.get("source_quote")),
+            "problem_summary": str(finding.get("problem_summary", "") or ""),
+            "severity": str(finding.get("severity", "medium") or "medium").lower(),
+            "confidence": _optional_float(finding.get("confidence")),
+            "ticket_id": ticket_id,
+            "doc_id": _optional_text(finding.get("doc_id")) or doc_id,
+            "source_file_id": _optional_text(finding.get("source_file_id")) or source_file_id,
+            "parse_snapshot_id": _optional_text(finding.get("parse_snapshot_id")) or parse_snapshot_id,
+            "evidence_id": _optional_text(finding.get("evidence_id")),
+            "page_from": _optional_int(finding.get("page_from")),
+            "page_to": _optional_int(finding.get("page_to")),
+            "state": str(finding.get("state", "open") or "open").lower(),
+            "category": str(finding.get("category", "") or ""),
+            "problem_detail": _optional_text(finding.get("problem_detail")),
+            "chunk_quote": _optional_text(finding.get("chunk_quote")),
+            "source_anchor_json": finding.get("source_anchor_json"),
+            "why_wrong": _optional_text(finding.get("why_wrong")),
+            "suggested_fix": _optional_text(finding.get("suggested_fix")),
+            "suggested_operation": _optional_text(finding.get("suggested_operation")),
+        })
+    return normalized
+
+
 def _derive_agent_risk_level(agent_review: dict[str, Any], findings: list[dict[str, Any]]) -> str | None:
     severities = {
         str(finding.get("severity", "")).lower()
@@ -185,3 +206,28 @@ def _derive_agent_risk_level(agent_review: dict[str, Any], findings: list[dict[s
     if isinstance(risk_tags, list) and risk_tags:
         return "medium"
     return "low" if decision == "approve" else None
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

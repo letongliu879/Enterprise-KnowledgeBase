@@ -187,5 +187,8 @@ class TestAgentReview:
         assert data["review_run_id"] == "att-1"
         assert data["source_file_id"] == "src-1"
         assert data["parse_snapshot_id"] == "pss-1"
-        assert len(data["anchored_findings"]) == 1
-        assert "quality_findings" in data
+        assert len(data["findings"]) == 1
+        assert data["matched_count"] == 0
+        assert data["unmatched_count"] == 1
+        assert data["findings"][0]["finding_id"] == "finding-1"
+        assert data["findings"][0]["source_quote"] == "quote"

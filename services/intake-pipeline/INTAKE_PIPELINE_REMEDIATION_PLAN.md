@@ -27,17 +27,18 @@
 1. **只能改当前工作树**
    - 工作目录限定在 `C:\Users\LLT\.codex\worktrees\9785\Enterprise KnowledgeBase`
 
-2. **当前阶段不要改 `workbench-api`**
-   - 当前工作树没有同步最新的 workbench 改动
-   - approval 回调、projection、matcher、routes、frontend 跳转都后置
+2. **当前阶段可以改 `workbench-api`，但不能让它成为 owner**
+   - `workbench-api` 可以进入正式实施范围
+   - 允许落地 approval 回调、projection、matcher、routes、frontend 跳转
+   - 但 `workbench-api` 仍然只能承担 projection / read-model / adapter / UI integration，不得承担 source file、review artifact、indexing chunk 的 owner 职责
 
 3. **当前阶段先不要做 agent 缓存方案**
    - 不把 prompt cache、input cache、二次 review cache 作为本轮交付项
    - 现有 cache 实现即使暂时保留，也不得成为新的 owner、主键或跨服务契约基础
 
-4. **要保留完整闭环目标，但不把后续闭环和本轮整改绑死**
-   - 你最初提出的 intake -> approval -> workbench -> matcher -> frontend 闭环是最终目标
-   - 但本轮只做 `intake-pipeline` 范围内能落地、且不引入后续技术债的部分
+4. **要保留完整闭环目标，并按 owner 边界正确落地**
+   - 你最初提出的 intake -> approval -> workbench -> matcher -> frontend 闭环仍然是正式目标
+   - 现在这条闭环可以进入实施，但必须建立在前面 owner、artifact、compat、fail-fast 已经收口的基础上
 
 
 ## 3. 目标边界
@@ -192,21 +193,22 @@ document-service:/upload or /internal/source-files
 - `source_file_id`、`parse_snapshot_id`、`review_run_id`、`artifact_version` 属于 artifact envelope，不要在每个 finding 上重复
 
 
-### 5.3 approval 向 workbench 透传 findings 是后续阶段，不是本轮交付
+### 5.3 approval 向 workbench 透传 findings 现在进入正式实施范围
 
 原始想法：
 
 - `approval-service` 的事件 payload 携带完整 findings 发给 workbench
 
-这在最终闭环里成立，但**当前阶段后置**：
+这不再是“后续再做”的事项，而是 `AgentReview artifact` 落地后的下一阶段正式工作：
 
-- 当前阶段先把 `approval-service` 改成只读真实 artifact
-- 只有在 workbench 工作树同步后，才接 approval callback / projection / matcher
+- `approval-service` 继续保持“只读真实 artifact”的边界，不在 workbench 集成时回退成拼装 stub
+- approval callback / projection / matcher 现在可以正式接入
+- 但透传时必须直接沿用 artifact 里稳定生成的 finding 结构，不允许下游重新发明字段语义
 
 
-### 5.4 workbench / matcher / routes / frontend 全部后置，但设计入口现在要定死
+### 5.4 workbench / matcher / routes / frontend 现在进入正式实施范围
 
-原始 4-8 点方案可以保留为后续闭环目标：
+原始 4-8 点方案不再只是后续目标，而是当前可以执行的正式阶段：
 
 1. approval callback 携带完整 findings
 2. adapter 将每个 finding 展开成 projection event
@@ -215,10 +217,12 @@ document-service:/upload or /internal/source-files
 5. routes 返回 matched / unmatched findings
 6. frontend 用 `source_quote` 做搜索跳转
 
-但有两个关键修正必须现在就定死：
+但有几个关键修正必须现在就定死：
 
 - `finding_id` 不能由 approval 或 adapter 临时生成随机 UUID
 - `finding_id` 必须由 review artifact 生产侧稳定生成，并一路透传到下游
+- `workbench-api` 只能消费 artifact / callback / indexing chunk 内容，不能反向变成 review artifact owner
+- matcher 只能做“匹配与回填”，不能重写 finding 语义本身
 
 
 ## 6. AgentReview 的正式目标设计
@@ -600,11 +604,11 @@ finding_id = sha256(
 - 主 review 判断有风险但无法提取稳定证据时，也允许 `anchored_findings=[]`
 
 
-#### Phase 6：后续 workbench / indexing 闭环
+#### Phase 6：workbench / indexing 闭环集成
 
-这一阶段**不是当前工作树交付内容**，但必须保留为最终目标。
+这一阶段现在进入正式实施范围，但它仍然是建立在前面主链整改和真实 `AgentReview artifact` 已落地的前提上。
 
-workbench 同步后再做：
+这一阶段要做：
 
 1. approval callback / event payload 携带完整 findings
 2. adapter 将每个 finding 展开为 projection event
@@ -617,7 +621,7 @@ workbench 同步后再做：
 9. frontend 用 `source_quote` 做搜索与跳转
 
 这里对应你最早提出的 3-8 点闭环方案。  
-结论是：**可以完成，但不应在当前 worktree 和当前阶段混入实施。**
+结论是：**可以完成，而且现在应当作为正式阶段实施，但不能破坏前面已经收好的 owner 边界。**
 
 
 #### Phase 7：删除旧代码
@@ -658,9 +662,6 @@ real-chain smoke or targeted smoke
 
 ### 当前阶段不做
 
-- `workbench-api` 代码改动
-- approval -> workbench 回调对接
-- findings projection / matcher / routes / frontend 跳转
 - 新的 agent 缓存设计与实现
 
 
@@ -689,7 +690,6 @@ Phase 5 完成后，应满足：
 - `anchored_findings` 支持 0 个、1 个或多个 finding
 - 相近问题经过去重后不会被拆成多条重复 finding
 - 主 review 有风险但无稳定证据时允许空 findings
-- 当前阶段不依赖 workbench 改动
 - 当前阶段不引入新的 agent cache 复杂度
 
 
@@ -715,7 +715,7 @@ Phase 5 完成后，应满足：
 6. 再做 Phase 3，清理 fallback / shim / `StageContext`
 7. 再做 Phase 4，退役根 compat 主链
 8. 整改主线稳定后，再做 Phase 5，实现真实 `AgentReview artifact`
-9. workbench 同步后，再做 Phase 6 闭环集成
+9. 再做 Phase 6 workbench / indexing 闭环集成
 10. 最后做 Phase 7 删除旧代码
 
 不要跳过前面的 owner / 链路整改，直接做 findings 投影。  

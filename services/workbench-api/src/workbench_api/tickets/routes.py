@@ -40,11 +40,9 @@ def _normalize_projection_finding(finding) -> dict:
 
 
 def _normalize_approval_agent_review(result: dict) -> dict:
-    anchored_findings = result.get("anchored_findings")
-    if not isinstance(anchored_findings, list):
-        anchored_findings = result.get("findings", [])
+    findings_payload = result.get("findings", [])
     findings = []
-    for finding in anchored_findings if isinstance(anchored_findings, list) else []:
+    for finding in findings_payload if isinstance(findings_payload, list) else []:
         if not isinstance(finding, dict):
             continue
         findings.append({
@@ -62,7 +60,12 @@ def _normalize_approval_agent_review(result: dict) -> dict:
             "state": finding.get("state", "open"),
             "confidence": finding.get("confidence"),
         })
-    matched_count = sum(1 for finding in findings if finding.get("evidence_id"))
+    matched_count = result.get("matched_count")
+    if not isinstance(matched_count, int):
+        matched_count = sum(1 for finding in findings if finding.get("evidence_id"))
+    unmatched_count = result.get("unmatched_count")
+    if not isinstance(unmatched_count, int):
+        unmatched_count = max(0, len(findings) - matched_count)
     return {
         "ticket_id": result.get("ticket_id", ""),
         "decision": result.get("decision"),
@@ -70,7 +73,7 @@ def _normalize_approval_agent_review(result: dict) -> dict:
         "parse_snapshot_id": result.get("parse_snapshot_id"),
         "findings": findings,
         "matched_count": matched_count,
-        "unmatched_count": max(0, len(findings) - matched_count),
+        "unmatched_count": unmatched_count,
     }
 
 
