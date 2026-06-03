@@ -53,6 +53,14 @@ from .index_naming import (
     build_qdrant_collection_name,
     build_versioned_backend_name,
 )
+from .config import (
+    IndexBackendConfig,
+    IndexingConfig,
+    IndexingModelConfig,
+    load_indexing_config,
+    normalize_chat_model,
+    normalize_embedding_model,
+)
 from .indexing_models import (
     ChunkRecord,
     IndexVersionRecord,
@@ -202,6 +210,13 @@ __all__ = [
     "build_opensearch_index_name",
     "build_qdrant_collection_name",
     "build_versioned_backend_name",
+    # Config
+    "IndexBackendConfig",
+    "IndexingConfig",
+    "IndexingModelConfig",
+    "load_indexing_config",
+    "normalize_chat_model",
+    "normalize_embedding_model",
     # Indexing models
     "ChunkRecord",
     "IndexVersionRecord",

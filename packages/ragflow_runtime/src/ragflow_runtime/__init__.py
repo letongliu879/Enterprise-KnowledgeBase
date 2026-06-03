@@ -95,7 +95,7 @@ def _install_compat_aliases() -> None:
             "max_length": 8192,
         }
         try:
-            from indexing_service.config import (
+            from reality_rag_contracts import (
                 load_indexing_config,
                 normalize_chat_model,
                 normalize_embedding_model,
@@ -270,14 +270,14 @@ def _install_compat_aliases() -> None:
         model_name = str(name or "").strip()
         if llm_type_text == "embedding" and model_name.lower() in {"", "embedding", "default"}:
             try:
-                from indexing_service.config import load_indexing_config
+                from reality_rag_contracts import load_indexing_config
 
                 model_name = load_indexing_config().models.embedding_model
             except Exception:
                 pass
         elif model_name.lower() in {"", "chat", "default", "image2text", "ocr", "speech2text", "rerank", "tts"}:
             try:
-                from indexing_service.config import load_indexing_config
+                from reality_rag_contracts import load_indexing_config
 
                 model_name = load_indexing_config().models.chat_model
             except Exception:
@@ -345,7 +345,7 @@ def _install_compat_aliases() -> None:
     settings_mod.DOC_ENGINE_INFINITY = False
     settings_mod.DOC_ENGINE_OCEANBASE = False
     try:
-        from indexing_service.config import load_indexing_config
+        from reality_rag_contracts import load_indexing_config
         settings_mod.EMBEDDING_BATCH_SIZE = load_indexing_config().models.embedding_batch_size
     except Exception:
         settings_mod.EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", "16"))
