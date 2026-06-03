@@ -13,7 +13,6 @@ from jose import jwt
 
 from reality_rag_persistence.database import override_url_for_testing, create_all, drop_all
 
-from workbench_api.main import app
 from workbench_api.config import config
 
 
@@ -34,6 +33,7 @@ def _setup_db():
 
 @pytest.fixture
 def client():
+    from workbench_api.main import app
     return TestClient(app)
 
 

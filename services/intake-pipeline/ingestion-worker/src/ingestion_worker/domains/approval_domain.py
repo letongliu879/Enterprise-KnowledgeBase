@@ -1,7 +1,7 @@
 """Approval domain facade.
 
-`approval-service` is the approval owner. `ingestion-worker` may use a
-same-process fallback only in tests or explicit compat smoke.
+`approval-service` is the approval owner and must be reached through its split
+service HTTP API from ingestion-worker code.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import os
 from typing import Any
 
 import httpx
-from ingestion_worker.split_service_policy import require_explicit_owner_url
 
 from reality_rag_contracts import (
     AgentReview,
@@ -35,28 +34,28 @@ def _get_remote_url() -> str | None:
     return _REMOTE_URL
 
 
-def _url(path: str) -> str:
+def _require_remote_url() -> str:
     base = _get_remote_url()
-    assert base is not None
-    return f"{base}{path}"
+    if base is None:
+        raise RuntimeError(
+            "APPROVAL_SERVICE_URL is required; approval-service must run through its split-service owner."
+        )
+    return base
 
 
-# ── Pure function (always local) ──────────────────────────────────────
+def _url(path: str) -> str:
+    return f"{_require_remote_url()}{path}"
+
 
 def system_decide(
     quality_report: QualityReport | None,
     agent_review: AgentReview | None,
 ) -> PublishStatus:
-    """Resolve publish_status from quality report and agent review.
-
-    Pure function — always executed locally; never forwarded.
-    """
+    """Resolve publish_status from quality report and agent review."""
     from approval_service.approval_domain import system_decide as _native
 
     return _native(quality_report, agent_review)
 
-
-# ── Remote client ─────────────────────────────────────────────────────
 
 class _RemoteApprovalService:
     """HTTP client facade that mirrors ApprovalService API."""
@@ -64,6 +63,13 @@ class _RemoteApprovalService:
     async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(_url(path), json=payload)
+            if resp.status_code >= 400:
+                raise RuntimeError(resp.text)
+            return resp.json()
+
+    async def _get(self, path: str) -> Any:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(_url(path))
             if resp.status_code >= 400:
                 raise RuntimeError(resp.text)
             return resp.json()
@@ -81,6 +87,7 @@ class _RemoteApprovalService:
     ) -> ApprovalTicket:
         import asyncio
 
+        del version_conflict
         result = asyncio.get_event_loop().run_until_complete(
             self._post(
                 "/internal/approval/auto-approve",
@@ -215,10 +222,7 @@ class _RemoteApprovalService:
         import asyncio
 
         result = asyncio.get_event_loop().run_until_complete(
-            self._post(
-                f"/internal/approval/{ticket_id}/expire",
-                {},
-            )
+            self._post(f"/internal/approval/{ticket_id}/expire", {})
         )
         return ApprovalTicket.model_validate(result)
 
@@ -230,39 +234,13 @@ class _RemoteApprovalService:
         )
         return [ApprovalTicket.model_validate(t) for t in result]
 
-    async def _get(self, path: str) -> Any:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(_url(path))
-            if resp.status_code >= 400:
-                raise RuntimeError(resp.text)
-            return resp.json()
-
-
-# ── Fallback facade ───────────────────────────────────────────────────
 
 class ApprovalService:
-    """Dispatches to remote HTTP or, only in tests, a local compat fallback."""
+    """HTTP facade for the approval-service owner."""
 
     def __init__(self, session=None) -> None:
-        self._session = session
-        self._local = None
+        del session
         self._remote: _RemoteApprovalService | None = None
-
-    def _use_remote(self) -> bool:
-        return _get_remote_url() is not None
-
-    def _get_local(self):
-        if self._local is None:
-            from approval_service.approval_domain import ApprovalService as _NativeApprovalService
-
-            if self._session is None:
-                raise RuntimeError("ApprovalService requires a session in local mode")
-            require_explicit_owner_url(
-                env_var="APPROVAL_SERVICE_URL",
-                owner_name="approval-service",
-            )
-            self._local = _NativeApprovalService(self._session)
-        return self._local
 
     def _get_remote(self) -> _RemoteApprovalService:
         if self._remote is None:
@@ -270,44 +248,25 @@ class ApprovalService:
         return self._remote
 
     def submit_auto_approve(self, **kwargs: Any) -> ApprovalTicket:
-        if self._use_remote():
-            return self._get_remote().submit_auto_approve(**kwargs)
-        return self._get_local().submit_auto_approve(**kwargs)
+        return self._get_remote().submit_auto_approve(**kwargs)
 
     def submit_auto_reject(self, **kwargs: Any) -> ApprovalTicket:
-        if self._use_remote():
-            return self._get_remote().submit_auto_reject(**kwargs)
-        return self._get_local().submit_auto_reject(**kwargs)
+        return self._get_remote().submit_auto_reject(**kwargs)
 
     def create_pending(self, **kwargs: Any) -> ApprovalTicket:
-        if self._use_remote():
-            return self._get_remote().create_pending(**kwargs)
-        return self._get_local().create_pending(**kwargs)
+        return self._get_remote().create_pending(**kwargs)
 
     def approve(self, **kwargs: Any) -> ApprovalTicket:
-        if self._use_remote():
-            return self._get_remote().approve(**kwargs)
-        return self._get_local().approve(**kwargs)
+        return self._get_remote().approve(**kwargs)
 
     def reject(self, **kwargs: Any) -> ApprovalTicket:
-        if self._use_remote():
-            return self._get_remote().reject(**kwargs)
-        return self._get_local().reject(**kwargs)
+        return self._get_remote().reject(**kwargs)
 
     def return_to_stage(self, **kwargs: Any) -> tuple[ApprovalTicket, ApprovalTicket]:
-        if self._use_remote():
-            return self._get_remote().return_to_stage(**kwargs)
-        return self._get_local().return_to_stage(**kwargs)
+        return self._get_remote().return_to_stage(**kwargs)
 
     def expire(self, **kwargs: Any) -> ApprovalTicket:
-        if self._use_remote():
-            return self._get_remote().expire(**kwargs)
-        return self._get_local().expire(**kwargs)
+        return self._get_remote().expire(**kwargs)
 
     def get_ticket_history(self, intake_job_id: str) -> list[ApprovalTicket]:
-        if self._use_remote():
-            return self._get_remote().get_ticket_history(intake_job_id)
-        return self._get_local().get_ticket_history(intake_job_id)
-
-    def _generate_final_doc_id(self, **kwargs: Any) -> str:
-        return self._get_local()._generate_final_doc_id(**kwargs)
+        return self._get_remote().get_ticket_history(intake_job_id)

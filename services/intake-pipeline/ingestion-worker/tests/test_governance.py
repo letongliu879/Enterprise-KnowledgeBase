@@ -15,7 +15,7 @@ from reality_rag_persistence.repositories.tenants import TenantRepository
 
 
 class TestPipelineCreatesDocumentPolicy:
-    def test_pipeline_creates_document_policy(self, monkeypatch, tmp_path):
+    def test_pipeline_creates_document_policy(self, monkeypatch, tmp_path, inprocess_document_owner):
         from ingestion_worker.pipeline import IngestionPipeline
         from tests.fake_converter import FakeConverter
 
@@ -83,7 +83,7 @@ class TestPipelineCreatesDocumentPolicy:
         finally:
             Path(source_path).unlink()
 
-    def test_pipeline_no_duplicate_policy(self, monkeypatch, tmp_path):
+    def test_pipeline_no_duplicate_policy(self, monkeypatch, tmp_path, inprocess_document_owner):
         from ingestion_worker.pipeline import IngestionPipeline
         from tests.fake_converter import FakeConverter
 
@@ -153,7 +153,7 @@ class TestPipelineCreatesDocumentPolicy:
 
 
 class TestPipelineRejectsMissingCollection:
-    def test_pipeline_rejects_missing_collection(self, monkeypatch, tmp_path):
+    def test_pipeline_rejects_missing_collection(self, monkeypatch, tmp_path, inprocess_document_owner):
         from tests.fake_converter import FakeConverter
         from ingestion_worker.pipeline import IngestionPipeline
 
@@ -175,7 +175,7 @@ class TestPipelineRejectsMissingCollection:
 
 
 class TestPipelineRejectsDefaultAuthorityLevel:
-    def test_pipeline_rejects_default_authority_level(self, monkeypatch, tmp_path):
+    def test_pipeline_rejects_default_authority_level(self, monkeypatch, tmp_path, inprocess_document_owner):
         from tests.fake_converter import FakeConverter
         from ingestion_worker.pipeline import IngestionPipeline
 

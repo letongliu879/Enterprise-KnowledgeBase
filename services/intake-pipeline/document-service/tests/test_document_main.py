@@ -3,19 +3,23 @@
 import hashlib
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from document_service.main import app
 from reality_rag_contracts import CanonicalMetadata, IndexStatus, PublishStatus
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.outbox_events import OutboxEventRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    from document_service.main import app
+    return TestClient(app)
 
 
-def test_health_endpoint():
+def test_health_endpoint(client: TestClient):
     resp = client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
@@ -23,7 +27,7 @@ def test_health_endpoint():
     assert data["service"] == "document-service"
 
 
-def test_upload_creates_source_file_and_outbox(monkeypatch, tmp_path):
+def test_upload_creates_source_file_and_outbox(client: TestClient, monkeypatch, tmp_path):
     monkeypatch.setenv("DOCUMENT_STAGING_DIR", str(tmp_path))
 
     resp = client.post(
@@ -59,7 +63,7 @@ def test_upload_creates_source_file_and_outbox(monkeypatch, tmp_path):
         session.close()
 
 
-def test_upload_returns_existing_active_source_file(monkeypatch, tmp_path):
+def test_upload_returns_existing_active_source_file(client: TestClient, monkeypatch, tmp_path):
     monkeypatch.setenv("DOCUMENT_STAGING_DIR", str(tmp_path))
 
     first = client.post(
@@ -85,7 +89,7 @@ def test_upload_returns_existing_active_source_file(monkeypatch, tmp_path):
     assert second_payload["status"] == "ready"
 
 
-def test_upload_returns_existing_published_document(monkeypatch, tmp_path):
+def test_upload_returns_existing_published_document(client: TestClient, monkeypatch, tmp_path):
     monkeypatch.setenv("DOCUMENT_STAGING_DIR", str(tmp_path))
     content = b"published bytes"
     content_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"

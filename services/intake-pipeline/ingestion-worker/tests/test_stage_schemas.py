@@ -559,36 +559,11 @@ class TestPurePublishingStage:
             assert out.canonical_metadata.doc_id == "pre-doc-1"
 
 
-# ── StageContext Legacy Field Dependency Tests ────────────────────────────────
+# ── Pure Stage Runtime Independence Tests ─────────────────────────────────────
 
 
-class TestStageContextLegacyFields:
-    """[TRANSITIONAL] StageContext still holds DB session and repositories.
-
-    These tests quantify the dependency so Phase 1/3 can measure progress.
-    """
-
-    def test_stage_context_has_session_field(self):
-        """[TRANSITIONAL] StageContext.session exists.  Target: removed in Phase 3."""
-        ctx = _make_ctx()
-        assert hasattr(ctx, "session")
-        # Current default is None, but real pipeline sets it to a Session
-        assert ctx.session is None  # default from _make_ctx
-
-    def test_stage_context_has_document_repo_field(self):
-        """[TRANSITIONAL] StageContext.document_repo exists.  Target: removed in Phase 3."""
-        ctx = _make_ctx()
-        assert hasattr(ctx, "document_repo")
-        assert ctx.document_repo is None  # default from _make_ctx
-
-    def test_stage_context_has_policy_repo_field(self):
-        """[TRANSITIONAL] StageContext.policy_repo exists.  Target: removed in Phase 3."""
-        ctx = _make_ctx()
-        assert hasattr(ctx, "policy_repo")
-        assert ctx.policy_repo is None  # default from _make_ctx
-
+class TestPureStageRuntimeIndependence:
     def test_pure_conversion_does_not_use_session(self):
-        """[RETAIN] Pure conversion executor works without session or repos."""
         inp = ConversionStageInput(
             intake_job_id="job-1",
             collection_id="col-1",
@@ -596,10 +571,8 @@ class TestStageContextLegacyFields:
         )
         out = pure_stages.run_conversion_stage(inp, [FakeConverter()])
         assert out.conversion_result is not None
-        # No session access occurred
 
     def test_pure_review_does_not_use_session(self):
-        """[RETAIN] Pure review executor works without session or repos."""
         inp = ReviewStageInput(
             preliminary_doc_id="pre-1",
             canonical_content="Hello world",
@@ -607,10 +580,8 @@ class TestStageContextLegacyFields:
         )
         out = pure_stages.run_review_stage(inp, FakeReviewer())
         assert out.agent_review is not None
-        # No session access occurred
 
     def test_pure_publishing_does_not_require_session(self):
-        """[RETAIN] Pure publishing executor works without session (repos optional)."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -626,21 +597,18 @@ class TestStageContextLegacyFields:
                 )
                 out = pure_stages.run_publishing_stage(inp)
                 assert out.asset_paths != {}
-                # document_persisted is False because no repo was passed
                 assert out.document_persisted is False
                 assert out.policy_persisted is False
             finally:
                 del os.environ["REALITY_RAG_SIDECAR_DIR"]
 
     def test_adapter_does_not_add_session(self):
-        """[RETAIN] Schema adapters only copy fields, never inject session."""
         ctx = _make_ctx()
         assert ctx.session is None
         inp = adapters.ctx_to_conversion_input(ctx)
         assert not hasattr(inp, "session")
 
     def test_pure_conversion_stage_produces_complete_identity_fields(self):
-        """[RETAIN] Pure conversion stage is the supported execution path."""
         inp_pure = ConversionStageInput(
             source_file_path="/tmp/test.txt",
             collection_id="col-1",

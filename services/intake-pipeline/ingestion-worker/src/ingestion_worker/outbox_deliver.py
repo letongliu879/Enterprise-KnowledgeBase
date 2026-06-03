@@ -97,7 +97,7 @@ def _forward_event_to_workbench(service: str, event: OutboxEvent, *, aggregate_v
 
 def _deliver_approval_event(event: OutboxEvent) -> bool:
     """Forward approval requests or consume approval outcomes."""
-    from .domains.approval_domain import _get_remote_url, ApprovalService
+    from .domains.approval_domain import _get_remote_url
 
     if event.event_type in {EventType.APPROVAL_PENDING.value, EventType.APPROVAL_DECIDED.value}:
         local_success = False
@@ -141,43 +141,8 @@ def _deliver_approval_event(event: OutboxEvent) -> bool:
 
     remote_url = _get_remote_url()
     if remote_url is None:
-        session = get_session()
-        try:
-            approval = ApprovalService(session)
-            payload = event.payload_json
-            if event.event_type == EventType.APPROVAL_REQUESTED.value:
-                publish_status = payload.get("publish_status")
-                if publish_status == PublishStatus.PUBLISHED.value:
-                    approval.submit_auto_approve(
-                        intake_job_id=payload["intake_job_id"],
-                        preliminary_doc_id=payload["preliminary_doc_id"],
-                        collection_id=payload["collection_id"],
-                        logical_document_id=payload.get("logical_document_id", ""),
-                        version=payload.get("version", 1),
-                        confirmed_tags=payload.get("confirmed_tags", []),
-                    )
-                elif publish_status == PublishStatus.REJECTED.value:
-                    approval.submit_auto_reject(
-                        intake_job_id=payload["intake_job_id"],
-                        preliminary_doc_id=payload["preliminary_doc_id"],
-                        collection_id=payload["collection_id"],
-                        rejection_reason=payload.get("rejection_reason", "System decision: reject"),
-                    )
-                else:
-                    approval.create_pending(
-                        intake_job_id=payload["intake_job_id"],
-                        preliminary_doc_id=payload["preliminary_doc_id"],
-                        collection_id=payload["collection_id"],
-                        routing_recommendation=payload.get("routing_recommendation", "require_approval"),
-                    )
-                session.commit()
-            return True
-        except Exception:
-            session.rollback()
-            logger.exception("outbox: approval request local handling failed")
-            return False
-        finally:
-            session.close()
+        logger.error("outbox: APPROVAL_SERVICE_URL is required for approval owner delivery")
+        return False
 
     import httpx
 

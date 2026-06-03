@@ -5,10 +5,7 @@ from fastapi.testclient import TestClient
 from reality_rag_contracts import IndexJobRequest
 
 import ingestion_worker.indexing_service as mod
-from ingestion_worker.main import app
-
-
-client = TestClient(app)
+from ingestion_worker.app_factory import create_app
 
 
 class _FakeIndexedDocument:
@@ -270,24 +267,30 @@ def test_indexing_endpoints_delegate_to_service(monkeypatch):
         def rollback(self, collection_id, index_version):
             return {"collection_id": collection_id, "active_index_version": "old", "previous_index_version": index_version, "target_index_version": "old", "status": "indexed"}
 
-    monkeypatch.setattr("ingestion_worker.main.get_indexing_service", lambda: FakeIndexingService())
+    with TestClient(
+        create_app(
+            indexing_service_factory=lambda: FakeIndexingService(),
+            include_monitor_routes=False,
+            start_background_poller=False,
+        )
+    ) as client:
 
-    run_resp = client.post(
-        "/internal/indexing/run",
-        json={"job_id": "job-1", "collection_id": "col-1", "index_version": "ver-1", "options": {}},
-    )
-    activate_resp = client.post(
-        "/internal/indexing/activate",
-        json={"collection_id": "col-1", "index_version": "ver-1"},
-    )
-    rollback_resp = client.post(
-        "/internal/indexing/rollback",
-        json={"collection_id": "col-1", "index_version": "ver-1"},
-    )
+        run_resp = client.post(
+            "/internal/indexing/run",
+            json={"job_id": "job-1", "collection_id": "col-1", "index_version": "ver-1", "options": {}},
+        )
+        activate_resp = client.post(
+            "/internal/indexing/activate",
+            json={"collection_id": "col-1", "index_version": "ver-1"},
+        )
+        rollback_resp = client.post(
+            "/internal/indexing/rollback",
+            json={"collection_id": "col-1", "index_version": "ver-1"},
+        )
 
-    assert run_resp.status_code == 200
-    assert run_resp.json()["backend_mode"] == "fake"
-    assert activate_resp.status_code == 200
-    assert activate_resp.json()["active_index_version"] == "ver-1"
-    assert rollback_resp.status_code == 200
-    assert rollback_resp.json()["active_index_version"] == "old"
+        assert run_resp.status_code == 200
+        assert run_resp.json()["backend_mode"] == "fake"
+        assert activate_resp.status_code == 200
+        assert activate_resp.json()["active_index_version"] == "ver-1"
+        assert rollback_resp.status_code == 200
+        assert rollback_resp.json()["active_index_version"] == "old"

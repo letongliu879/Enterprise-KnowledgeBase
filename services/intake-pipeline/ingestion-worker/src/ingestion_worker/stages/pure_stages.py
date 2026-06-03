@@ -10,13 +10,10 @@ run_review_stage = _shared.run_review_stage
 _logical_document_id = _shared._logical_document_id
 
 
-_compat_persist_document_and_policy = persist_document_and_policy
-
-
 def run_publishing_stage(inp, *, document_repo=None, policy_repo=None, persist_fn=None):
     return _shared.run_publishing_stage(
         inp,
         document_repo=document_repo,
         policy_repo=policy_repo,
-        persist_fn=(persist_fn or _compat_persist_document_and_policy),
+        persist_fn=(persist_fn or persist_document_and_policy),
     )

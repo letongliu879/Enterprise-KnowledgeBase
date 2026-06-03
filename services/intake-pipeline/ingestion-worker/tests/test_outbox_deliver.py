@@ -36,7 +36,7 @@ class TestOutboxDeliverCallbacks:
         evt = self._make_event(EventType.STAGE_TASK_REQUESTED)
         assert deliver(evt) is True
 
-    def test_file_ready_schedules_intake_job(self):
+    def test_file_ready_schedules_intake_job(self, inprocess_document_owner):
         deliver = make_deliver_callback()
         session = get_session()
         try:
@@ -87,7 +87,7 @@ class TestOutboxDeliverCallbacks:
         finally:
             session.close()
 
-    def test_file_ready_duplicate_event_is_idempotent(self):
+    def test_file_ready_duplicate_event_is_idempotent(self, inprocess_document_owner):
         deliver = make_deliver_callback()
         session = get_session()
         try:
@@ -132,21 +132,6 @@ class TestOutboxDeliverCallbacks:
         evt = self._make_event(EventType.STAGE_TASK_REQUESTED)
         evt.event_type = "unknown_event"
         assert deliver(evt) is True
-
-    def test_approval_event_local_mode_returns_true(self):
-        deliver = make_deliver_callback()
-        evt = self._make_event(
-            EventType.APPROVAL_REQUESTED,
-            payload={
-                "intake_job_id": "job-1",
-                "preliminary_doc_id": "doc-1",
-                "collection_id": "col-1",
-                "publish_status": "pending_review",
-                "routing_recommendation": "require_approval",
-            },
-        )
-        with patch("ingestion_worker.domains.approval_domain._get_remote_url", return_value=None):
-            assert deliver(evt) is True
 
     def test_approval_event_remote_mode_forwards_http(self):
         deliver = make_deliver_callback()
@@ -251,7 +236,7 @@ class TestOutboxDeliverCallbacks:
                 assert forwarded["aggregate_version"] == 1
                 assert forwarded["payload"]["ticket_id"] == "t-pending"
 
-    def test_stage_completed_conversion_marks_consumed_and_queues_review(self):
+    def test_stage_completed_conversion_marks_consumed_and_queues_review(self, inprocess_document_owner):
         deliver = make_deliver_callback()
         session = get_session()
         try:
@@ -352,7 +337,7 @@ class TestOutboxDeliverCallbacks:
         finally:
             session.close()
 
-    def test_stage_completed_publishing_marks_job_published_and_cleanable(self):
+    def test_stage_completed_publishing_marks_job_published_and_cleanable(self, inprocess_document_owner):
         deliver = make_deliver_callback()
         session = get_session()
         try:

@@ -37,7 +37,6 @@ from intake_runtime.pipeline_utils import report_asset_path, write_json_asset
 from intake_runtime.stage_runtime import execute_conversion_task, execute_publishing_task, execute_review_task
 from intake_runtime.stage_runtime import json_summary
 from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
-from intake_runtime.stages.protocol import StageContext
 from intake_runtime.stages.pure_stages import _logical_document_id
 
 from .document_service_client import DocumentServiceClient
@@ -169,7 +168,7 @@ class IngestionPipeline:
     def _logical_document_id(self, source_file_path: str) -> str:
         return _logical_document_id(source_file_path)
 
-    def _persist_review_telemetry(self, ctx: StageContext, review_task: Any) -> None:
+    def _persist_review_telemetry(self, ctx: Any, review_task: Any) -> None:
         if self._telemetry_store is None:
             return
         review_context = getattr(ctx, "review_context", {}) or {}
@@ -210,7 +209,7 @@ class IngestionPipeline:
             except Exception:
                 pass
 
-    def _persist_review_feedback(self, ctx: StageContext) -> None:
+    def _persist_review_feedback(self, ctx: Any) -> None:
         if self._telemetry_store is None or ctx.agent_review is None:
             return
         try:

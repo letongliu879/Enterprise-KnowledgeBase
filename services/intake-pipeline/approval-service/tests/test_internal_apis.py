@@ -5,8 +5,6 @@ from fastapi.testclient import TestClient
 
 from reality_rag_persistence.database import create_all, drop_all, override_url_for_testing
 
-from approval_service.main import app
-
 
 @pytest.fixture(autouse=True)
 def _db():
@@ -18,6 +16,7 @@ def _db():
 
 @pytest.fixture
 def client():
+    from approval_service.main import app
     return TestClient(app)
 
 
