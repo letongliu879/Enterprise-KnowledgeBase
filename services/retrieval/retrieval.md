@@ -34,26 +34,30 @@
   - `JdbcDocumentTocSource`
 - `run_traces` + `run_steps`
   - `JdbcRetrievalTraceRecorder`
+- `index_projection_idempotency`
+  - `IndexProjectionSyncController` 内部维护，用于 projection sync 幂等性控制
 
 说明：
 
 - file projection 类仍然存在，但当前只作为测试替身使用
-- 运行时默认 bean 已经固定到 JDBC 主链
+- 运行时默认 bean 已经固定到 JDBC 主链（`RetrievalDataConfiguration` 中 `@ConditionalOnMissingBean`）
 - 所有运行时事实源（profile、index、published document、chunk）均通过显式 projection sync 接收，不做跨服务表直连
 
 ## 3. 当前执行链路
 
-`RetrievalService` 现在的执行顺序如下：
+`RetrievalService.retrieve(...)` 现在的执行顺序如下：
 
 1. `CollectionRetrievalPlanBuilder` 为每个 collection 构建 `CollectionRetrievalPlan`
-2. `QueryPreparationService` 做 query 预处理
-3. `RecallOrchestrator` 做 hybrid recall
-4. `RerankService` 做 rerank
-5. `SmartTopKCutoffService` 选 seeds
-6. `NeighborChunkExpander` 与 `BreadcrumbChunkExpander` 做扩展
-7. `RagflowTocAggregationService` 与 `RagflowChildrenAggregationService` 做聚合
-8. `JdbcRetrievalTraceRecorder` 记录 trace
-9. `KnowledgeContextPacker` 打包 `KnowledgeContext`
+2. `QueryPreparationService` 做 query 预处理（含 cross-languages、keyword extraction、metadata filter 解析）
+3. `RetrievalService.buildScope(...)` 构建 `RetrievalScope`（合并 allowedDocIds、metadataFilters、permissionFingerprint）
+4. `RecallOrchestrator` 做 hybrid recall（OpenSearch + Qdrant → fusion）
+5. `RerankService` 做 rerank（live rerank 或 heuristic fallback）
+6. `SmartTopKCutoffService` 选 seeds（智能 cutoff + 去重）
+7. `NeighborChunkExpander` 与 `BreadcrumbChunkExpander` 做扩展
+8. `RagflowTocAggregationService` 做 TOC 聚合与 boost
+9. `RagflowChildrenAggregationService` 做子 chunk 聚合（mom_id 归并）
+10. `JdbcRetrievalTraceRecorder` 记录 trace
+11. `KnowledgeContextPacker` 打包 `KnowledgeContext`
 
 ## 4. 缓存层
 
@@ -73,8 +77,8 @@ retrieval 服务自带两层 read-path 缓存，完全独立于上游 RAGFlow，
 
 | 项 | 值 |
 |---|---|
-| Key 前缀 | `retrieval:qemb:v1:{sha256(...)}` |
-| hash 内容 | `query` + `embedding_model` + `embedding_client` + `embedding_base_url_fingerprint` |
+| Key 前缀 | `reality-rag:retrieval:qemb:v1:{sha256(...)}` |
+| hash 内容 | `query_text` + `embedding_model` + `embedding_client` + `embedding_base_url_fingerprint` |
 | TTL | 默认 24h (`retrieval.cache.query-embedding-ttl-seconds`) |
 | 无关因子 | collection、权限、index version（query embedding 只取决于 query 和模型） |
 
@@ -89,8 +93,8 @@ retrieval 服务自带两层 read-path 缓存，完全独立于上游 RAGFlow，
 
 | 项 | 值 |
 |---|---|
-| Key 前缀 | `retrieval:recall:v1:{sha256(...)}` |
-| hash 内容 | `CollectionRetrievalPlan` 的完整投影：`query` + `principal_id` + `principal_groups` + `collection_ids` + `active_index_versions` + `profile_hashes` + `embedding_models` + `allowed_doc_ids_hash` + `metadata_filters_hash` + `lifecycle_filter_hash` + `include_deprecated` + `candidate_top_k` + `opensearch_index` + `qdrant_collection` |
+| Key 前缀 | `reality-rag:retrieval:recall:v1:{sha256(...)}` |
+| hash 内容 | `CollectionRetrievalPlan` 的完整投影：`query_text` + `principal_id` + `principal_groups` + `collection_ids` + `active_index_versions` + `profile_hashes` + `embedding_models` + `allowed_doc_ids_hash` + `metadata_filters_hash` + `lifecycle_filter_hash` + `include_deprecated` + `candidate_top_k` + `opensearch_index` + `qdrant_collection` |
 | TTL | 默认 60s (`retrieval.cache.recall-ttl-seconds`) |
 | 失效因子 | `activeIndexVersionId`、`profileHash`、filter hash 任一变化即 key miss |
 
@@ -120,6 +124,7 @@ retrieval:
     query-embedding-ttl-seconds: 86400
     recall-ttl-seconds: 60
     fail-open: true
+    require-redis: false     # true 时 Redis 不可用时抛异常（默认 false，fail-open）
 ```
 
 Maven 依赖：`spring-boot-starter-data-redis`（已加入 pom.xml）。
@@ -165,8 +170,7 @@ Maven 依赖：`spring-boot-starter-data-redis`（已加入 pom.xml）。
 
 **调用方**：
 
-- `services/indexing` 在 `materialize_chunk_revision` 成功后调用此接口清理检索缓存
-- `services/indexing` 在 `IndexJobRunner.accept()` 成功激活 index version（`request_type="publish"` 或 `"reindex"`）后调用此接口清理检索缓存
+- `services/indexing` 在 chunk revision 变更或 index version 激活后调用此接口清理检索缓存
 - purge 失败记录 warning，不回滚 revision 或索引物化结果
 
 ### 4.7 不做的事
@@ -187,16 +191,16 @@ Maven 依赖：`spring-boot-starter-data-redis`（已加入 pom.xml）。
 
 `CollectionRetrievalPlanBuilder` 的当前规则：
 
-- 缺 profile：直接报错
-- 缺 active index：直接报错
-- `allowed_doc_ids` 来自 `published_documents`
+- 缺 profile：直接抛 `ResponseStatusException(400)`
+- 缺 active index：直接抛 `ResponseStatusException(400)`
+- `allowed_doc_ids` 来自 `published_documents`，按 `published_document_state` 过滤
 - `include_deprecated=false` 时只允许 `PUBLISHED`
 
 这意味着：
 
 - "key 有权限"不等于"一定能查到内容"
 - 如果 collection 已建索引但还没有发布事实，plan 仍可构建，但 `allowed_doc_ids` 会为空
-- 后续 recall 会 fail-closed，结果为空，而不是把全部 chunk 放进结果
+- 后续 `PermissionPrefilter` 会 fail-closed，结果为空，而不是把全部 chunk 放进结果
 
 这条约束是当前代码明确实现的，不是文档约定。
 
@@ -207,7 +211,7 @@ Maven 依赖：`spring-boot-starter-data-redis`（已加入 pom.xml）。
 当前 `PermissionPrefilter` 会同时过滤：
 
 - `collection_id`
-- `published_document_state`
+- `published_document_state`（`allowed_states`）
 - `allowed_doc_ids`
 - chunk 级 principal / group 可见性
 - metadata 里的 `visibility`
@@ -221,42 +225,62 @@ Maven 依赖：`spring-boot-starter-data-redis`（已加入 pom.xml）。
 
 ## 7. query 预处理与 RAGFlow 风格能力
 
-当前请求契约里已经接入这些字段：
+`QueryPreparationService` 当前执行顺序：
 
-- `cross_languages`
-- `keyword`
-- `meta_data_filter`
+1. `MetadataFilterService.resolveAllowedDocIds(...)` — 解析 metadata filter 对 allowedDocIds 的进一步约束
+2. 基础 queryText = `request.queryText()`
+3. 如果 `enableRagflowCrossLanguages=true` 且 `request.crossLanguages()` 非空，调用 prompt backend 做跨语言翻译
+4. 如果 `enableRagflowKeywordExtraction=true` 且 `request.keyword()=true`，调用 prompt backend 提取关键词并追加到 queryText
 
-当前实现状态要分开看：
+metadata filter 当前实现状态：
 
-- `manual` `meta_data_filter` 已经可用
-- `cross_languages`、`keyword`、`auto/semi_auto meta_data_filter` 依赖 prompt backend
-- 没配 live prompt backend 时，会安全降级，不会虚构条件
+- `manual`：完全可用，不依赖 prompt backend。支持操作符 `=`, `!=`, `contains`, `not contains`, `in`, `not in`, `start with`, `end with`
+- `auto` / `semi_auto`：依赖 prompt backend 生成过滤条件。若 `enableRagflowMetadataAutoFilter=false` 或 prompt backend 未配置，安全降级为不过滤（返回 baseDocIds）
+- `cross_languages` / `keyword`：同样依赖 prompt backend，未配置时安全降级（不做翻译/不追加关键词）
+
+prompt backend 未配置时（`livePromptStrategiesEnabled=false`），所有依赖它的能力都会安全降级，不会虚构条件。
 
 ## 8. recall / rerank 的当前实现状态
 
+### 8.1 recall
+
 当前 recall 主线是：
 
-- `OpenSearchRecaller`
-- `QdrantRecaller`
-- `HybridFusionService`
+- `OpenSearchRecaller`（BM25）
+- `QdrantRecaller`（dense vector）
+- `HybridFusionService`（加权融合）
 
-`retrieval.backends.live-recall-enabled=true` 且配置了真实地址时，会调用 OpenSearch / Qdrant 真实后端。**Normal mode**：如果真实后端调用抛异常或返回空结果，代码会静默 fallback 到基于 DB chunk 的本地 stub recall（WARN 日志）。**Strict mode**（`require-live-backends=true`）：fallback 被禁止，任何后端失败或空结果均抛出 `IllegalStateException`。
+`retrieval.backends.live-recall-enabled=true` 且配置了真实地址时，会调用 OpenSearch / Qdrant 真实后端。
+
+- **Normal mode**：如果真实后端调用抛异常或返回空结果，代码会静默 fallback 到基于 DB chunk 的本地 stub recall（WARN 日志）。stub 使用 query 词元在 `display_text` / `vector_text` 上做词法匹配打分。
+- **Strict mode**（`require-live-backends=true`）：fallback 被禁止，任何后端失败或空结果均抛出 `IllegalStateException`。
+
+Qdrant live recall 依赖 `QueryEmbeddingClient` 生成 query vector。embedding 的 strict 行为：
+
+- Normal mode：未配置 live embedding 或 API 失败时，返回空 vector → Qdrant 可能返回空结果 → fallback 到 stub
+- Strict mode：未配置 live embedding 或 API 失败时，直接抛 `IllegalStateException`
+
+### 8.2 rerank
 
 rerank 模式：
 
+- `retrieval.search.enable-rerank=false` 或 profile `rerank_enabled=false` 时，跳过 rerank，按 recall score 排序
 - `retrieval.backends.live-rerank-enabled=false` 时，走本地 heuristic rerank（`source_stage="rerank_heuristic"`）
 - `live-rerank-enabled=true` 且配置了真实地址和 API key 后，走 live rerank（`source_stage="rerank_live"`）
-- **Normal mode**: live rerank 异常时静默 fallback 到 heuristic（WARN 日志）
+- **Normal mode**: live rerank 异常或空结果时静默 fallback 到 heuristic（WARN 日志）
 - **Strict mode**: live rerank 异常或空结果 → `IllegalStateException`
 
-**Strict smoke 已验证的真实后端证据（2026-05-28, 28/28 PASS）**：
+heuristic rerank 包含 RAGFlow 风格能力：token weighting（title / important keyword / question hint）、rank feature boost（pagerank / tag_fea）、RAGFlow rerank window。
 
-- retrieval smoke profile：`live-recall-enabled=true`、`live-rerank-enabled=true`
-- OpenSearch 索引 `os_default_col_smoke_idxv_col_smoke_active` 含 smoke 测试文档
-- Qdrant collection `qd_default_col_smoke_idxv_col_smoke_active` 含 smoke 测试 point（vector size=1024）
-- PostgreSQL `run_steps` 记录到 `source_stages: ["rerank_live"]`，证明 live rerank 被实际调用
-- Qdrant point 携带真实 1024 维向量，证明 SiliconFlow embedding（BAAI/bge-m3）被实际调用
+### 8.3 strict mode 完整行为矩阵
+
+| 组件 | Normal（未配置/失败） | Strict（未配置/失败） |
+|---|---|---|
+| OpenSearch recall | fallback 到 stub，WARN | `IllegalStateException` |
+| Qdrant recall | fallback 到 stub，WARN | `IllegalStateException` |
+| Embedding | 返回 empty list，WARN | `IllegalStateException` |
+| Rerank | fallback 到 heuristic，WARN | `IllegalStateException` |
+| Prompt strategies | 返回 empty / 跳过，无 WARN | 当前不抛异常（仅跳过） |
 
 ## 9. TOC 事实源
 
@@ -270,9 +294,18 @@ rerank 模式：
 
 - `collection_id` 命中
 - `final_doc_id` 命中
-- `state in ('ACTIVE', 'ACTIVATED')`
+- `UPPER(state) IN ('ACTIVE', 'ACTIVATED')`
+- 按 `activated_at DESC, updated_at DESC LIMIT 1`
 
 所以现在的 TOC 聚合依赖的是 indexing 写进 `indexed_documents` 的 outline 字段。
+
+`RagflowTocAggregationService` 的行为：
+
+1. 选择得分最高的 document 作为 anchor
+2. 读取该 document 的 TOC
+3. 先用 token match 打分；若 `enableRagflowTocLlmSelector=true`，额外调用 prompt backend 做 LLM-based TOC 相关性选择
+4. 对命中的 TOC node，boost 或添加其 `linked_chunk_ids` 对应的 chunk
+5. 最终按 `ragflowTocTopN` 截断
 
 ## 10. 可观测性
 
@@ -287,6 +320,11 @@ rerank 模式：
 - `step_name = retrieval.response`
 - `step_name = retrieval.failure`
 
+`JdbcRetrievalTraceRecorder` 的写入行为：
+
+- `run_traces`：先 UPDATE，若 updated==0 则 INSERT（upsert 语义）
+- `run_steps`：纯 INSERT
+
 当前记录内容包括：
 
 - `query_id`
@@ -298,6 +336,7 @@ rerank 模式：
 - `allowed_doc_ids`
 - `chunk_ids`
 - `final_doc_ids`
+- `source_stages`
 - `debug_ref`
 
 排查一条查询时，应把 access 与 retrieval 的 `trace_id` 串起来一起看。
@@ -319,10 +358,10 @@ rerank 模式：
 | `bm25_weight` | 0.0 ~ 1.0，且 + `vector_weight` = 1.0 |
 | `vector_weight` | 0.0 ~ 1.0，且 + `bm25_weight` = 1.0 |
 | `candidate_top_k` | > 0，且 <= 1000 |
-| `pack_budget` | > 0 |
-| `similarity_threshold` | 0.0 ~ 1.0 |
-| `rerank_enabled` | boolean |
-| `rerank_model` | 必须在支持列表中 (`default`, `none`, `bge-reranker-v2-m3`, `rerank-v1`, `rerank-multilingual-v1.0`) |
+| `pack_budget` | > 0；> 100000 时 warning |
+| `similarity_threshold` | 0.0 ~ 1.0；> 0.9 或 < 0.1 时 warning |
+| `rerank_enabled` | 必填，必须是 boolean；true 且 `rerank_model`="none" 时 warning |
+| `rerank_model` | 必填，必须在支持列表中 (`default`, `none`, `bge-reranker-v2-m3`, `rerank-v1`, `rerank-multilingual-v1.0`) |
 | `fail_policy` | `fail_open` 或 `fail_closed` |
 | `expansion_policy` | 可选；如有 `type`，必须是 `neighbor` / `breadcrumb` / `none` |
 
@@ -350,7 +389,7 @@ rerank 模式：
 }
 ```
 
-当 `valid=false` 时，`canonical_config` 字段不存在，`profile_hash` 为占位值 `sha256:0000...`。
+当 `valid=false` 时，`canonical_config` 字段不存在，`profile_hash` 为占位值 `sha256:0000000000000000000000000000000000000000000000000000000000000000`。
 
 ### 11.4 与 admin 控制面的边界
 
@@ -366,11 +405,30 @@ rerank 模式：
 
 关键项：
 
-- `server.port=18082`
-- `spring.datasource.*`
-- `retrieval.backends.*`
-- `retrieval.search.*`
-- `retrieval.cache.*`
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `server.port` | 18082 | 服务端口 |
+| `spring.datasource.url` | `jdbc:postgresql://127.0.0.1:5432/reality_rag` | 主数据库 |
+| `retrieval.backends.live-recall-enabled` | `false` | 是否启用 OpenSearch/Qdrant live recall |
+| `retrieval.backends.live-embedding-enabled` | `false` | 是否启用 live embedding |
+| `retrieval.backends.live-rerank-enabled` | `false` | 是否启用 live rerank |
+| `retrieval.backends.live-prompt-strategies-enabled` | `false` | 是否启用 prompt backend（auto filter / cross languages / keyword） |
+| `retrieval.backends.require-live-backends` | `false` | strict mode：禁止所有 fallback |
+| `retrieval.search.fused-top-m` | 60 | recall 后截断进入 rerank 的候选数 |
+| `retrieval.search.enable-rerank` | `true` | 全局 rerank 开关 |
+| `retrieval.search.rerank-top-n` | 10 | rerank 后保留数量 |
+| `retrieval.search.enable-smart-top-k` | `true` | 智能 cutoff 开关 |
+| `retrieval.search.smart-min-k` | 2 | cutoff 最少保留 |
+| `retrieval.search.smart-max-k` | 8 | cutoff 最多保留 |
+| `retrieval.search.enable-neighbor-expansion` | `true` | neighbor 扩展开关 |
+| `retrieval.search.neighbor-hops` | 2 | neighbor 扩展跳数 |
+| `retrieval.search.enable-breadcrumb-expansion` | `true` | breadcrumb 扩展开关 |
+| `retrieval.search.enable-ragflow-toc-aggregation` | `true` | TOC 聚合开关 |
+| `retrieval.search.enable-ragflow-children-aggregation` | `true` | children 聚合开关 |
+| `retrieval.cache.enabled` | `true` | 缓存总开关 |
+| `retrieval.cache.provider` | `noop` | 缓存提供者：noop / redis |
+| `retrieval.cache.fail-open` | `true` | Redis 故障时是否 fail-open |
+| `retrieval.cache.require-redis` | `false` | true 时 Redis 不可用抛异常 |
 
 ## 附录 A. 当前本地验证事实
 
@@ -378,51 +436,37 @@ rerank 模式：
 
 - `DbBackedRuntimeRetrieveControllerTest`
   - 验证 retrieval 运行时可直接使用 DB-backed profile / index / chunk / trace
-- `RealSqliteIndexingRegistrySmokeTest`
-  - 验证本地 `.verify/runtime/indexing-real.db` 能读到 `col_default` 的 active index、chunk、`ret_default`
-- `scripts/run_real_runtime_smoke.py`
-  - 端到端 real-runtime smoke test，28/28 通过（已验证 strict mode，2026-05-28）
-  - 验证真实多进程 HTTP + 真实 PostgreSQL + 契约投影同步全链路
-  - 验证 profile projection sync、index projection sync、published document projection、hybrid recall、rerank、context pack 全链路
-  - **Live dependency strict proof (28/28 PASS with `--require-live-backends`)**:
-    - OpenSearch direct verification: `os_default_col_smoke_idxv_col_smoke_active` hits=1, `doc_smoke_test` confirmed
-    - Qdrant direct verification: `qd_default_col_smoke_idxv_col_smoke_active` points=1, `doc_smoke_test` confirmed
-    - OpenSearch live recall: `OpenSearch live recall returned 1 hits for collection=col_smoke`
-    - SiliconFlow embedding: `SiliconFlow embedding succeeded, model=BAAI/bge-m3, dimension=1024`
-    - Qdrant live recall: `Qdrant live recall returned 1 hits for collection=col_smoke`
-    - SiliconFlow rerank: `SiliconFlow rerank succeeded, model=BAAI/bge-reranker-v2-m3, returned 1 results`
-    - Trace `source_stages: ["rerank_live"]` recorded in PostgreSQL `run_steps`
-    - Access query returns same doc_id/chunk through live retrieval path
-  - JWT auth 使用 smoke-test-secret（test double）；production JWT 配置（issuer/audience）已实现，见 admin 测试
-  - **Redis cache**: PROVEN — 32/32 PASS strict smoke (2026-05-28): cache miss → hit → purge → miss；log: `Redis cache purge: pattern=reality-rag:retrieval:*, deleted=3`。Normal mode uses noop provider.
-  - **Strict mode 完整选项**: `uv run python scripts/run_real_runtime_smoke.py --require-live-backends`
-    - 禁止所有静默 fallback：recall stub、rerank heuristic、embedding empty/stub 均抛出 `IllegalStateException`
-    - OpenSearch/Qdrant/SiliconFlow 任一不可达 → FAIL
+  - 覆盖：plan build、recall、rerank、smart cutoff、neighbor expansion、breadcrumb expansion、TOC aggregation、children aggregation、trace write、context pack
+- 其他场景测试（均使用 file projection 或 DB-backed fixture）：
+  - `BreadcrumbExpansionRetrieveControllerTest`
+  - `CachePurgeControllerTest`
+  - `MetadataFilterRetrieveControllerTest`
+  - `NeighborExpansionRetrieveControllerTest`
+  - `RagflowChildrenAggregationRetrieveControllerTest`
+  - `RagflowRankFeaturesRetrieveControllerTest`
+  - `RagflowTocAggregationRetrieveControllerTest`
+  - `RagflowTocDisabledRetrieveControllerTest`
+  - `RagflowTokenWeightingRetrieveControllerTest`
+  - `RerankDisabledRetrieveControllerTest`
+  - `RetrievalProfileValidateControllerTest`
+  - 缓存测试：`NoOpRetrievalCacheTest`, `RetrievalCacheKeyBuilderTest`, `CachedQueryEmbeddingClientTest`, `RecallOrchestratorCacheTest`
+  - Backend 测试：`OpenSearchRecallerTest`, `QdrantRecallerTest`, `RerankServiceTest`
 
 **检索 backend 的真实使用状态**
 
-retrieval recall/rerank 已配置为 live 模式（smoke profile）：
+smoke 测试 profile 配置为 live 模式：
 
 - `live-recall-enabled: true` → OpenSearch + Qdrant
 - `live-embedding-enabled: true` → SiliconFlow BAAI/bge-m3
 - `live-rerank-enabled: true` → SiliconFlow BAAI/bge-reranker-v2-m3
-- `cache.enabled: false`
+- `cache.enabled: false`（smoke 测试关闭缓存以避免干扰）
 
 **模式行为**：
 
 | Mode | Backend 不可用 | Embedding 失败 | Rerank 失败 | 日志 |
 |---|---|---|---|---|
-| Normal | 静默 fallback 到 stub，WARN 日志 | 静默 fallback 到 stub/empty，WARN 日志 | 静默 fallback 到 heuristic，WARN 日志 | `live recall failed — falling back to stub` |
-| Strict (`--require-live-backends`) | 抛出 `IllegalStateException`，请求失败 | 抛出 `IllegalStateException`，请求失败 | 抛出 `IllegalStateException`，请求失败 | `required but failed` / `required but not configured` |
-
-**Strict smoke 已验证的证据 (2026-05-28, 28/28 PASS)**：
-
-- OpenSearch 索引 `os_default_col_smoke_idxv_col_smoke_active` 含 `doc_smoke_test`（direct `_search` hits=1）
-- Qdrant collection `qd_default_col_smoke_idxv_col_smoke_active` 含 `doc_smoke_test`（direct `scroll` points=1）
-- 日志：`OpenSearch live recall returned 1 hits`、`Qdrant live recall returned 1 hits`
-- 日志：`SiliconFlow embedding succeeded, model=BAAI/bge-m3, dimension=1024`
-- 日志：`SiliconFlow rerank succeeded, model=BAAI/bge-reranker-v2-m3, returned 1 results`
-- Trace：`run_steps.details_json.source_stages: ["rerank_live"]`
+| Normal | fallback 到 stub，WARN 日志 | 返回 empty，WARN 日志 | fallback 到 heuristic，WARN 日志 | `live recall failed — falling back to stub` |
+| Strict (`require-live-backends=true`) | 抛出 `IllegalStateException`，请求失败 | 抛出 `IllegalStateException`，请求失败 | 抛出 `IllegalStateException`，请求失败 | `required but failed` / `required but not configured` |
 
 **运行时必须通过 projection sync 接收事实**
 

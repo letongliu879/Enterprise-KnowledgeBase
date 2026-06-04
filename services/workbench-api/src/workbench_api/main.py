@@ -21,29 +21,61 @@ from .projections.routes import router as projection_router
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _build_lifespan(*, start_reconciler: bool):
     """Application lifespan manager.
 
-    Starts background reconciliation loop on startup.
+    Starts background reconciliation loop on startup when enabled.
     Gracefully cancels on shutdown.
     """
     import asyncio
     from .projections.reconciler import reconciliation_loop
 
-    reconcile_task = asyncio.create_task(reconciliation_loop())
+    if start_reconciler:
+        reconcile_task = asyncio.create_task(reconciliation_loop())
     yield
-    reconcile_task.cancel()
-    try:
-        await reconcile_task
-    except asyncio.CancelledError:
-        pass
+    if start_reconciler:
+        reconcile_task.cancel()
+        try:
+            await reconcile_task
+        except asyncio.CancelledError:
+            pass
 
 
-app = FastAPI(
-    title="Reality-RAG Workbench",
-    version="0.1.0",
-    lifespan=lifespan,
-)
+def create_app(*, start_reconciler: bool = True) -> FastAPI:
+    """Workbench API factory.
+
+    Tests should call ``create_app(start_reconciler=False)`` to avoid
+    launching the background reconciliation loop.
+    """
+    application = FastAPI(
+        title="Reality-RAG Workbench",
+        version="0.1.0",
+        lifespan=lambda app: _build_lifespan(start_reconciler=start_reconciler),
+    )
+
+    application.include_router(auth_router)
+    application.include_router(upload_router)
+    application.include_router(parser_router)
+    application.include_router(preview_router)
+    application.include_router(snapshot_router)
+    application.include_router(chunk_router)
+    application.include_router(ticket_router)
+    application.include_router(chunk_edit_router)
+    application.include_router(task_router)
+    application.include_router(workspace_router)
+    application.include_router(source_file_router)
+    application.include_router(retrieval_router)
+    application.include_router(event_router)
+    application.include_router(projection_router)
+
+    @application.get("/workbench/health")
+    def health() -> dict[str, str]:
+        return {"service": "workbench", "status": "ok"}
+
+    return application
+
+
+app = create_app()
 
 app.include_router(auth_router)
 app.include_router(upload_router)

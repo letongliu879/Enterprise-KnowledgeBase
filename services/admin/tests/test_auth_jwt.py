@@ -74,7 +74,8 @@ def _setup_db():
 @pytest.fixture
 def client():
     from admin_service.main import app
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class TestJwtBasic:

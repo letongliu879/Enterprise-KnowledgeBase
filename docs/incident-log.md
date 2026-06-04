@@ -65,3 +65,5 @@ For `apps/web`, package-manager choice must be treated as part of runtime integr
 - `npm` only unless the project is explicitly migrated
 - do not introduce a second lockfile family
 - do not run package-manager-specific validation commands before checking the existing lockfile and install layout
+
+此规则已纳入 `apps/web/AGENTS.md` 作为 agent 操作约束。

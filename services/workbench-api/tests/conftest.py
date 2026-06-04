@@ -33,8 +33,8 @@ def _setup_db():
 
 @pytest.fixture
 def client():
-    from workbench_api.main import app
-    with TestClient(app) as test_client:
+    from workbench_api.main import create_app
+    with TestClient(create_app(start_reconciler=False)) as test_client:
         yield test_client
 
 

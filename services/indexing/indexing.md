@@ -13,7 +13,8 @@
 - 复用 `ParseSnapshot` 执行正式 chunking
 - 生成 embedding
 - 写入 lexical/vector index
-- 管理 document index revision 与 activate/rollback
+- 管理 document index revision 与 activate/rollback/cleanup
+- 支持发布后 chunk revision 与重新物化
 
 以下职责**不属于** indexing：
 
@@ -80,7 +81,7 @@
 同时也必须保留：
 
 - `indexing` 可以在 `ParseSnapshot` 之后承接治理字段
-- `indexing` 可以在最终入库前接入人工修订或 agent 修订后的 chunk 版本
+- `indexing` 可以在最终入库前接入人工修订或 agent 修订后的 chunk 版本（通过 ChunkRevision 或 pre-publish edit overlay）
 - 一旦最终 chunk 版本被修改，`embedding` 由 `indexing` 负责按同一套上游语义重新计算
 - embedding API 调用已按 `INDEXING_EMBEDDING_BATCH_SIZE` 分片，保持输出顺序与输入顺序一致
 
@@ -159,7 +160,7 @@ source file
 
 `ParseSnapshot` 是 indexing 的一等产物，由 `ParseSnapshotRecord` 持久化。
 
-当前实际字段：
+当前实际字段（与 `reality_rag_contracts.indexing_models.ParseSnapshotRecord` 一致）：
 
 - `parse_snapshot_id` — 稳定标识，格式为 `pss_{input_hash[:16]}_{parser_id}_{policy_hash}`
 - `request_id`
@@ -171,7 +172,7 @@ source file
 - `source_suffix`
 - `parser_id` — 实际使用的上游 parser（如 `naive`、`qa`、`table`）
 - `parser_backend` — 当前固定为 `ragflow_app`
-- `parser_profile_id` — 生效的 profile 标识，当前为 `{document_family}:{parser_id}`
+- `parser_profile_id` — 生效的 profile 标识，当前格式为 `{document_family}:{parser_id}`
 - `chunk_profile_id` — 驱动 chunk 语义的 profile ID，当前与 `parser_id` 对齐
 - `document_family` — 文档族（如 `text_document`、`specialized_document`）
 - `effective_policy` — 决策原因文本
@@ -240,12 +241,14 @@ ParsePreviewRequested
 IndexBuildRequested
   -> load ParseSnapshot
   -> load governance overlay
-  -> optional human/agent chunk revision
+  -> optional pre-publish chunk edit overlay
   -> final chunk materialization
   -> embedding input assembly (aligned with upstream parser semantics)
   -> embedding
   -> lexical/vector upsert
-  -> candidate revision activate
+  -> candidate revision activate (for publish/reindex)
+  -> index projection sync to retrieval
+  -> retrieval cache purge
   -> IndexReady
 ```
 
@@ -257,11 +260,35 @@ IndexBuildRequested
 - 即使 `embedding` 在 `indexing` 执行，embedding 输入文本的组织规则也应继续对齐上游 parser 实际语义
 - 如果后续引入人工或 agent 的 chunk 修订层，修订发生在 final materialization 与 embedding 之间，而不是回写成另一套本地 parser 语义
 
-### 4.3 索引投影同步
+### 4.3 索引版本生命周期
+
+`indexing` 维护索引版本的完整生命周期：
+
+- **BUILDING** -> **READY** -> **ACTIVE** -> **INACTIVE** -> **DISCARDED**
+- **ACTIVE** -> **ROLLED_BACK** -> 上一个版本重新 **ACTIVE**
+
+激活（activate）：
+- 将目标版本设为 ACTIVE
+- 原 ACTIVE 版本设为 INACTIVE
+- 更新 indexed_document 状态
+- 触发 index projection sync 与 cache purge
+
+回滚（rollback）：
+- 将目标版本设为 ROLLED_BACK
+- 恢复 `previous_active_index_version_id` 为 ACTIVE
+- 更新 indexed_document 状态
+
+清理（cleanup）：
+- 仅允许对非 ACTIVE 版本执行
+- 删除 chunk registry 记录
+- 删除关联 indexed_document
+- 版本状态设为 DISCARDED
+
+### 4.4 索引投影同步
 
 `indexing` 在正式物化与激活完成后，通过 `POST /internal/index-projections/sync` 向 `services/retrieval` 同步运行时所需的最小事实集。
 
-同步内容包括：
+同步内容（`IndexProjectionSync`）：
 
 - `index_versions` — 索引版本元数据（schema_version、embedding_model、opensearch_index、qdrant_collection 等）
 - `index_registry` — collection 的 active index 映射
@@ -271,13 +298,13 @@ IndexBuildRequested
 同步模式：
 
 - `full_replace` — 全量替换某个 collection + index_version 的 chunk 集合
-- `lifecycle_patch` — 仅更新已存在 chunk 的 `available_int` 和 `published_document_state`
 
 约束：
 
 - 同步端点带幂等控制（`idempotency_key`），重复投递不会重复写入
 - retrieval 侧 `chunk_registry` 是派生投影，不是 chunk 真相源；真相源仍在 indexing 持久层
 - 激活成功后应立即触发同步，确保 retrieval 运行时可见性与 indexing 侧一致
+- sync 与 cache purge 均为 fail-open：retrieval 服务不可达时只记录 warning，不阻断索引物化流程
 
 ## 5. 跨服务契约
 
@@ -302,27 +329,27 @@ IndexBuildRequested
 - `text_document`
 - `specialized_document`
 
-## 5.1 Parser Profile 运行时校验
+### 5.1 Parser Profile 运行时校验
 
 `POST /internal/parser-profiles/validate` 是 indexing 作为 runtime owner 提供的校验接口。
 
-### 设计原则
+#### 设计原则
 
 - indexing 只校验 runtime 可执行性，不做 admin 控制面校验
 - 不修改 `parser_profiles` 表、不创建 ParseSnapshot、不触发索引 job
 - 输出 `canonical_config` 和 `profile_hash`，供 admin 控制面参考
 
-### 校验项
+#### 校验项
 
 | 字段 | 规则 |
 |---|---|
 | `parser_id` | 必须在支持列表中 (`naive`, `presentation`, `paper`, `qa`, `table`, `picture`, `audio`, `email`, `manual`, `resume`) |
 | `chunk_token_num` | > 0，且 <= 8192；低于 128 或高于 4096 产生 warning |
 | `delimiter` | 必须是字符串 |
-| `raptor` | 如有，必须是 dict |
-| `graphrag` | 如有，必须是 dict |
+| `raptor` | 如有，必须是 dict；`use_raptor` 必须是布尔值 |
+| `graphrag` | 如有，必须是 dict；`use_graphrag` 必须是布尔值 |
 
-### 输出格式
+#### 输出格式
 
 ```json
 {
@@ -343,15 +370,15 @@ IndexBuildRequested
 }
 ```
 
-当 `valid=false` 时，`canonical_config` 为 `null`，`profile_hash` 为占位值 `sha256:0000...`。
+当 `valid=false` 时，`canonical_config` 为 `null`，`profile_hash` 为基于当前配置的占位值。
 
-### 与 admin 控制面的边界
+#### 与 admin 控制面的边界
 
 - admin 负责 ParserProfile CRUD、审批流、版本管理
 - indexing 负责校验 profile 在 runtime 是否可执行，并生成 canonical runtime view
 - admin 发布前调用此接口；indexing 不主动调用 admin
 
-## 5.2 已注册的 ParserProfile
+### 5.2 已注册的 ParserProfile
 
 当前已注册的 `ParserProfile`（静态 registry，位于 `parser_profiles.py`）：
 
@@ -379,12 +406,13 @@ IndexBuildRequested
   - `ParserProfile` 静态 registry
   - `ParsePreviewRunner`
   - `IndexJobRunner` 基于 `ParseSnapshot` 的正式 materialization
+  - `ActivationService` / `RollbackService` / `CleanupService`
 
-### 5.1 ParsePreviewRequested
+### 5.3 ParsePreviewRequested
 
 方向：`intake-pipeline -> indexing`
 
-实际契约字段（`ParsePreviewRequestedCommand`）：
+实际契约字段（`ParsePreviewRequestedCommand`，位于 `preview_contracts.py`）：
 
 - `request_id`
 - `tenant_id`
@@ -416,11 +444,11 @@ IndexBuildRequested
   - `chunk_profile_id` — 当前与 `parser_id` 对齐
   - `decision_reason`
 
-### 5.2 ParseSnapshotReady
+### 5.4 ParseSnapshotReady
 
 方向：`indexing -> intake-pipeline / workbench-api`
 
-最少字段：
+最少字段（`ParseSnapshotReady`，位于 `reality_rag_contracts.models`）：
 
 - `parse_snapshot_id`
 - `source_file_id`
@@ -433,14 +461,17 @@ IndexBuildRequested
 - `warnings`
 - `trace_id`
 
-### 5.3 IndexBuildRequested
+### 5.5 IndexBuildRequested
 
 方向：`publishing-worker / ingestion-worker -> indexing`
 
-实际契约字段（`IndexBuildRequestedCommand`）：
+实际契约字段（`IndexBuildRequestedCommand`，位于 `reality_rag_contracts.models`）：
 
 - `build_request_id`
-- `request_type` — `publish` 表示 build + activate 原子操作；`build` 表示仅构建不激活
+- `request_type` — `IndexRequestType` 枚举值：
+  - `publish`：build + activate 原子操作
+  - `reindex`：build + activate 原子操作
+  - `lifecycle_tombstone`：仅构建，不激活
 - `tenant_id`
 - `collection_id`
 - `source_file_id`
@@ -460,16 +491,18 @@ IndexBuildRequested
 - `source_metadata`
 - `index_profile_id` — 索引后端 profile（如 `ragflow`），不是 parser profile
 - `target_index_version_id`
+- `chunk_edit_refs` — 预发布 chunk edit 引用列表（当前由 pre-publish edit overlay 机制消费）
 - `idempotency_key`
 - `trace_id`
 
 说明：
 
 - 正式索引必须加载既有 `ParseSnapshot`，不得回退到 markdown sidecar 或本地 fallback chunker
-- `chunk_profile_id` 由 indexing 服务从 snapshot 内解析（`snapshot.chunk_profile_id`），不再硬编码 `"chunk_default"`
-- `request_type="publish"` 时，indexing 服务在 materialization 成功后自动 activate index version
+- `chunk_profile_id` 由 indexing 服务从 snapshot 内解析（`snapshot.chunk_profile_id or snapshot.parser_id or command.index_profile_id`），不再硬编码 `"chunk_default"`
+- `request_type="publish"` 或 `"reindex"` 时，indexing 服务在 materialization 成功后自动 activate index version
+- `request_type="lifecycle_tombstone"` 时，仅构建不激活
 
-### 5.4 IndexReady
+### 5.6 IndexReady
 
 方向：`indexing -> publishing-worker / retrieval`
 
@@ -512,6 +545,7 @@ IndexBuildRequested
 - parser/chunker profile 调试
 - chunk preview
 - 手工复跑 preview
+- chunk revision 创建与状态查询
 
 它不应暴露：
 
@@ -533,8 +567,8 @@ IndexBuildRequested
 
 `services/indexing` 的模型与后端配置统一收口在：
 
-- `config.py`
-- `.env.example`
+- `reality_rag_contracts.config.load_indexing_config()`（被 `indexing_service.config` 重新导出）
+- 环境变量或 `.env` 文件
 
 推荐优先使用 `INDEXING_*` 前缀，而不是把环境变量分散在多个模块里：
 
@@ -548,6 +582,7 @@ IndexBuildRequested
 - `INDEXING_BACKEND_MODE`
 - `INDEXING_OPENSEARCH_URL`
 - `INDEXING_QDRANT_URL`
+- `INDEXING_REQUIRE_LIVE_BACKENDS`
 
 `backends.py` 与 `ragflow_runtime` 宿主兼容层都应从这个统一配置入口读取。
 
@@ -594,13 +629,19 @@ IndexBuildRequested
 - `index_build_requested`
 - `index_build_job_created`
 - `parse_snapshot_loaded`
+- `pre_publish_edits_applied`（如有预发布 edit）
 - `token_chunks_assembled`
+- `index_version_activated`（publish/reindex 时）
+- `retrieval_cache_purged`（publish/reindex 时）
+- `retrieval_index_projection_synced`（publish/reindex 时）
 - `index_chunks_materialized`
 
 当前至少应挂出的 artifact：
 
 - normalized blocks
 - chunk records
+- indexed_document
+- index asset bundle
 
 ### 10.3 埋点设计目标
 
@@ -615,9 +656,149 @@ IndexBuildRequested
 - 最终切成了多少 chunk
 - 哪一步最慢、最不稳定、最容易退化
 
+## 11. Chunk Revision Materialization
+
+`ChunkRevision` 是 indexing 对**已发布 chunk 的人工修订**的一等产物。
+
+### 11.1 生命周期
+
+```text
+draft -> materializing -> active | failed
+```
+
+### 11.2 核心端点
+
+- `POST /internal/chunks/{evidence_id}/revisions`
+  - 幂等创建 revision（`idempotency_key` 去重）
+  - 验证 base chunk 存在且 tenant/collection 匹配
+  - 404：base chunk 不存在
+  - 409：tenant/collection 不匹配
+  - 200：返回已有 revision（重复 idempotency_key）
+
+- `GET /internal/chunk-revisions/{revision_id}`
+  - 读取 revision 状态
+
+- `POST /internal/chunk-revisions/{revision_id}/materialize`
+  - 加载 revision 和 base chunk
+  - 应用 operation（当前支持 `update` / `delete` / `hide`）
+  - 生成新 `ChunkRecord`，重新计算 `chunk_hash`
+  - 调用 `build_index_asset_bundle` + `HybridIndexBackend.write_bundle`
+  - 旧 chunk `available_int=0`，新 chunk `available_int=1`
+  - 更新 revision status -> `active`
+  - materialization 失败时 revision status -> `failed`，旧 chunk 不下线
+
+### 11.3 与 workbench 的协作
+
+```text
+workbench PATCH /workbench/chunks/{evidence_id}
+  -> indexing POST /internal/chunks/{evidence_id}/revisions
+     -> PersistentIndexingRepository.create_chunk_revision()
+     -> 返回 revision_id + status=draft
+
+workbench POST /workbench/chunk-edits/{chunk_edit_id}/submit
+  -> indexing POST /internal/chunks/{evidence_id}/revisions
+     -> 使用 chunk_edit_id 作为 idempotency_key
+     -> 返回 revision_id + status=draft
+```
+
+### 11.4 与 retrieval 的协作
+
+materialization 成功后，indexing 调用 `POST /internal/cache/purge`（retrieval service）清理相关检索缓存。purge 失败记录 warning，不回滚 revision。
+
+## 12. 预发布 Chunk Edit 覆盖与激活后缓存清理
+
+### 12.1 预发布 Chunk Edit 覆盖（Pre-publish Edit Overlay）
+
+在 `IndexBuildRequested` 正式物化前，`IndexJobRunner` 会检查是否存在待应用的预发布 chunk edit。这些 edit 由 `workbench-api` 在审批前创建，状态为 `draft`，在索引物化时被合并到 upstream chunks 上。
+
+**应用时机**：在 `_build_chunks()` 加载 `ParseSnapshot.upstream_chunks` 之后、生成 `ChunkRecord` 之前。
+
+**匹配规则**：按 `revision.base_evidence_id` 匹配 upstream chunk 的 `id` 字段。
+
+**支持的操作**（当前实现）：
+
+| operation | 行为 |
+|-----------|------|
+| `update` | 覆盖 `content_with_weight`、注入 `__vector_text_override__`、`__section_path_override__`、合并 `metadata` |
+| `hide` | 设置 `__hidden__=True`，可选覆盖 `content_with_weight` |
+| `delete` | 跳过该 chunk，不生成对应 `ChunkRecord` |
+
+**实现位置**：`IndexJobRunner._apply_pre_publish_edits()`
+
+**关键约束**：
+- 只处理 `status="draft"` 的 revision
+- fail-open：如果 repository 不支持 `list_chunk_revisions_by_doc`，则返回原始 upstream chunks 不变
+- 应用后会记录 `pre_publish_edits_applied` trace step，包含 `applied_count`、`skipped_count`、`original_count`、`result_count`
+
+### 12.2 激活后检索缓存清理（Cache Purge on Activation）
+
+当 `request_type="publish"` 或 `"reindex"` 时，`IndexJobRunner` 在成功激活 index version 后，会自动调用 `services/retrieval` 的 `POST /internal/cache/purge` 清理相关检索缓存。
+
+**调用时机**：`repository.activate(index_version_id)` 成功后立即执行。
+
+**请求体**（`RetrievalCachePurgeRequest`）：
+
+```json
+{
+  "tenant_id": "tnt_default",
+  "collection_id": "col_default",
+  "doc_id": "doc_001"
+}
+```
+
+**实现位置**：`IndexJobRunner._purge_retrieval_cache()`
+
+**关键约束**：
+- fail-open：retrieval 服务不可达或返回 4xx/5xx 时只记录 warning，不阻断索引物化流程
+- timeout 固定为 10 秒
+- 若未配置 `RETRIEVAL_SERVICE_URL` 环境变量，则跳过 purge
+- purge 成功后记录 `retrieval_cache_purged` trace step，包含 `purged_count`
+
+### 12.3 与 Chunk Revision Materialization 的协作关系
+
+| 场景 | 覆盖机制 | 缓存清理触发点 |
+|------|---------|--------------|
+| 预发布 edit（审批前） | `_apply_pre_publish_edits()` 在 build 时合并 | 随 publish/reindex 的 activation 一起触发 |
+| 发布后 revision（人工修改已激活 chunk） | `materialize_chunk_revision()` 生成新 chunk、旧 chunk 下线 | materialization 成功后独立调用 purge |
+
+两种场景最终都通过 `POST /internal/cache/purge` 使 retrieval 缓存失效，但调用方和时机不同：
+- 预发布 edit 的 purge 由 `IndexJobRunner.accept()` 在 activation 后统一触发
+- 发布后 revision 的 purge 由 `PersistentIndexingRepository.materialize_chunk_revision()` 在 materialization 后独立触发
+
+## 13. 服务面（完整端点清单）
+
+### 13.1 对外端点（Inbound）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/health` | 健康检查 |
+| `POST` | `/internal/parse-previews` | 提交预解析请求（202 Accepted） |
+| `GET` | `/internal/parse-snapshots/{parse_snapshot_id}` | 查询 ParseSnapshot |
+| `GET` | `/internal/parse-snapshots/{parse_snapshot_id}/chunks` | 分页查询 snapshot upstream chunks（page, page_size） |
+| `POST` | `/internal/index-jobs` | 提交正式索引构建请求（202 Accepted） |
+| `GET` | `/internal/index-jobs/{job_id}` | 查询索引构建任务状态 |
+| `GET` | `/internal/indexed-documents` | 列出已索引文档（支持 collection_id / index_version / final_doc_id 过滤） |
+| `POST` | `/internal/index-versions/{index_version_id}/activate` | 激活索引版本 |
+| `POST` | `/internal/index-versions/{index_version_id}/rollback` | 回滚到上一个 active 版本 |
+| `POST` | `/internal/index-versions/{index_version_id}/cleanup` | 清理废弃索引版本 |
+| `GET` | `/internal/index-versions/{index_version_id}` | 查询索引版本元数据 |
+| `POST` | `/internal/parser-profiles/validate` | ParserProfile 运行时校验 |
+| `POST` | `/internal/chunks/{evidence_id}/revisions` | 创建 chunk revision |
+| `GET` | `/internal/chunk-revisions/{revision_id}` | 查询 chunk revision 状态 |
+| `POST` | `/internal/chunk-revisions/{revision_id}/materialize` | 执行 chunk revision 物化 |
+| `GET` | `/internal/chunks` | 按租户/主体查询 active chunks（tenant_id, principal_id, collection_id, principal_groups） |
+| `GET` | `/internal/metrics` | 服务内部聚合指标快照 |
+
+### 13.2 外部调用（Outbound）
+
+| 方向 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| indexing -> retrieval | `POST` | `/internal/index-projections/sync` | 同步 index projection（含 full_replace 模式） |
+| indexing -> retrieval | `POST` | `/internal/cache/purge` | 清理检索缓存 |
+
 ## 附录 A. 当前实施状态
 
-截至 2026-05-27，`services/indexing` 的完成状态如下：
+截至 2026-06-04，`services/indexing` 的完成状态如下：
 
 ### A.1 已完成的链路
 
@@ -629,12 +810,14 @@ IndexBuildRequested
 - `chunk_profile_id` 已从 snapshot 流入 job，不再硬编码 `"chunk_default"`
 - embedding 文本组织已由 `ParserProfile.embedding_text_policy` 驱动 `VectorTextBuilder`，替代硬编码的 QA 特例
 - embedding API 调用已按 `INDEXING_EMBEDDING_BATCH_SIZE` 分片，保持输出顺序
-- `request_type="publish"` 显式契约化：build + activate 原子操作；`request_type="build"` 仅构建不激活
+- `request_type="publish"` / `"reindex"` 显式契约化：build + activate 原子操作；`lifecycle_tombstone` 仅构建不激活
 - formal materialization 已经可以从 `upstream_chunks` 生成 chunk records
 - chunk records 已可以进一步生成 `IndexAssetBundle`
 - 已具备 OpenSearch/Qdrant payload 生成链
-- `services/indexing` 内部模型与索引后端配置已经统一收口到 `config.py`
+- `services/indexing` 内部模型与索引后端配置已经统一收口到 `config.py`（重新导出 `reality_rag_contracts.config`）
 - chat 与 embedding 已支持分开配置：chat 可单独指向 DeepSeek；embedding 可单独指向 OpenAI-compatible embedding 服务
+- 索引版本生命周期完整：activate / rollback / cleanup 均已实现
+- index projection sync 到 retrieval 已集成到 publish/reindex 激活流程
 
 ### A.2 已吸收的上游 parser 语义
 
@@ -686,6 +869,7 @@ IndexBuildRequested
 - indexed document
 - parse snapshot
 - chunk registry
+- index version（含 rollback / cleanup 状态迁移）
 
 这些对象现在已经不再只存在于内存状态里，而是已可落到 shared persistence layer。
 
@@ -715,132 +899,17 @@ IndexBuildRequested
 
 这三项当前的状态是：已进入正式 preview / snapshot / materialization 主链；`content_tagging` 的最佳效果仍然依赖真实 doc-store/retriever 宿主接入完整；因此"行为语义已基本对齐"，但"线上效果完全等价"尚未结束。
 
-## 11. Chunk Revision Materialization
+### A.9 Chunk Revision 实施状态
 
-`ChunkRevision` 是 indexing 对**已发布 chunk 的人工修订**的一等产物。
-
-### 11.1 生命周期
-
-```text
-draft -> materializing -> active | failed | superseded
-```
-
-### 11.2 核心端点
-
-- `POST /internal/chunks/{evidence_id}/revisions`
-  - 幂等创建 revision（`idempotency_key` 去重）
-  - 验证 base chunk 存在且 tenant/collection 匹配
-  - 404：base chunk 不存在
-  - 409：tenant/collection 不匹配
-  - 200：返回已有 revision（重复 idempotency_key）
-
-- `GET /internal/chunk-revisions/{revision_id}`
-  - 读取 revision 状态
-
-- `POST /internal/chunk-revisions/{revision_id}/materialize`
-  - 加载 revision 和 base chunk
-  - 应用 operation（`update` / `split` / `merge` / `delete` / `create` / `hide`）
-  - 生成新 `ChunkRecord`，重新计算 `chunk_hash`
-  - 调用 `build_index_asset_bundle` + `HybridIndexBackend.write_bundle`
-  - 旧 chunk `available_int=0`，新 chunk `available_int=1`
-  - 更新 revision status → `active`
-  - materialization 失败时 revision status → `failed`，旧 chunk 不下线
-
-### 11.3 与 workbench 的协作
-
-```text
-workbench PATCH /workbench/chunks/{evidence_id}
-  -> indexing POST /internal/chunks/{evidence_id}/revisions
-     -> PersistentIndexingRepository.create_chunk_revision()
-     -> 返回 revision_id + status=draft
-
-workbench POST /workbench/chunk-edits/{chunk_edit_id}/submit
-  -> indexing POST /internal/chunks/{evidence_id}/revisions
-     -> 使用 chunk_edit_id 作为 idempotency_key
-     -> 返回 revision_id + status=draft
-```
-
-### 11.4 与 retrieval 的协作
-
-materialization 成功后，indexing 调用 `POST /internal/cache/purge`（retrieval service）清理相关检索缓存。purge 失败记录 warning，不回滚 revision。
-
-### A.9 整体状态总结
-
-- 主干方向已经纠偏
-- preview / snapshot / chunk materialization / bundle 输出已确立
-- embedding 执行权保留在 `indexing`，embedding 输入组织已由 `ParserProfile.embedding_text_policy` 驱动
-- snapshot ID 已改为基于 input hash 的稳定语义，同一文件同一配置复用同一份快照
-- `chunk_profile_id` 已从 snapshot 流入 job，不再硬编码
-- `request_type="publish"` 显式契约化
-- 通用主链的 doc-store 写入字段已经基本收口
-- 文档级索引对象 `IndexedDocument` 已确立
-- **ChunkRevision CRUD + materialization 已实现**（2026-05-28）
-- 后处理增强链只完成了一部分
-- 完整索引生命周期、深层专用 parser 语义吸收、更新/回滚/清理链路仍未完成
-
-## 12. 预发布 Chunk Edit 覆盖与激活后缓存清理
-
-### 12.1 预发布 Chunk Edit 覆盖（Pre-publish Edit Overlay）
-
-在 `IndexBuildRequested` 正式物化前，`IndexJobRunner` 会检查是否存在待应用的预发布 chunk edit。这些 edit 由 `workbench-api` 在审批前创建，状态为 `draft`，在索引物化时被合并到 upstream chunks 上。
-
-**应用时机**：在 `_build_chunks()` 加载 `ParseSnapshot.upstream_chunks` 之后、生成 `ChunkRecord` 之前。
-
-**匹配规则**：按 `revision.base_evidence_id` 匹配 upstream chunk 的 `id` 字段。
-
-**支持的操作**：
-
-| operation | 行为 |
-|-----------|------|
-| `update` | 覆盖 `content_with_weight`、`vector_text`、`section_path`、`metadata` |
-| `hide` | 设置 `__hidden__=True`，可选覆盖 `content_with_weight` |
-| `delete` | 跳过该 chunk，不生成对应 `ChunkRecord` |
-
-**实现位置**：`IndexJobRunner._apply_pre_publish_edits()`
-
-**关键约束**：
-- 只处理 `status="draft"` 的 revision
-- fail-open：如果 repository 不支持 `list_chunk_revisions_by_doc`，则返回原始 upstream chunks 不变
-- 应用后会记录 `pre_publish_edits_applied` trace step，包含 `applied_count`、`skipped_count`、`original_count`、`result_count`
-
-### 12.2 激活后检索缓存清理（Cache Purge on Activation）
-
-当 `request_type="publish"` 或 `"reindex"` 时，`IndexJobRunner` 在成功激活 index version 后，会自动调用 `services/retrieval` 的 `POST /internal/cache/purge` 清理相关检索缓存。
-
-**调用时机**：`repository.activate(index_version_id)` 成功后立即执行。
-
-**请求体**：
-
-```json
-{
-  "tenant_id": "tnt_default",
-  "collection_id": "col_default",
-  "doc_id": "doc_001"
-}
-```
-
-**实现位置**：`IndexJobRunner._purge_retrieval_cache()`
-
-**关键约束**：
-- fail-open：retrieval 服务不可达或返回 4xx/5xx 时只记录 warning，不阻断索引物化流程
-- timeout 固定为 10 秒
-- 若未配置 `RETRIEVAL_SERVICE_URL` 环境变量，则跳过 purge
-- purge 成功后记录 `retrieval_cache_purged` trace step，包含 `purged_count`
-
-### 12.3 与 Chunk Revision Materialization 的协作关系
-
-| 场景 | 覆盖机制 | 缓存清理触发点 |
-|------|---------|--------------|
-| 预发布 edit（审批前） | `_apply_pre_publish_edits()` 在 build 时合并 | 随 publish/reindex 的 activation 一起触发 |
-| 发布后 revision（人工修改已激活 chunk） | `materialize_chunk_revision()` 生成新 chunk、旧 chunk 下线 | materialization 成功后独立调用 purge |
-
-两种场景最终都通过 `POST /internal/cache/purge` 使 retrieval 缓存失效，但调用方和时机不同：
-- 预发布 edit 的 purge 由 `IndexJobRunner.accept()` 在 activation 后统一触发
-- 发布后 revision 的 purge 由 `PersistentIndexingRepository.materialize_chunk_revision()` 在 materialization 后独立触发
+- **ChunkRevision CRUD + materialization 已实现**
+- 支持操作：`update`、`delete`、`hide`
+- 支持 pre-publish edit overlay（在 IndexBuildRequested 时合并 draft revision）
+- materialization 成功后自动清理 retrieval 缓存
+- 旧 chunk 在 materialization 失败时保持可用（fail-safe）
 
 ## 附录 B. 字段审计
 
-截至 2026-05-26，`services/indexing` 对上游 `insert/write` 字段的处理原则已经明确：
+截至 2026-06-04，`services/indexing` 对上游 `insert/write` 字段的处理原则已经明确：
 
 - 不是为了"字段名一模一样"而机械照搬
 - 真正需要保留的是字段背后的检索语义、结构语义、可见性语义和写入语义
@@ -935,7 +1004,7 @@ materialization 成功后，indexing 调用 `POST /internal/cache/purge`（retri
 
 ### B.3 暂未吸收但已识别的上游字段
 
-以下字段目前没有作为通用企业知识库 indexing 主链的一部分正式落库：
+以下字段目前没有作为通用企业知识库 indexing 主链的一部分正式落库，但已作为兼容字段支持透传：
 
 - `kb_id`：现已作为兼容字段落库，当前稳定映射到平台 `collection_id`
 - `pagerank_fea`：现已支持从 `source_metadata` 透传，当前还没有形成完整的平台排序策略 owner
