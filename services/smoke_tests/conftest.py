@@ -21,21 +21,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 # ---------------------------------------------------------------------------
-# Python path setup
-# ---------------------------------------------------------------------------
-sys.path.insert(0, str(ROOT / "services" / "admin" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "workbench-api" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "indexing" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "document-service" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "ingestion-worker" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "approval-service" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "publishing-worker" / "src"))
-sys.path.insert(0, str(ROOT / "packages" / "contracts" / "src"))
-sys.path.insert(0, str(ROOT / "packages" / "persistence" / "src"))
-sys.path.insert(0, str(ROOT / "packages" / "ragflow_runtime" / "src"))
-
-# ---------------------------------------------------------------------------
 # Environment variables (must be set BEFORE service modules are imported)
 # ---------------------------------------------------------------------------
 SMOKE_DB = ROOT / ".verify" / "runtime" / "smoke-test.db"
@@ -56,12 +41,17 @@ os.environ["RETRIEVAL_BASE_URL"] = "http://testserver/retrieval"
 os.environ["PUBLISHING_WORKER_BASE_URL"] = "http://testserver/publishing"
 os.environ["REALITY_RAG_INDEXING_BASE_URL"] = "http://testserver/indexing"
 os.environ["REALITY_RAG_INTAKE_RUNTIME_DIR"] = str(ROOT / ".verify" / "runtime" / "intake-smoke")
-os.environ["REALITY_RAG_ENABLE_COMPAT_WRITES"] = "true"
+os.environ["REALITY_RAG_SIDECAR_DIR"] = str(ROOT / ".verify" / "runtime" / "sidecar-smoke")
+
 os.environ["ALLOW_LOCAL_FALLBACK_FOR_TESTS"] = "true"
 os.environ["DOCUMENT_SERVICE_BASE_URL"] = "http://testserver/documents"
 os.environ["DOCUMENT_SERVICE_URL"] = "http://testserver/documents"
 os.environ["APPROVAL_SERVICE_URL"] = "http://testserver/approval"
 os.environ["INDEXING_SERVICE_URL"] = "http://testserver/indexing"
+os.environ["WORKBENCH_BASE_URL"] = "http://testserver/workbench"
+os.environ["WORKBENCH_EVENT_KEY_INTAKE"] = "smoke-intake-key"
+os.environ["WORKBENCH_EVENT_KEY_APPROVAL"] = "smoke-approval-key"
+os.environ["WORKBENCH_EVENT_KEY_INDEXING"] = "smoke-indexing-key"
 
 # Disable live model calls
 for key in (
@@ -145,45 +135,108 @@ class _AsyncClientWrapper:
         return self._run(self._client.get(*args, **kwargs))
 
 
-def _patched_async_init(self: httpx.AsyncClient, *args: Any, **kwargs: Any) -> None:
-    if kwargs.get("transport") is None and kwargs.get("app") is None:
-        kwargs["transport"] = httpx.ASGITransport(app=combined_app)
-    _original_async_init(self, *args, **kwargs)
-
-
-httpx.AsyncClient.__init__ = _patched_async_init  # type: ignore[assignment]
-
-# Patch intake_pipeline's sync httpx.Client usage only (runs in thread pool)
-import intake_pipeline.main as _intake_main  # noqa: E402
-import ingestion_worker.document_service_client as _document_service_client_mod  # noqa: E402
-
-class _HttpxModuleProxy:
-    """Proxy that replaces httpx.Client locally for intake_pipeline without mutating the global httpx module."""
+class _SyncHttpxModuleProxy:
+    """Proxy that replaces httpx.Client locally for document_service_client without mutating the global httpx module."""
     def __init__(self, real_httpx):
         object.__setattr__(self, '_real', real_httpx)
     def __getattr__(self, name):
         return getattr(self._real, name)
-    @property
-    def Client(self):
-        return _AsyncClientWrapper
-
-
-class _SyncHttpxModuleProxy(_HttpxModuleProxy):
     def _call(self, method: str, *args: Any, **kwargs: Any):
         wrapper = _AsyncClientWrapper(timeout=kwargs.pop("timeout", 30.0))
         try:
             return getattr(wrapper, method)(*args, **kwargs)
         finally:
             wrapper._run(wrapper._client.aclose())
-
     def post(self, *args: Any, **kwargs: Any):
         return self._call("post", *args, **kwargs)
-
     def get(self, *args: Any, **kwargs: Any):
         return self._call("get", *args, **kwargs)
 
-_intake_main.httpx = _HttpxModuleProxy(httpx)  # type: ignore[misc]
-_document_service_client_mod.httpx = _SyncHttpxModuleProxy(httpx)  # type: ignore[misc]
+
+_httpx_api = httpx  # reference to real module
+
+
+def _patched_httpx_request(method, url, **kwargs):
+    """Sync-looking wrapper that dispatches through AsyncClient+ASGITransport.
+
+    Only intercepts URLs targeting the smoke-test in-process server (testserver).
+    All other URLs fall through to the real httpx functions so unit tests that
+    use external URLs are not affected.
+    """
+    url_str = str(url)
+    if "testserver" not in url_str:
+        return getattr(_httpx_api, method.lower())(url, **kwargs)
+    timeout = kwargs.pop("timeout", 30.0)
+    wrapper = _AsyncClientWrapper(timeout=timeout)
+    try:
+        return wrapper._run(wrapper._client.request(method, url, **kwargs))
+    finally:
+        wrapper._run(wrapper._client.aclose())
+
+
+def _patched_httpx_get(url, **kwargs):
+    return _patched_httpx_request("GET", url, **kwargs)
+
+
+def _patched_httpx_post(url, **kwargs):
+    return _patched_httpx_request("POST", url, **kwargs)
+
+
+def _patched_httpx_put(url, **kwargs):
+    return _patched_httpx_request("PUT", url, **kwargs)
+
+
+def _patched_httpx_patch(url, **kwargs):
+    return _patched_httpx_request("PATCH", url, **kwargs)
+
+
+def _patched_httpx_delete(url, **kwargs):
+    return _patched_httpx_request("DELETE", url, **kwargs)
+
+
+def _patched_workbench_events_url(service: str) -> str | None:
+    return f"http://testserver/internal/events/{service}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _apply_smoke_patches():
+    """Apply httpx patches only when running smoke tests."""
+    def _patched_async_init(self: httpx.AsyncClient, *args: Any, **kwargs: Any) -> None:
+        if kwargs.get("transport") is None and kwargs.get("app") is None:
+            kwargs["transport"] = httpx.ASGITransport(app=combined_app)
+        _original_async_init(self, *args, **kwargs)
+
+    httpx.AsyncClient.__init__ = _patched_async_init  # type: ignore[assignment]
+
+    # Patch document_service_client sync httpx usage for in-process smoke tests
+    import ingestion_worker.document_service_client as _document_service_client_mod  # noqa: E402
+    _document_service_client_mod.httpx = _SyncHttpxModuleProxy(httpx)  # type: ignore[misc]
+
+    # Patch ingestion_worker outbox_deliver for in-process smoke tests
+    import ingestion_worker.outbox_deliver as _outbox_deliver_mod  # noqa: E402
+    _outbox_deliver_mod.httpx = _SyncHttpxModuleProxy(httpx)  # type: ignore[misc]
+
+    # Patch httpx top-level API functions
+    httpx.get = _patched_httpx_get
+    httpx.post = _patched_httpx_post
+    httpx.put = _patched_httpx_put
+    httpx.patch = _patched_httpx_patch
+    httpx.delete = _patched_httpx_delete
+    httpx.request = _patched_httpx_request
+
+    # Patch _workbench_events_url
+    _outbox_deliver_mod._workbench_events_url = _patched_workbench_events_url  # type: ignore[misc]
+
+    yield
+
+    # Teardown: restore original httpx functions
+    httpx.AsyncClient.__init__ = _original_async_init  # type: ignore[assignment]
+    httpx.get = _httpx_api.get
+    httpx.post = _httpx_api.post
+    httpx.put = _httpx_api.put
+    httpx.patch = _httpx_api.patch
+    httpx.delete = _httpx_api.delete
+    httpx.request = _httpx_api.request
 
 # ---------------------------------------------------------------------------
 # Import and mount service apps
@@ -191,7 +244,6 @@ _document_service_client_mod.httpx = _SyncHttpxModuleProxy(httpx)  # type: ignor
 from admin_service.main import app as admin_app
 from workbench_api.main import app as workbench_app
 from indexing_service.main import app as indexing_app
-from intake_pipeline.main import app as intake_app
 from document_service.main import app as document_app
 from approval_service.main import app as approval_app
 from publishing_worker.main import app as publishing_app
@@ -217,10 +269,15 @@ class _PrefixApp:
 # workbench routes embed /workbench — use prefix wrapper so mount strip + re-add = original path.
 combined_app.mount("/workbench", _PrefixApp(workbench_app, "/workbench"))
 combined_app.mount("/indexing", indexing_app)
-combined_app.mount("/intake", intake_app)
 combined_app.mount("/documents", document_app)
 combined_app.mount("/approval", approval_app)
 combined_app.mount("/publishing", publishing_app)
+
+# Direct-mount workbench event routes at /internal/events for cross-service event forwarding
+# Must be before catch-all admin mount
+from workbench_api.events.routes import router as _events_router  # noqa: E402
+combined_app.include_router(_events_router)
+
 # admin routes embed /admin, and it has /health — mount at / so no stripping occurs.
 combined_app.mount("/", admin_app)
 
@@ -351,6 +408,80 @@ def _build_real_chain_pipeline():
     from ingestion_worker.pipeline import IngestionPipeline
     from intake_runtime.agent_review_cache import get_agent_review_cache
     from intake_runtime.converters.ragflow_converter import RAGFlowConverter
+
+    # Patch RAGFlowConverter to avoid real HTTP calls in smoke tests
+    def _fake_parse_via_indexing(self, command: dict) -> tuple[dict, dict]:
+        from indexing_service.repository import create_indexing_repository
+        from reality_rag_contracts.indexing_models import ParseSnapshotRecord
+
+        source_file_id = command.get("source_file_id", "fake")
+        parse_snapshot_id = f"snap_{source_file_id}"
+        tenant_id = command.get("tenant_id", "default")
+        collection_id = command.get("collection_id", "default")
+
+        # Persist snapshot so indexing service can look it up later
+        repo = create_indexing_repository()
+        repo.save_parse_snapshot(
+            ParseSnapshotRecord(
+                parse_snapshot_id=parse_snapshot_id,
+                request_id=command.get("request_id", f"req_{source_file_id}"),
+                tenant_id=tenant_id,
+                collection_id=collection_id,
+                source_file_id=source_file_id,
+                source_binary_ref=command.get("source_binary_ref", ""),
+                source_filename=command.get("filename", "real-chain.md"),
+                source_suffix="md",
+                parser_id="naive",
+                parser_backend="naive",
+                parser_profile_id=command.get("collection_id", "default"),
+                chunk_profile_id="default",
+                document_family="markdown",
+                effective_policy="smoke-policy",
+                collection_parser_config={},
+                parser_config={"chunk_token_num": 128},
+                input_hash="sha256:fake",
+                preview_text="# Real Chain\n\nHello world\n",
+                upstream_chunks=[
+                    {
+                        "chunk_id": "chunk_1",
+                        "content_with_weight": "# Real Chain",
+                        "position_int": [0],
+                    },
+                    {
+                        "chunk_id": "chunk_2",
+                        "content_with_weight": "Hello world",
+                        "position_int": [1],
+                    },
+                ],
+                outline=[],
+                document_metadata={},
+                chunk_preview=[],
+                warnings=[],
+                decision_reason="smoke-pass",
+            )
+        )
+
+        return (
+            {
+                "parse_snapshot_id": parse_snapshot_id,
+                "parser_id": "naive",
+                "status": "completed",
+            },
+            {
+                "parse_snapshot_id": parse_snapshot_id,
+                "preview_text": "# Real Chain\n\nHello world\n",
+                "upstream_chunks": [
+                    {"content_with_weight": "# Real Chain"},
+                    {"content_with_weight": "Hello world"},
+                ],
+                "parser_id": "naive",
+                "parser_profile_id": command.get("collection_id", "default"),
+                "document_family": "markdown",
+                "source_suffix": "md",
+            },
+        )
+
+    RAGFlowConverter._parse_via_indexing = _fake_parse_via_indexing  # type: ignore[assignment]
 
     return IngestionPipeline(
         converters=[RAGFlowConverter()],
@@ -484,7 +615,7 @@ def reconcile_workbench_tasks(*, limit: int = 100) -> dict[str, Any]:
     from workbench_api.downstream_clients import ApprovalClient, IndexingClient, IntakeClient
     from workbench_api.projections.reconciler import ProjectionReconciler
 
-    session = next(get_session())
+    session = get_session()
     try:
         reconciler = ProjectionReconciler(
             session=session,

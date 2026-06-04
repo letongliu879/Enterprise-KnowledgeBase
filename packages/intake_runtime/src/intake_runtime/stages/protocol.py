@@ -29,6 +29,7 @@ class StageContext:
     source_file_path: str
     collection: Collection | None = None
     tenant: Tenant | None = None
+    tenant_id: str = "default"
     result: ConversionResult | None = None
     quality_report: QualityReport | None = None
     agent_review: AgentReview | None = None

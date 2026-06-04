@@ -26,42 +26,14 @@ def load_review_artifact_payload(session, intake_job_id: str) -> dict[str, Any] 
     if row is None:
         return None
 
-    if row.result_ref:
-        path = Path(row.result_ref)
-        if path.exists() and path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
+    if not row.result_ref:
+        return None
 
-    review_summary = row.summary_json or {}
-    review_context = (
-        review_summary.get("review_context", {})
-        if isinstance(review_summary.get("review_context"), dict)
-        else {}
-    )
-    artifact_metadata = (
-        review_context.get("artifact_metadata", {})
-        if isinstance(review_context.get("artifact_metadata"), dict)
-        else {}
-    )
-    agent_review = (
-        review_summary.get("agent_review", {})
-        if isinstance(review_summary.get("agent_review"), dict)
-        else {}
-    )
-    return {
-        "review_run_id": row.stage_attempt_id,
-        "intake_job_id": intake_job_id,
-        "source_file_id": artifact_metadata.get("source_file_id"),
-        "parse_snapshot_id": artifact_metadata.get("parse_snapshot_id"),
-        "artifact_version": "v1",
-        "result_hash": row.result_hash,
-        "review_model": artifact_metadata.get("review_model", ""),
-        "prompt_version": artifact_metadata.get("prompt_version", ""),
-        "artifact_schema_version": artifact_metadata.get("artifact_schema_version", "v2"),
-        "generated_at": artifact_metadata.get("generated_at", row.created_at.isoformat() if row.created_at else utc_now_iso()),
-        "agent_review": agent_review,
-        "review_context": review_context,
-        "agent_review_ref": row.result_ref,
-    }
+    path = Path(row.result_ref)
+    if not path.exists() or not path.is_file():
+        return None
+
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def build_ticket_event_payload(session, ticket: ApprovalTicket) -> dict[str, Any]:

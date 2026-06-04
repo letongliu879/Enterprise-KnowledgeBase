@@ -32,7 +32,9 @@ from reality_rag_contracts import (
     Tenant,
 )
 
-from ingestion_worker.stages import (
+from ingestion_worker.domains.publishing_domain import persist_document_and_policy
+
+from intake_runtime.stages import (
     ConversionStageInput,
     ConversionStageOutput,
     PublishingStageInput,
@@ -44,7 +46,7 @@ from ingestion_worker.stages import (
     hash_utils,
     pure_stages,
 )
-from ingestion_worker.stages.protocol import StageContext
+from intake_runtime.stages.protocol import StageContext
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -160,7 +162,7 @@ class TestSchemaDataclasses:
 
     def test_asdict_roundtrip(self):
         """Schemas must serialize for hashing via canonical_json."""
-        from ingestion_worker.stages.hash_utils import canonical_json
+        from intake_runtime.stages.hash_utils import canonical_json
 
         out = ConversionStageOutput(
             preliminary_doc_id="pre-1",
@@ -425,7 +427,7 @@ class TestPureReviewStage:
         assert out.input_hash != ""
 
     def test_review_with_cache_hit(self):
-        from ingestion_worker.agent_review_cache import InMemoryAgentReviewCache
+        from intake_runtime.agent_review_cache import InMemoryAgentReviewCache
 
         cache = InMemoryAgentReviewCache()
         cached = AgentReview(
@@ -437,7 +439,7 @@ class TestPureReviewStage:
         cache.set("fake-key", cached, ttl_seconds=99999999)
 
         # Patch build_cache_key to return our fake key
-        import ingestion_worker.agent_review_cache as arc
+        import intake_runtime.agent_review_cache as arc
         original_build = arc.build_cache_key
         try:
             arc.build_cache_key = lambda **kwargs: "fake-key"
@@ -509,7 +511,9 @@ class TestPurePublishingStage:
         with tempfile.TemporaryDirectory() as tmp:
             monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", tmp)
             doc_repo = MagicMock()
+            doc_repo._session = None
             policy_repo = MagicMock()
+            policy_repo._session = None
             policy_repo.get.return_value = None
 
             inp = PublishingStageInput(
@@ -522,7 +526,7 @@ class TestPurePublishingStage:
                 publish_status=PublishStatus.PUBLISHED,
             )
             out = pure_stages.run_publishing_stage(
-                inp, document_repo=doc_repo, policy_repo=policy_repo
+                inp, document_repo=doc_repo, policy_repo=policy_repo, persist_fn=persist_document_and_policy
             )
             assert out.document_persisted is True
             assert out.policy_persisted is True

@@ -261,16 +261,15 @@ def test_indexing_endpoints_delegate_to_service(monkeypatch):
         async def run(self, request):
             return {"job_id": request.job_id, "collection_id": request.collection_id, "index_version": request.index_version, "status": "completed", "documents_indexed": 1, "chunks_indexed": 2, "backend_mode": "fake"}
 
-        def activate(self, collection_id, index_version):
+        async def activate(self, collection_id, index_version):
             return {"collection_id": collection_id, "active_index_version": index_version, "previous_index_version": "old", "target_index_version": index_version, "status": "indexed"}
 
-        def rollback(self, collection_id, index_version):
+        async def rollback(self, collection_id, index_version):
             return {"collection_id": collection_id, "active_index_version": "old", "previous_index_version": index_version, "target_index_version": "old", "status": "indexed"}
 
     with TestClient(
         create_app(
             indexing_service_factory=lambda: FakeIndexingService(),
-            include_monitor_routes=False,
             start_background_poller=False,
         )
     ) as client:

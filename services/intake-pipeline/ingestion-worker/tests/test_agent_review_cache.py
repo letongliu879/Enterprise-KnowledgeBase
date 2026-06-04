@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from reality_rag_contracts import AgentReview, PublishStatus, QualityReport, ReviewDecision
 
-from ingestion_worker.agent_review_cache import (
+from intake_runtime.agent_review_cache import (
     CACHE_KEY_PREFIX,
     CACHE_SCHEMA_VERSION,
     InMemoryAgentReviewCache,

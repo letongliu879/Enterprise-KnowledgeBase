@@ -16,7 +16,7 @@ from reality_rag_persistence.repositories.stage_attempts import StageAttemptRepo
 from reality_rag_persistence.repositories.stage_results import StageResultRepository
 from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
 
-from ingestion_worker.orchestrator import OrchestratorService
+from intake_runtime.orchestrator import OrchestratorService
 
 
 class TestOrchestratorIntakeJob:

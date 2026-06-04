@@ -169,6 +169,9 @@ class ApprovalEventAdapter(EventAdapter):
             aggregate_version=version,
             occurred_at=occurred_at,
             payload={
+                "tenant_id": tenant_id or "default",
+                "collection_id": collection_id,
+                "upload_id": upload_id,
                 "ticket_id": ticket_id,
                 "ticket_state": payload.get("state", self._default_state(event_type, payload)),
             },

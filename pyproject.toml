@@ -6,10 +6,18 @@ dependencies = [
     "reality-rag-admin",
     "enterprise-kb-indexing",
     "reality-rag-intake-pipeline",
+    "agent-review-worker",
+    "approval-service",
+    "conversion-worker",
+    "document-service",
+    "indexing-service",
+    "ingestion-worker",
+    "publishing-worker",
     "reality-rag-workbench",
     "reality-rag-contracts",
     "reality-rag-persistence",
     "reality-rag-documents",
+    "intake-runtime",
     "ragflow-runtime",
 ]
 
@@ -27,10 +35,18 @@ members = [
     "services/admin",
     "services/indexing",
     "services/intake-pipeline",
+    "services/intake-pipeline/agent-review-worker",
+    "services/intake-pipeline/approval-service",
+    "services/intake-pipeline/conversion-worker",
+    "services/intake-pipeline/document-service",
+    "services/intake-pipeline/indexing-service",
+    "services/intake-pipeline/ingestion-worker",
+    "services/intake-pipeline/publishing-worker",
     "services/workbench-api",
     "packages/contracts",
     "packages/persistence",
     "packages/documents",
+    "packages/intake_runtime",
     "packages/ragflow_runtime",
 ]
 
@@ -38,10 +54,18 @@ members = [
 reality-rag-admin = { workspace = true }
 enterprise-kb-indexing = { workspace = true }
 reality-rag-intake-pipeline = { workspace = true }
+agent-review-worker = { workspace = true }
+approval-service = { workspace = true }
+conversion-worker = { workspace = true }
+document-service = { workspace = true }
+indexing-service = { workspace = true }
+ingestion-worker = { workspace = true }
+publishing-worker = { workspace = true }
 reality-rag-workbench = { workspace = true }
 reality-rag-contracts = { workspace = true }
 reality-rag-persistence = { workspace = true }
 reality-rag-documents = { workspace = true }
+intake-runtime = { workspace = true }
 ragflow-runtime = { workspace = true }
 
 [tool.uv]

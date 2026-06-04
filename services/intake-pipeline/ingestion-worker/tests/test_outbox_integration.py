@@ -13,7 +13,7 @@ from reality_rag_persistence.repositories.outbox_events import OutboxEventReposi
 from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
 
 from approval_service.approval_domain import ApprovalService
-from ingestion_worker.orchestrator import OrchestratorService
+from intake_runtime.orchestrator import OrchestratorService
 from reality_rag_documents import DocumentService
 
 

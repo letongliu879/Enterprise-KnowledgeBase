@@ -3,10 +3,6 @@
 import sys
 from pathlib import Path
 
-# Add indexing_service to path so reality_rag_persistence can import it
-_project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_project_root / "services" / "indexing" / "src"))
-
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -34,7 +30,7 @@ def _setup_db():
 @pytest.fixture
 def client():
     from workbench_api.main import create_app
-    with TestClient(create_app(start_reconciler=False)) as test_client:
+    with TestClient(create_app()) as test_client:
         yield test_client
 
 

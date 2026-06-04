@@ -11,7 +11,7 @@ from pathlib import Path
 
 from reality_rag_contracts import ConversionRequest, ConversionResult, ConversionStatus
 
-from ingestion_worker.converters.base import BaseConverter
+from intake_runtime.converters.base import BaseConverter
 
 
 class FakeConverter(BaseConverter):

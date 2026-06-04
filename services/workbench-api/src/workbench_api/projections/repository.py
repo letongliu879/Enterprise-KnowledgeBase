@@ -102,7 +102,11 @@ class TaskProjectionRepository:
         return items, total
 
     def upsert_with_version_check(self, row: dict[str, Any]) -> bool:
-        """Upsert task projection, but only if new version > existing version."""
+        """Upsert task projection, but only if new version > existing version.
+
+        Skips None and empty-string values so event-driven partial updates
+        don't wipe fields set by earlier events (e.g. user_id, source_file_state).
+        """
         projection_id = row.get("projection_id")
         existing = self.get(projection_id) if projection_id else None
         if existing is None:
@@ -114,6 +118,8 @@ class TaskProjectionRepository:
             return False
         for key, value in row.items():
             if hasattr(existing, key):
+                if value in (None, "") and getattr(existing, key) not in (None, ""):
+                    continue
                 setattr(existing, key, value)
         existing.projection_updated_at = _utcnow()
         return True

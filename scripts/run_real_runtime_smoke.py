@@ -94,17 +94,6 @@ SERVICE_CONFIG: dict[str, dict[str, Any]] = {
         "env": {},
         "shell": False,
     },
-    "intake": {
-        "port": 18085,
-        "health_path": "/health",
-        "cwd": ROOT / "services" / "intake-pipeline",
-        "cmd": [
-            PYTHON, "-m", "uvicorn", "intake_pipeline.main:app",
-            "--host", "127.0.0.1", "--port", "18085",
-        ],
-        "env": {},
-        "shell": False,
-    },
     "approval-service": {
         "port": 18087,
         "health_path": "/health",
@@ -194,7 +183,6 @@ PYTHON_SERVICES = [
     "agent-review-worker",
     "publishing",
     "ingestion-worker",
-    "intake",
 ]
 JAVA_SERVICES = ["access", "retrieval"]
 
@@ -488,7 +476,6 @@ class SmokeRunner:
             "ADMIN_JWT_SECRET": "smoke-test-secret",
             "JWT_SECRET": "smoke-test-secret",
             "INDEXING_BASE_URL": "http://127.0.0.1:18080",
-            "INTAKE_BASE_URL": "http://127.0.0.1:18085",
             "ADMIN_BASE_URL": "http://127.0.0.1:18084",
             "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
             "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
@@ -501,7 +488,7 @@ class SmokeRunner:
             "REALITY_RAG_INTAKE_RUNTIME_DIR": str(RUNTIME_DIR / "intake-real-smoke"),
             "ALLOW_LOCAL_FALLBACK_FOR_TESTS": "false",
             "OUTBOX_POLL_INTERVAL_SECONDS": "1",
-            # Do NOT override embedding / backend config 鈥?let Python services read
+            # Do NOT override embedding / backend config — let Python services read
             # from their local .env files so real model endpoints are used.
         }
         if self.args.require_live_backends:

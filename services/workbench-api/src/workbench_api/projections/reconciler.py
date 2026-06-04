@@ -9,9 +9,7 @@ concurrency, and cursor-based pagination to avoid full table scans.
 
 from __future__ import annotations
 
-import asyncio
 import difflib
-import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -29,11 +27,6 @@ from .repository import (
     TaskProjectionRepository,
     TicketProjectionRepository,
 )
-
-
-RECONCILE_INTERVAL_SECONDS = int(os.environ.get("WORKBENCH_RECONCILE_INTERVAL_SECONDS", "300"))
-RECONCILE_BATCH_SIZE = int(os.environ.get("WORKBENCH_RECONCILE_BATCH_SIZE", "100"))
-RECONCILE_ENABLED = os.environ.get("WORKBENCH_RECONCILE_ENABLED", "true").lower() == "true"
 
 
 def _utcnow() -> datetime:
@@ -73,6 +66,9 @@ class ProjectionReconciler:
         })
 
         # Use raw SQL with FOR UPDATE SKIP LOCKED for safe multi-instance concurrency
+        # SQLite does not support FOR UPDATE SKIP LOCKED
+        dialect = self._session.bind.dialect.name if self._session.bind else ""
+        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
         sql = text("""
             SELECT projection_id, tenant_id, collection_id, upload_id, version
             FROM workbench_task_projection
@@ -80,8 +76,11 @@ class ProjectionReconciler:
             {tenant_filter}
             ORDER BY stale_after ASC NULLS LAST, projection_updated_at ASC
             LIMIT :limit
-            FOR UPDATE SKIP LOCKED
-        """.format(tenant_filter="AND tenant_id = :tenant_id" if tenant_id else ""))
+            {for_update}
+        """.format(
+            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
+            for_update=for_update,
+        ))
 
         params = {"limit": limit}
         if tenant_id:
@@ -154,6 +153,7 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
+        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
         sql = text("""
             SELECT ticket_id, tenant_id, collection_id, version
             FROM workbench_ticket_projection
@@ -161,8 +161,11 @@ class ProjectionReconciler:
             {tenant_filter}
             ORDER BY projection_updated_at ASC
             LIMIT :limit
-            FOR UPDATE SKIP LOCKED
-        """.format(tenant_filter="AND tenant_id = :tenant_id" if tenant_id else ""))
+            {for_update}
+        """.format(
+            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
+            for_update=for_update,
+        ))
 
         params = {"limit": limit}
         if tenant_id:
@@ -229,6 +232,7 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
+        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
         sql = text("""
             SELECT doc_id, tenant_id, collection_id, version
             FROM workbench_document_projection
@@ -236,8 +240,11 @@ class ProjectionReconciler:
             {tenant_filter}
             ORDER BY projection_updated_at ASC
             LIMIT :limit
-            FOR UPDATE SKIP LOCKED
-        """.format(tenant_filter="AND tenant_id = :tenant_id" if tenant_id else ""))
+            {for_update}
+        """.format(
+            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
+            for_update=for_update,
+        ))
 
         params = {"limit": limit}
         if tenant_id:
@@ -268,6 +275,7 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
+        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
         sql = text("""
             SELECT evidence_id, tenant_id, collection_id, version
             FROM workbench_chunk_projection
@@ -275,8 +283,11 @@ class ProjectionReconciler:
             {tenant_filter}
             ORDER BY projection_updated_at ASC
             LIMIT :limit
-            FOR UPDATE SKIP LOCKED
-        """.format(tenant_filter="AND tenant_id = :tenant_id" if tenant_id else ""))
+            {for_update}
+        """.format(
+            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
+            for_update=for_update,
+        ))
 
         params = {"limit": limit}
         if tenant_id:
@@ -595,58 +606,6 @@ def _derive_progress(
     if source_file_state == "READY":
         return 20
     return 0
-
-
-async def reconciliation_loop() -> None:
-    """Background reconciliation loop started by FastAPI lifespan.
-
-    Runs every RECONCILE_INTERVAL_SECONDS, processing one batch of stale
-    projections per aggregate type. Uses database row-level locks to avoid
-    duplicate work across multiple instances.
-    """
-    if not RECONCILE_ENABLED:
-        return
-
-    while True:
-        try:
-            await asyncio.sleep(RECONCILE_INTERVAL_SECONDS)
-
-            # Lazy import to avoid circular dependency at module load time
-            from reality_rag_persistence.database import get_session
-
-            db = next(get_session())
-            try:
-                reconciler = ProjectionReconciler(
-                    session=db,
-                    intake_client=IntakeClient(),
-                    approval_client=ApprovalClient(),
-                    indexing_client=IndexingClient(),
-                )
-
-                for aggregate_type in ["task", "ticket", "document", "chunk", "agent_review"]:
-                    try:
-                        if aggregate_type == "task":
-                            await reconciler.reconcile_tasks(limit=RECONCILE_BATCH_SIZE)
-                        elif aggregate_type == "ticket":
-                            await reconciler.reconcile_tickets(limit=RECONCILE_BATCH_SIZE)
-                        elif aggregate_type == "document":
-                            await reconciler.reconcile_documents(limit=RECONCILE_BATCH_SIZE)
-                        elif aggregate_type == "chunk":
-                            await reconciler.reconcile_chunks(limit=RECONCILE_BATCH_SIZE)
-                        elif aggregate_type == "agent_review":
-                            await reconciler.reconcile_agent_reviews(limit=RECONCILE_BATCH_SIZE)
-                    except Exception as e:
-                        # Log and continue with next aggregate type
-                        import logging
-                        logging.getLogger(__name__).error(
-                            f"Reconciliation failed for {aggregate_type}: {e}"
-                        )
-            finally:
-                db.close()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Reconciliation loop crashed: {e}")
-            await asyncio.sleep(60)  # Short retry on crash
 
 
 def _best_chunk_match(source_quote: str, chunks: list[dict[str, Any]]) -> dict[str, Any] | None:

@@ -137,6 +137,7 @@ async def health() -> HealthResponse:
 async def upload_file(
     collection_id: str = Form(...),
     visibility: str = Form("INTERNAL"),
+    upload_id: str | None = Form(None),
     file: UploadFile = File(...),
 ) -> dict:
     session = get_session()
@@ -150,7 +151,10 @@ async def upload_file(
             raise HTTPException(status_code=400, detail="visibility invalid")
 
         svc = DocumentService(session)
-        upload_session = svc.create_upload_session(source="web")
+        if upload_id:
+            upload_session = svc.create_upload_session(source="web", upload_id=upload_id)
+        else:
+            upload_session = svc.create_upload_session(source="web")
         upload_id = upload_session.upload_id
 
         sanitized_name = _sanitize_filename(file.filename or "")
@@ -391,6 +395,32 @@ async def create_source_file(request: CreateSourceFileRequest) -> dict:
 
 class ClaimRequest(BaseModel):
     job_id: str
+
+
+@app.get("/internal/source-files/{source_file_id}")
+async def get_source_file(source_file_id: str) -> dict:
+    session = get_session()
+    try:
+        repo = SourceFileRepository(session)
+        sf = repo.get(source_file_id)
+        if sf is None:
+            raise HTTPException(status_code=404, detail=f"Source file {source_file_id} not found")
+        return {
+            "source_file_id": sf.source_file_id,
+            "collection_id": sf.collection_id,
+            "object_id": sf.object_id,
+            "content_hash": sf.content_hash,
+            "state": _serialize_state(sf.state),
+            "upload_id": sf.upload_id,
+            "claimed_by": sf.claimed_by,
+            "claimed_at": sf.claimed_at.isoformat() if sf.claimed_at else None,
+            "consumed_by": sf.consumed_by,
+            "consumed_at": sf.consumed_at.isoformat() if sf.consumed_at else None,
+            "created_at": sf.created_at.isoformat() if sf.created_at else None,
+            "updated_at": sf.updated_at.isoformat() if sf.updated_at else None,
+        }
+    finally:
+        session.close()
 
 
 @app.post("/internal/source-files/{source_file_id}/claim")

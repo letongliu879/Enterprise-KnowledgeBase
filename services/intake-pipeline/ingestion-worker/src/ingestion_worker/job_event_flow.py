@@ -13,6 +13,7 @@ from reality_rag_contracts import (
     StageName,
 )
 from reality_rag_persistence.models import StageResultModel
+from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from intake_runtime.orchestrator import OrchestratorService
 from intake_runtime.stages.schemas import PublishingStageOutput
@@ -176,11 +177,17 @@ def _after_publishing(session, orch: OrchestratorService, job) -> None:
     final_doc_id = job.final_doc_id or (
         output.canonical_metadata.doc_id if output.canonical_metadata is not None else ""
     )
+    source_file = SourceFileRepository(session).get(job.source_file_id)
+    upload_id = source_file.upload_id if source_file else ""
+    collection = CollectionRepository(session).get(job.collection_id)
+    tenant_id = collection.tenant_id if collection else "default"
     if final_doc_id:
         orch.publish_completed(
             intake_job_id=job.intake_job_id,
             final_doc_id=final_doc_id,
             collection_id=job.collection_id,
+            upload_id=upload_id,
+            tenant_id=tenant_id,
             chunk_count=(len(output.asset_bundle.chunks) if output.asset_bundle is not None else 0),
             index_version=(
                 output.canonical_metadata.asset_paths.get("index_version", "v1")

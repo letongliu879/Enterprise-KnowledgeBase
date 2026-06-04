@@ -3,7 +3,7 @@ import pytest
 
 from reality_rag_contracts import PublishStatus, QualityReport
 
-from ingestion_worker.agent_reviewer import (
+from intake_runtime.agent_reviewer import (
     AgentReviewConfigurationError,
     AgentReviewUnavailableError,
     DeepSeekAgentReviewer,
@@ -38,7 +38,7 @@ def test_reviewer_surfaces_connection_failure(monkeypatch):
         def post(self, url, json=None, headers=None):
             raise httpx.ConnectError("connect failed", request=httpx.Request("POST", url))
 
-    monkeypatch.setattr("ingestion_worker.agent_reviewer.httpx.Client", _FailingClient)
+    monkeypatch.setattr("intake_runtime.agent_reviewer.httpx.Client", _FailingClient)
     reviewer = DeepSeekAgentReviewer(
         DeepSeekReviewConfig(
             base_url="https://api.deepseek.com",
@@ -92,7 +92,7 @@ def test_reviewer_runs_main_review_and_conditional_findings(monkeypatch):
         ("single-pass enterprise document reviewer", '{"document_type": "policy", "suggested_authority_level": 5, "detected_pii": [{"pii_type": "email", "description": "user@example.com", "severity": "medium"}], "diff_summary": "Travel policy doc", "decision": "request_changes", "confidence": 0.95, "reasons": ["clean"], "risk_tags": [], "suggested_actions": [], "publish_recommendation": "pending_review", "sections_requiring_review": []}'),
         ("extracting anchored findings", '{"anchored_findings": [{"source_quote": "...travel reimbursement policy...", "problem_summary": "Policy wording needs review.", "severity": "medium", "confidence": 0.81}]}'),
     ])
-    monkeypatch.setattr("ingestion_worker.agent_reviewer._call_deepseek", backend)
+    monkeypatch.setattr("intake_runtime.agent_reviewer._call_deepseek", backend)
 
     reviewer = DeepSeekAgentReviewer(
         DeepSeekReviewConfig(
@@ -139,7 +139,7 @@ def test_reviewer_auto_elevates_critical_pii(monkeypatch):
     backend = _FakeDeepSeekBackend([
         ("single-pass enterprise document reviewer", '{"document_type": "employee_record", "suggested_authority_level": 7, "detected_pii": [{"pii_type": "salary", "description": "salary 100k", "severity": "critical"}], "diff_summary": "", "decision": "approve", "confidence": 0.9, "reasons": ["looks ok"], "risk_tags": [], "suggested_actions": [], "publish_recommendation": "published", "sections_requiring_review": []}'),
     ])
-    monkeypatch.setattr("ingestion_worker.agent_reviewer._call_deepseek", backend)
+    monkeypatch.setattr("intake_runtime.agent_reviewer._call_deepseek", backend)
 
     reviewer = DeepSeekAgentReviewer(
         DeepSeekReviewConfig(

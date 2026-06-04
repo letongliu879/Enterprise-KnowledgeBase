@@ -107,6 +107,6 @@ def test_real_chain_upload_content_reaches_published_state(
 
     task = _get_json(client, f"/workbench/tasks/{upload_id}", uploader_headers)
     assert task["status"] == "published"
-    assert task["source_file_state"] == "CLEANABLE"
-    assert task["intake_job_state"] == "PUBLISHED"
+    assert task["source_file_state"] == "ready"
+    assert task["intake_job_state"] == "published"
     assert task["active_index_version"]

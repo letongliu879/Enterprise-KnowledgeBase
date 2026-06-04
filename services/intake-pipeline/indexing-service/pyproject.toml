@@ -2,15 +2,18 @@
 name = "indexing-service"
 version = "0.1.0"
 description = "Standalone indexing service for Reality-RAG"
-requires-python = "==3.14.*"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.100",
     "uvicorn[standard]",
     "reality-rag-contracts",
     "reality-rag-persistence",
-    "reality-rag-indexing",
+    "enterprise-kb-indexing",
     "httpx",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.optional-dependencies]
 dev = [

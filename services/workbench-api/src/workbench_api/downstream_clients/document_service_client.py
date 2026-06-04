@@ -11,13 +11,16 @@ class DocumentServiceClient:
         self._base_url = (base_url or config.document_service_base_url).rstrip("/")
         self._timeout = config.default_http_timeout
 
-    async def upload_file(self, collection_id: str, visibility: str, filename: str, content_bytes: bytes, mime_type: str) -> dict:
+    async def upload_file(self, collection_id: str, visibility: str, filename: str, content_bytes: bytes, mime_type: str, upload_id: str | None = None) -> dict:
         url = f"{self._base_url}/upload"
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
+                data = {"collection_id": collection_id, "visibility": visibility}
+                if upload_id:
+                    data["upload_id"] = upload_id
                 response = await client.post(
                     url,
-                    data={"collection_id": collection_id, "visibility": visibility},
+                    data=data,
                     files={"file": (filename, content_bytes, mime_type)},
                 )
         except httpx.ConnectError as e:

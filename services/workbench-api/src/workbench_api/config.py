@@ -13,11 +13,12 @@ class WorkbenchConfig:
     auth_mode: str = os.environ.get("AUTH_MODE", "smoke")
 
     indexing_base_url: str = os.environ.get("INDEXING_BASE_URL", "http://127.0.0.1:18080")
-    intake_base_url: str = os.environ.get("INTAKE_BASE_URL", "http://127.0.0.1:18085")
+    ingestion_worker_url: str = os.environ.get("INGESTION_WORKER_URL", "http://127.0.0.1:18088")
     approval_base_url: str = os.environ.get("APPROVAL_BASE_URL", "http://127.0.0.1:18087")
     admin_base_url: str = os.environ.get("ADMIN_BASE_URL", "http://127.0.0.1:18084")
     access_base_url: str = os.environ.get("ACCESS_BASE_URL", "http://127.0.0.1:18081")
     document_service_base_url: str = os.environ.get("DOCUMENT_SERVICE_BASE_URL", "http://localhost:8006")
+    publishing_base_url: str = os.environ.get("PUBLISHING_BASE_URL", "http://localhost:8008")
     access_internal_api_key: str = os.environ.get("ACCESS_INTERNAL_API_KEY", "")
 
     database_url: str = os.environ.get(

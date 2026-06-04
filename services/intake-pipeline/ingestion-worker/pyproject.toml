@@ -1,17 +1,21 @@
 [project]
 name = "ingestion-worker"
 version = "0.1.0"
-requires-python = "==3.14.*"
+requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.100",
+    "fastapi\u003e=0.100",
     "uvicorn[standard]",
-    "reality-rag-ai-clients",
     "reality-rag-contracts",
-    "reality-rag-indexing",
+    "enterprise-kb-indexing",
     "reality-rag-persistence",
+    "reality-rag-documents",
+    "intake-runtime",
     "httpx",
-    "prometheus-client>=0.20",
+    "prometheus-client\u003e=0.20",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.optional-dependencies]
 dev = [

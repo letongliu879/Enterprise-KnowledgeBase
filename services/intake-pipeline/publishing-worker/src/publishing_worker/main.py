@@ -214,6 +214,21 @@ async def retract_published_document(final_doc_id: str, request: LifecycleReques
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/internal/published-documents/{final_doc_id}")
+async def get_published_document(final_doc_id: str) -> dict:
+    from reality_rag_persistence.repositories.published_documents import PublishedDocumentRepository
+
+    session = get_session()
+    try:
+        repo = PublishedDocumentRepository(session)
+        doc = repo.get_by_final_doc_id(final_doc_id)
+        if doc is None:
+            raise HTTPException(status_code=404, detail=f"Published document {final_doc_id} not found")
+        return doc.model_dump(mode="json")
+    finally:
+        session.close()
+
+
 # ── Persist Document and Policy ───────────────────────────────────────
 
 class PersistRequest(BaseModel):

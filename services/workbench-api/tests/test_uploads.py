@@ -161,12 +161,13 @@ class TestUploads:
 
         captured = {}
 
-        async def _fake_upload_file(self, collection_id, visibility, filename, content_bytes, mime_type):
+        async def _fake_upload_file(self, collection_id, visibility, filename, content_bytes, mime_type, upload_id=None):
             captured["collection_id"] = collection_id
             captured["visibility"] = visibility
             captured["filename"] = filename
             captured["mime_type"] = mime_type
             captured["size"] = len(content_bytes)
+            captured["upload_id"] = upload_id
             return {
                 "source_file_id": "sf_123",
                 "status": "UPLOADED",
@@ -207,8 +208,9 @@ class TestUploads:
 
         captured = {}
 
-        async def _fake_upload_file(self, collection_id, visibility, filename, content_bytes, mime_type):
+        async def _fake_upload_file(self, collection_id, visibility, filename, content_bytes, mime_type, upload_id=None):
             captured["visibility"] = visibility
+            captured["upload_id"] = upload_id
             return {
                 "source_file_id": "sf_123",
                 "status": "UPLOADED",

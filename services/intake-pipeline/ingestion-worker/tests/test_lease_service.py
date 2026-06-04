@@ -6,7 +6,7 @@ from reality_rag_contracts import StageTaskState, StageName
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
 
-from ingestion_worker.domains.lease_service import StageTaskLeaseService
+from intake_runtime.lease_service import StageTaskLeaseService
 
 
 class TestStageTaskLeaseAcquire:

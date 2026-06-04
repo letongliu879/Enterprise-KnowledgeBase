@@ -28,19 +28,30 @@ class IntakeEventAdapter(EventAdapter):
 
         events: list[ProjectionEvent] = []
 
-        if event_type == "SourceFileRegistered":
+        if event_type in {"SourceFileRegistered", "FileReady"}:
             # Update task projection with source file info
+            _tenant_id = tenant_id or "default"
+            _upload_id = payload.get("upload_id", "")
+            if not _upload_id:
+                # Fallback: use source_file_id as aggregate_id for FileReady events
+                _upload_id = payload.get("source_file_id", "")
+            # Use fixed version numbers per event type to ensure they override
+            # workbench local projection updates (version 1-2)
+            _version = 10 if event_type == "SourceFileRegistered" else 20
             events.append(ProjectionEvent(
                 event_id=native_event["event_id"],
                 event_type=event_type,
                 service=self.service_name,
-                tenant_id=tenant_id,
+                tenant_id=_tenant_id,
                 collection_id=collection_id,
                 aggregate_type="task",
-                aggregate_id=payload.get("upload_id", ""),
-                aggregate_version=version,
+                aggregate_id=_upload_id,
+                aggregate_version=_version,
                 occurred_at=occurred_at,
                 payload={
+                    "tenant_id": _tenant_id,
+                    "collection_id": collection_id,
+                    "upload_id": _upload_id,
                     "source_file_id": payload.get("source_file_id"),
                     "source_file_state": payload.get("state"),
                 },
@@ -50,6 +61,9 @@ class IntakeEventAdapter(EventAdapter):
         elif event_type == "IntakeJobStateChanged":
             # Update task projection with job state
             job_payload = {
+                "tenant_id": tenant_id or "default",
+                "collection_id": collection_id,
+                "upload_id": payload.get("upload_id", ""),
                 "intake_job_id": payload.get("intake_job_id"),
                 "intake_job_state": payload.get("state"),
             }
@@ -70,7 +84,7 @@ class IntakeEventAdapter(EventAdapter):
                 collection_id=collection_id,
                 aggregate_type="task",
                 aggregate_id=payload.get("upload_id", ""),
-                aggregate_version=version,
+                aggregate_version=30,
                 occurred_at=occurred_at,
                 payload=job_payload,
                 trace_id=trace_id,
@@ -95,14 +109,36 @@ class IntakeEventAdapter(EventAdapter):
                     collection_id=collection_id,
                     aggregate_type="document",
                     aggregate_id=payload["final_doc_id"],
-                    aggregate_version=version,
+                    aggregate_version=30,
                     occurred_at=occurred_at,
                     payload=doc_payload,
                     trace_id=trace_id,
                 ))
 
-        elif event_type == "PublishedDocumentStateChanged":
-            doc_id = payload.get("doc_id")
+        elif event_type == "StageCompleted":
+            upload_id = payload.get("upload_id")
+            if upload_id:
+                events.append(ProjectionEvent(
+                    event_id=native_event["event_id"],
+                    event_type=event_type,
+                    service=self.service_name,
+                    tenant_id=tenant_id,
+                    collection_id=collection_id,
+                    aggregate_type="task",
+                    aggregate_id=upload_id,
+                    aggregate_version=30,
+                    occurred_at=occurred_at,
+                    payload={
+                        "tenant_id": tenant_id or "default",
+                        "collection_id": collection_id,
+                        "upload_id": upload_id,
+                        "intake_job_state": "processing",
+                    },
+                    trace_id=trace_id,
+                ))
+
+        elif event_type in {"PublishedDocumentStateChanged", "PublishCompleted"}:
+            doc_id = payload.get("doc_id") or payload.get("final_doc_id")
             if doc_id:
                 events.append(ProjectionEvent(
                     event_id=native_event["event_id"],
@@ -112,34 +148,40 @@ class IntakeEventAdapter(EventAdapter):
                     collection_id=collection_id,
                     aggregate_type="document",
                     aggregate_id=doc_id,
-                    aggregate_version=version,
+                    aggregate_version=40,
                     occurred_at=occurred_at,
                     payload={
                         "doc_id": doc_id,
                         "tenant_id": tenant_id,
                         "collection_id": collection_id,
-                        "publish_state": payload.get("state"),
+                        "publish_state": payload.get("state", "published"),
                     },
                     trace_id=trace_id,
                 ))
 
-                # Also update task projection
-                upload_id = payload.get("upload_id")
-                if upload_id:
-                    events.append(ProjectionEvent(
-                        event_id=f"{native_event['event_id']}:task",
-                        event_type=event_type,
-                        service=self.service_name,
-                        tenant_id=tenant_id,
-                        collection_id=collection_id,
-                        aggregate_type="task",
-                        aggregate_id=upload_id,
-                        aggregate_version=version,
-                        occurred_at=occurred_at,
-                        payload={
-                            "published_document_state": payload.get("state"),
-                        },
-                        trace_id=trace_id,
-                    ))
+            # Also update task projection
+            upload_id = payload.get("upload_id")
+            if upload_id:
+                events.append(ProjectionEvent(
+                    event_id=f"{native_event['event_id']}:task",
+                    event_type=event_type,
+                    service=self.service_name,
+                    tenant_id=tenant_id,
+                    collection_id=collection_id,
+                    aggregate_type="task",
+                    aggregate_id=upload_id,
+                    aggregate_version=40,
+                    occurred_at=occurred_at,
+                    payload={
+                        "tenant_id": tenant_id or "default",
+                        "collection_id": collection_id,
+                        "upload_id": upload_id,
+                        "published_document_state": payload.get("state", "published"),
+                        "intake_job_state": "published",
+                        "active_index_version": payload.get("index_version"),
+                        "overall_status": "published",
+                    },
+                    trace_id=trace_id,
+                ))
 
         return events

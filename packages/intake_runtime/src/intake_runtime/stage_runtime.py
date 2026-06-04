@@ -74,6 +74,7 @@ def build_stage_context(session, intake_job_id: str) -> tuple[Any, Any, Any, Any
         source_file_path=obj.storage_key,
         collection=collection,
         tenant=tenant,
+        tenant_id=collection.tenant_id if collection else "default",
         job_id=job.trace_id or intake_job_id,
         intake_job_id=intake_job_id,
         source_file_id=job.source_file_id,
@@ -267,6 +268,9 @@ def _run_conversion_core(session, job, source_file, document_repo, ctx, task, at
         stage_name=StageName.CONVERSION,
         success=success,
         trace_id=job.trace_id,
+        upload_id=source_file.upload_id,
+        tenant_id=ctx.tenant_id,
+        collection_id=job.collection_id,
         error_code=(None if success else "conversion_failed"),
         error_message=(
             conv_out.conversion_result.error_message
@@ -377,6 +381,9 @@ def _run_review_core(session, job, source_file, ctx, task, attempt, pipeline, co
         stage_name=StageName.AGENT_REVIEW,
         success=True,
         trace_id=job.trace_id,
+        upload_id=source_file.upload_id,
+        tenant_id=ctx.tenant_id,
+        collection_id=job.collection_id,
     )
 
 
@@ -453,6 +460,7 @@ def run_publishing(session, intake_job_id: str, *, persist_fn=None) -> None:
         ctx,
         task,
         attempt,
+        source_file,
         persist_fn=persist_fn,
     )
 
@@ -467,7 +475,7 @@ def execute_publishing_task(
 ) -> bool:
     from reality_rag_persistence.models import StageResultModel
 
-    job, _, _, document_repo, policy_repo, ctx = build_stage_context(session, intake_job_id)
+    job, source_file, _, document_repo, policy_repo, ctx = build_stage_context(session, intake_job_id)
     conv_row = (
         session.query(StageResultModel)
         .filter(StageResultModel.intake_job_id == intake_job_id)
@@ -518,6 +526,7 @@ def execute_publishing_task(
         ctx,
         task,
         attempt,
+        source_file,
         persist_fn=persist_fn,
     )
     return True
@@ -531,6 +540,7 @@ def _run_publishing_core(
     ctx,
     task,
     attempt,
+    source_file,
     *,
     persist_fn=None,
 ) -> None:
@@ -559,6 +569,9 @@ def _run_publishing_core(
         stage_name=StageName.PUBLISHING,
         success=True,
         trace_id=job.trace_id,
+        upload_id=source_file.upload_id,
+        tenant_id=ctx.tenant_id,
+        collection_id=job.collection_id,
     )
 
 

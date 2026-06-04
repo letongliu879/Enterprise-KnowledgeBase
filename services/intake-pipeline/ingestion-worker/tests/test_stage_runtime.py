@@ -14,7 +14,7 @@ from reality_rag_persistence.repositories.published_documents import PublishedDo
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from reality_rag_persistence.repositories.tenants import TenantRepository
 
-from ingestion_worker.orchestrator import OrchestratorService
+from intake_runtime.orchestrator import OrchestratorService
 from ingestion_worker.stage_runtime import run_publishing
 
 

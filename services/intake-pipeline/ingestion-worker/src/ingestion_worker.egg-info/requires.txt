@@ -1,9 +1,10 @@
 fastapi>=0.100
 uvicorn[standard]
-reality-rag-ai-clients
 reality-rag-contracts
-reality-rag-indexing
+enterprise-kb-indexing
 reality-rag-persistence
+reality-rag-documents
+intake-runtime
 httpx
 prometheus-client>=0.20
 

@@ -1,627 +1,828 @@
-# Intake Pipeline Remediation Plan
+# Intake Pipeline Remediation Plan (Rewrite)
 
-## 0. 当前快照
+**状态**：执行中  
+**目标架构**：只保留 Event-Driven Split Workers；删除 Compat Root 和 Sync In-Process Pipeline。  
+**约束**：
+- 禁止新增功能；只收敛、删除、显式化。
+- 禁止为了通过测试而保留 bypass。
+- 每改完一个 Phase 必须跑 targeted tests；禁止直接跑 intake-pipeline 全量测试作为默认验收。
 
-本文档已根据当前工作树代码现状重新整理，用于回答两个问题：
+---
 
-1. 这份整改计划现在应该怎么排优先级
-2. 当前代码已经执行到了什么程度
+## 0. 当前真实状态（已校准）
 
-状态标记：
+### 0.1 三套并行系统（必须收敛为一套）
 
-- `未开始`：当前工作树里没有可靠证据表明已落地
-- `进行中`：已经有部分代码或测试支撑，但边界、验收或默认路径仍未收口
-- `已完成`：当前工作树内已有明确实现，且与目标方向基本一致
+| 系统 | 位置 | 作用 | 处置 |
+|---|---|---|---|
+| **Compat Root** | `services/intake-pipeline/src/intake_pipeline/main.py` (1105 行) | 初代单体替身，内存字典 + 本地文件系统跑 upload → approval → publish → indexing | **删除业务逻辑，最终只保留 health 或整文件删除** |
+| **Sync In-Process Pipeline** | `services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline.py:_drain_outbox_until_source_files_terminal()` | ingestion-worker 进程内串行执行 conversion / review / publishing，绕过真实 worker | **删除** |
+| **Event-Driven Split Workers** | document-service → FileReady → ingestion-worker → conversion-worker → agent-review-worker → approval-service → publishing-worker → indexing-service | 架构规范和数据模型支持的正式链路 | **保留并强制为唯一路径** |
 
-### 0.1 当前执行进度总览
+### 0.2 约定断裂点
 
-| 项目 | 状态 | 代码现状 |
+| 约定 | 现状 | 断裂后果 |
 |---|---|---|
-| 测试止血：关闭 `TestClient` / 避免 health test 启动后台 poller | `进行中` | 当前工作树中多个 smoke test 已改成 context-managed `TestClient`；3 个后台 worker 已提供正式 `create_app(start_background_poller=False)` 入口，health smoke 不再依赖测试内 monkeypatch lifespan |
-| Phase S：测试生命周期与资源治理 | `进行中` | 已新增仓库级 guardrail test，约束裸 `return TestClient(...)` 与测试内 lifespan monkeypatch；但统一 fixture、超时/资源预算、更多服务覆盖仍未完成 |
-| Phase 0：compat 根入口降级、前移 fail-fast | `进行中` | `src/intake_pipeline/main.py` 已自述为 compatibility-only，根 `/internal/source-files*` 写接口已退役为只读诊断视图；compat 写入口现已默认禁用，且启用后要求显式 downstream URL；`workbench create_upload` 也已不再默认触发 compat source-file 注册；但默认验证路径与剩余 fallback 仍未完整收口 |
-| Phase 1：统一 source file owner | `进行中` | `document-service` 已承载 `/internal/source-files*` 写路径并写出 `FileReady`；compat 根服务保留只读诊断视图；是否已完全切走所有默认入口仍需继续收口 |
-| Phase 2A：显式收口运行时边界 | `进行中` | split workers 已不再直接反向 import `ingestion_worker.*`；`indexing-service` 已增加定向测试防止从仓库根测错目标；但包解析/导入目标冲突与隐式路径依赖仍未彻底解决 |
-| Phase 2B：shared runtime 抽包 | `未开始` | 当前未见正式 shared runtime 抽包完成态，不应提前推进 |
-| Phase 3：清理 shim / fallback / `StageContext` | `进行中` | `pure_stages.py` 与 schema input/output 已存在；但 `StageContext` 仍在 runtime、adapters、tests 中承担过渡职责 |
-| Phase 4：退役根 compat 主链 | `进行中` | 根 compat API 仍暴露 `/v1/documents` 等 legacy 路径；但 in-process smoke 对 compat 的使用已被显式标注并通过环境开关启用，不再是静默默认路径 |
-| Phase 5A：reviewer 两阶段架构 | `进行中` | 当前已有 findings extraction 逻辑与规则，但尚未证明 reviewer 架构已完全收敛为正式目标形态 |
-| Phase 5B：contracts 增加 `anchored_findings` | `已完成` | `packages/contracts` 已包含 `anchored_findings` 相关字段与校验测试 |
-| Phase 5C：真实 review artifact 持久化 | `进行中` | `approval-service/review_artifacts.py` 已从 `StageResultModel.result_ref` 或 `summary_json` 读取 artifact payload；但 artifact store、owner 边界与幂等约束仍需继续收口 |
-| Phase 5D：`approval-service` 只读 artifact | `进行中` | `/internal/tickets/{ticket_id}/agent-review` 已改为读 payload，不再是纯硬编码 stub；但仍带有 fallback 组装与下游归一化逻辑 |
-| Phase 6：approval/workbench/indexing 闭环 | `进行中` | 当前 approval payload 已带 findings 归一化结构；matcher / routes / frontend 闭环不在本目录内完全闭合 |
-| Phase 7：删除旧代码 | `未开始` | 不应提前推进 |
+| source_file owner = document-service | document-service 无 `GET /internal/source-files/{id}`；workbench 的 `IntakeClient` 默认读 compat root | workbench 查询 source file 时读的可能是影子系统的数据 |
+| intake_job owner = ingestion-worker | ingestion-worker 无 `GET /internal/intake-jobs/{id}`；workbench 读 compat root | 同一 intake job 在正式表和 compat 内存中可能不一致 |
+| published_document owner = publishing-worker | publishing-worker 无 `GET /internal/published-documents/{id}`；workbench 读 compat root | 发布状态查询绕过 publishing domain |
+| workbench 投影为主读模型 | `task_projection/service.py` 实时 fallback 查询下游；`ProjectionReconciler` 每 5 分钟修复 | projection 不被信任，双保险增加复杂度 |
 
-### 0.2 本轮必须先解决的事实
+### 0.3 代码冗余
 
-当前最紧急的问题不是 owner 蓝图，而是**测试与后台生命周期治理缺位**：
+- **9 个 shim 文件**在 `services/intake-pipeline/ingestion-worker/src/ingestion_worker/` 里用 `sys.modules[__name__] = intake_runtime.xxx` 或纯 re-export 伪装成本地模块。
+- `intake_runtime` 已承载核心逻辑（3300+ 行）但未正式工程化为 workspace package。
+- `approval-service/review_artifacts.py` 在 `result_ref` 缺失时 fallback 从 `summary_json` 拼装 artifact。
+- `packages/persistence` 的 `EventPublisher` 与 `OutboxDispatcher` 已覆盖完整事件模型，但 sync pipeline 让 outbox 事件只在同进程内被消费。
 
-- worker app 在 lifespan 中会启动无限轮询的 outbox poller
-- 不正确的测试夹具会让后台任务残留
-- 残留任务若持续异常，会不断产生日志与资源累积
-- 在这种前提下直接跑整套测试，可能再次把 Python 进程推到极高内存
+### 0.4 打包与测试断裂
 
-因此，后续整改顺序必须把“止血层”前置。
+- 子服务 `pyproject.toml` 不在根 workspace members 中。
+- 子服务 `requires-python = "==3.14.*"` 与根 `>=3.12` 冲突。
+- `ingestion-worker` 依赖不存在的 `reality-rag-ai-clients`。
+- 从仓库根 `uv run pytest services/intake-pipeline/document-service/tests` 会 `ModuleNotFoundError: No module named 'document_service'`。
 
+---
 
-## 1. 结论
+## 1. 最终架构目标
 
-`services/intake-pipeline` 仍是过渡态系统，不是边界清晰、可独立部署、可验证的正式服务集合。
+只保留一套链路：
 
-当前问题不是单点 bug，而是以下几类问题叠加：
+```text
+[前端 / CLI / Webhook]
+    -> workbench-api (只负责 JWT 校验、collection scope、projection 只读)
+    -> document-service /upload or /internal/source-files
+    -> document-service emits FileReady outbox event
+    -> ingestion-worker outbox poller consumes FILE_READY
+       -> creates intake_job via OrchestratorService
+       -> claims source file via document-service API
+       -> emits StageTaskRequested(CONVERSION)
+    -> conversion-worker outbox poller consumes StageTaskRequested(CONVERSION)
+       -> executes conversion
+       -> emits StageCompleted(CONVERSION)
+    -> ingestion-worker consumes StageCompleted(CONVERSION)
+       -> marks source file CONSUMED
+       -> emits StageTaskRequested(AGENT_REVIEW)
+    -> agent-review-worker consumes StageTaskRequested(AGENT_REVIEW)
+       -> executes review
+       -> writes artifact to stable result_ref
+       -> emits StageCompleted(AGENT_REVIEW)
+    -> ingestion-worker consumes StageCompleted(AGENT_REVIEW)
+       -> emits ApprovalRequested
+    -> approval-service consumes ApprovalRequested
+       -> creates ticket (SYSTEM_DECIDED or PENDING)
+       -> emits ApprovalDecided (or ApprovalPending then ApprovalDecided)
+    -> ingestion-worker consumes ApprovalDecided
+       -> if approve: emits StageTaskRequested(PUBLISHING)
+    -> publishing-worker consumes StageTaskRequested(PUBLISHING)
+       -> persists document / policy / published_document
+       -> submits IndexBuildRequested to indexing-service
+       -> emits PublishCompleted
+    -> ingestion-worker consumes PublishCompleted
+       -> intake_job state = PUBLISHED
+       -> emits SourceFileCleanable
+    -> document-service cleans source file / object blob
+```
 
-- owner 边界不清：`source file`、`intake job`、`approval`、`publish`、`indexing` 仍有职责重叠
-- 正式链路与 compat/smoke 链路混杂，根 `intake_pipeline.main` 仍在冒充正式入口
-- 运行时边界仍不够显式，存在导入目标冲突与隐式路径依赖
-- fallback / shim / legacy `StageContext` 仍承载主链
-- 测试生命周期治理缺位：后台 poller、`TestClient`、日志捕获、整套测试执行策略都缺少硬约束
-- `AgentReview artifact` 已有部分落地，但 owner、store、幂等、字段边界仍未完全定死
+关键边界：
+- **document-service**：唯一 source file owner；提供读写接口。
+- **ingestion-worker / orchestrator**：唯一 intake_job owner；只调度，不执行具体 stage。
+- **conversion-worker**：唯一 conversion stage executor。
+- **agent-review-worker**：唯一 review artifact 写入方。
+- **approval-service**：只读 artifact；唯一 ticket / audit / final_doc_id owner。
+- **publishing-worker**：唯一 publish + published_document owner。
+- **indexing-service (`services/indexing`)**：唯一 parse snapshot / chunk / index owner。
+- **workbench-api**：projection / read-model / UI integration；不得成为任何 owner。
 
-本次整改目标应明确为：
+---
 
-1. 先止血，避免测试再次拖死机器
-2. 收敛 owner 边界
-3. 固化真实正式链路
-4. 清理 compat / shim / fallback / 导入歧义
-5. 在稳定主链上收口真实 `AgentReview artifact`
+## 2. 必须删除的代码清单
 
+### 2.1 Compat Root 业务层（`src/intake_pipeline/`）
 
-## 2. 当前阶段约束
+删除以下文件或其中全部业务代码：
 
-本轮整改必须遵守以下约束：
+- `services/intake-pipeline/src/intake_pipeline/main.py`
+  - 删除 `EnterDocumentRequest`
+  - 删除 `EnterBinaryDocumentRequest`
+  - 删除 `ApproveAndPublishRequest`
+  - 删除 `SubmitApprovalRequest`
+  - 删除 `ApproveTicketRequest`
+  - 删除 `IntakeDocumentRecord`
+  - 删除 `ApprovalTicketRecord`
+  - 删除 `IntakeService`
+  - 删除 `EnterBinaryDocumentRequest` 等所有 `/v1/*` 端点
+  - 删除 `GET /internal/source-files/{id}`、`GET /internal/intake-jobs/{id}`、`GET /internal/published-documents/{id}`（这些视图要迁移到各自 owner）
+  - 保留 `/health` 或整文件删除
+- `services/intake-pipeline/src/intake_pipeline/publishing_facade.py`
+- `services/intake-pipeline/src/intake_pipeline/lineage.py`
+- `services/intake-pipeline/src/intake_pipeline/state_models.py`
+- `services/intake-pipeline/src/intake_pipeline/indexing_command_gateway.py`
+- `services/intake-pipeline/src/intake_pipeline/_compat.py`
 
-1. **只以当前工作树现状为准**
-   - 不再引用旧 worktree 路径
-   - 当前仓库根目录为 `E:\AI\My-Project\Enterprise KnowledgeBase`
+### 2.2 Sync In-Process Pipeline（`ingestion-worker`）
 
-2. **当前阶段可以改 `workbench-api`，但不能让它成为 owner**
-   - `workbench-api` 可以进入正式实施范围
-   - 允许落地 approval 回调、projection、matcher、routes、frontend 跳转
-   - 但 `workbench-api` 仍然只能承担 projection / read-model / adapter / UI integration，不得承担 source file、review artifact、indexing chunk 的 owner 职责
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline.py`
+  - 删除 `_drain_outbox_until_source_files_terminal()`
+  - 删除 `_source_file_jobs_are_terminal()`
+  - 删除 `_build_report_for_source_files()` 中基于 stage_result 的二次拼装（该由调用方从数据库读）
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/app_factory.py`
+  - 删除 `POST /internal/ingestion/convert`（或保留为仅enqueue入口）
+  - 删除 `POST /internal/ingestion/monitor/runs`（或保留为仅enqueue入口）
+  - 删除 `MonitoredIngestionService` 在 app_factory 中的绑定（如果 monitor 入口被保留，它只能enqueue，不能 drain）
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_service.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_processor.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_context.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_models.py`
 
-3. **当前阶段不把 agent cache 设计作为主目标**
-   - 不把 prompt cache、input cache、二次 review cache 作为本轮交付主项
-   - 现有 cache 即使暂时保留，也不得成为新的 owner、主键或跨服务契约基础
+### 2.3 Ingestion-Worker Shim 文件
 
-4. **验收必须受控**
-   - 禁止把“直接跑 `services/intake-pipeline/* tests` 全量测试”作为默认验收动作
-   - 优先使用单服务定向测试、真实链路 smoke、带超时/资源边界的 targeted smoke
+以下文件应直接删除，调用方改为 `from intake_runtime.xxx import ...`：
 
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/agent_review_cache.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/agent_reviewer.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/orchestrator.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/index_assets.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline_utils.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/quality_utils.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/stage_task_worker.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/stage_runtime.py` 中除 `run_publishing`/`execute_publishing_task` 外的透传（最终也删除）
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/domains/publishing_domain.py`（ publishing-worker 已有该职责 ）
 
-## 3. 目标边界
+### 2.4 Smoke Tests 中的 Compat 路径
 
-最终边界应收敛为：
+- `services/smoke_tests/test_mvp_python_chain.py` 中所有调用 `/intake/v1/documents` 和 `/intake/v1/documents/{id}/approve-and-publish` 的测试用例应删除或改写为 real-chain。
+- `services/smoke_tests/conftest.py` 中：
+  - 删除 `combined_app.mount("/intake", intake_app)`
+  - 删除 `httpx` patch 中针对 `intake_pipeline.main` 的特殊处理
+  - 删除 `REALITY_RAG_ENABLE_COMPAT_WRITES = "true"` 和 `ALLOW_LOCAL_FALLBACK_FOR_TESTS = "true"`
+  - 删除 `drain_real_chain_for_source_files()` 中手工构造的 4 个 `OutboxDispatcher`（改为启动真实 worker apps）
 
-| 模块 | 应保留职责 | 不应继续承担 |
+### 2.5 Workbench 中对 Compat Root 的依赖
+
+- `services/workbench-api/src/workbench_api/downstream_clients/intake_client.py`
+  - 删除 `create_source_file()`（无调用方且指向错误）
+  - 删除 `get_source_file()` / `get_intake_job()` / `get_published_document()`，或改为指向正确服务
+- `services/workbench-api/src/workbench_api/config.py`
+  - 如果 `intake_base_url` 仍指向 compat root，应删除或重命名。
+
+---
+
+## 3. 分阶段执行计划
+
+### Phase S：工程化基础与测试止血
+
+**目标**：让代码从仓库根可以被正确导入、测试可以安全运行。不解决此阶段，后续验收全部失真。
+
+#### S1 修复子服务打包
+
+**文件**：
+- `E:/AI/My-Project/Enterprise KnowledgeBase/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/agent-review-worker/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/approval-service/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/conversion-worker/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/document-service/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/indexing-service/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/ingestion-worker/pyproject.toml`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/intake-pipeline/publishing-worker/pyproject.toml`
+
+**动作**：
+1. 在根 `pyproject.toml` 的 `[tool.uv.workspace].members` 中追加 7 个子服务路径：
+   ```toml
+   "services/intake-pipeline/agent-review-worker",
+   "services/intake-pipeline/approval-service",
+   "services/intake-pipeline/conversion-worker",
+   "services/intake-pipeline/document-service",
+   "services/intake-pipeline/indexing-service",
+   "services/intake-pipeline/ingestion-worker",
+   "/services/intake-pipeline/publishing-worker",
+   ```
+2. 在每个子服务 `pyproject.toml` 中追加 package discovery：
+   ```toml
+   [tool.setuptools.packages.find]
+   where = ["src"]
+   ```
+3. 把所有子服务 `requires-python = "==3.14.*"` 改为 `requires-python = ">=3.12"`。
+4. 在 `ingestion-worker/pyproject.toml` 中删除或替换 `reality-rag-ai-clients` 依赖。当前 `packages/` 和 `services/` 下均无此包，应直接移除（代码中亦无可靠引用）。
+
+**验收**：
+```bash
+uv sync
+uv run pytest services/intake-pipeline/document-service/tests -x -q
+uv run pytest services/intake-pipeline/approval-service/tests -x -q
+uv run pytest services/intake-pipeline/ingestion-worker/tests -x -q
+# 以上不再出现 ModuleNotFoundError
+```
+
+#### S2 清理 `sys.path.insert` hack
+
+**文件**：
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/smoke_tests/conftest.py:26-36`
+- `E:/AI/My-Project/Enterprise KnowledgeBase/services/workbench-api/tests/conftest.py:8`
+
+**动作**：
+1. 删除 `smoke_tests/conftest.py` 中所有 `sys.path.insert(0, ...)`。
+2. 删除 `workbench-api/tests/conftest.py` 中 `sys.path.insert(0, str(_project_root / "services" / "indexing" / "src"))`。
+
+**验收**：完成 S1 后，测试不再依赖这些 hack 也能 import 通过。
+
+#### S3 修复 TestClient / Lifespan 剩余问题
+
+**文件**：
+- `services/admin/tests/conftest.py`（已改，验证）
+- `services/admin/tests/test_auth_jwt.py`（已改，验证）
+- `services/workbench-api/src/workbench_api/main.py`（已加 `create_app(start_reconciler=...)`，验证 smoke tests 中禁用）
+- `services/workbench-api/tests/conftest.py`（已改用 `create_app(start_reconciler=False)`，验证）
+- `services/intake-pipeline/ingestion-worker/tests/test_repo_guardrails.py`（已扩展，验证）
+
+**动作**：
+1. 确认 smoke tests 启动 combined_app 时 workbench reconciler 被禁用：
+   - 在 `smoke_tests/conftest.py` 的 env 设置区（line 59 附近）添加：
+     ```python
+     os.environ["WORKBENCH_RECONCILE_ENABLED"] = "false"
+     ```
+2. 确认 guardrail test 覆盖 ingestion-worker 自身。
+
+**验收**：
+```bash
+uv run pytest services/admin/tests/test_auth.py -x -q
+uv run pytest services/workbench-api/tests -x -q
+uv run pytest services/intake-pipeline/ingestion-worker/tests/test_repo_guardrails.py -x -q
+```
+
+---
+
+### Phase 1：强制 Split Workers，删除 Sync Pipeline
+
+**目标**：让 ingestion-worker 不再在同进程内执行 conversion / review / publishing；所有 stage 必须通过 outbox 派发到对应 worker。
+
+#### 1.1 删除 IngestionPipeline 的 sync drain
+
+**文件**：`services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline.py`
+
+**动作**：
+1. 删除 `_drain_outbox_until_source_files_terminal()` 方法（lines 248-320 区域）。
+2. 删除 `_source_file_jobs_are_terminal()` 方法（lines 322-339 区域）。
+3. 简化 `IngestionPipeline.run()`：
+   - 保留：创建 upload session / object_blob / source_file（通过 DocumentServiceClient）
+   - 删除：对 `_drain_outbox_until_source_files_terminal()` 的调用
+   - 返回的 `IngestionJob` 中 `status` 应改为 `"queued"` 或 `"submitted"`，而不是基于已完成 stage 推导的终端状态。
+4. 删除 `_build_report_for_source_files()` 中基于 `StageResultModel` 二次拼装 conversion detail 的逻辑。如果调用方需要完整报告，应从数据库查询或由 orchestrator 事件驱动更新 projection。
+
+#### 1.2 删除或禁用 monitor 入口
+
+**文件**：`services/intake-pipeline/ingestion-worker/src/ingestion_worker/app_factory.py`
+
+**动作**：
+1. 删除 `include_monitor_routes=True` 参数和相关 `if include_monitor_routes:` 分支。
+2. 删除 `POST /internal/ingestion/monitor/runs` 端点。
+3. 保留 `POST /internal/ingestion/convert` 但**仅作为创建 source file 并返回的入口**，不得 drain。
+4. 删除 `monitored_ingestion_service_factory` 相关 state 绑定。
+
+**相关删除文件**：
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_service.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_processor.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_context.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/monitor_models.py`
+
+#### 1.3 确保 outbox 事件能驱动真实 worker
+
+**文件**：
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/outbox_deliver.py`
+- `services/intake-pipeline/conversion-worker/src/conversion_worker/main.py`
+- `services/intake-pipeline/agent-review-worker/src/agent_review_worker/main.py`
+- `services/intake-pipeline/publishing-worker/src/publishing_worker/main.py`
+
+**动作**：
+1. 检查 ingestion-worker 的 outbox deliver 是否在消费 `StageTaskRequested` 事件时转发给 workbench。当前代码过滤掉了 `StageTaskRequested`：
+   ```python
+   should_process=lambda event: event.event_type != "StageTaskRequested"
+   ```
+   这是对的（worker 自己消费 StageTaskRequested）。但需要确认生产部署时各 worker 的后台 poller 确实能收到这些事件。
+2. 每个 worker 的 `create_app(start_background_poller=True)` 在 lifespan 中启动 outbox poller，只消费自己 stage 的 `StageTaskRequested`。
+3. 验证 worker 的 `execute_conversion_task`、`execute_review_task`、`execute_publishing_task` 不被 ingestion-worker 调用。
+
+#### 1.4 改写 real-chain smoke
+
+**文件**：`services/smoke_tests/conftest.py`
+
+**动作**：
+1. `drain_real_chain_for_source_files()` 当前手工构造 4 个 `OutboxDispatcher` 并直接调用 `execute_*_task()`。这**测的是函数而不是 worker HTTP 边界**。
+2. 新实现应：
+   - 启动 `document_app`、`ingestion_app`、`conversion_app`、`review_app`、`approval_app`、`publishing_app` 的 `TestClient(create_app(start_background_poller=False))`
+   - 或者，更简单地：通过 `httpx` 直接 POST 到各 worker 的 `/internal/conversion/run`、`/internal/review/run`、`/internal/publishing/persist` 来驱动
+   - 但推荐**让 outbox 自己驱动**：在测试中显式调用 `OutboxDispatcher` 推动事件，并验证每个 worker 的 poller 正确处理
+3. 关键是：测试必须证明 conversion-worker / agent-review-worker / publishing-worker **被实际调用**，而不是 ingestion-worker 内部执行。
+
+**验收标准**：
+- 完成 1.1-1.3 后，`
+  - `test_intake_real_chain.py` 仍能通过，且 `conversion_worker`、`agent_review_worker`、`publishing_worker` 的日志/数据库记录中有真实处理痕迹。
+  - 在 `drain_real_chain_for_source_files()` 执行期间，禁止直接调用 `execute_conversion_task` / `execute_review_task` / `execute_publishing_task`。
+
+---
+
+### Phase 2：修复 Workbench-API 与 Owner 约定
+
+**目标**：workbench 不再依赖 compat root 读取 source file / intake job / published document。
+
+#### 2.1 在 document-service 增加 source file 只读接口
+
+**文件**：`services/intake-pipeline/document-service/src/document_service/main.py`
+
+**动作**：
+1. 新增端点：
+   ```python
+   @app.get("/internal/source-files/{source_file_id}")
+   async def get_source_file(source_file_id: str) -> dict:
+       # 返回 source_file + 关联 intake_job_id（只读查询）
+   ```
+2. 实现应查询 `SourceFileRepository`、`IntakeJobRepository`，返回与 compat root 当前视图兼容的字段：
+   ```json
+   {
+     "source_file_id": "src_...",
+     "upload_id": "upl_...",
+     "tenant_id": "...",
+     "collection_id": "...",
+     "filename": "...",
+     "mime_type": "...",
+     "size_bytes": 0,
+     "state": "READY",
+     "intake_job_id": "job_..." | null,
+     "scan_verdict": "clean" | null,
+     "created_at": "...",
+     "updated_at": "..."
+   }
+   ```
+3. `tenant_id` 通过 `collection_id` 关联 `CollectionRepository` 获取。
+
+#### 2.2 在 ingestion-worker 增加 intake job 只读接口
+
+**文件**：`services/intake-pipeline/ingestion-worker/src/ingestion_worker/app_factory.py`
+
+**动作**：
+1. 新增端点：
+   ```python
+   @app.get("/internal/intake-jobs/{intake_job_id}")
+   async def get_intake_job(intake_job_id: str) -> dict:
+   ```
+2. 查询 `IntakeJobRepository`、`StageResultModel`（获取 parse_snapshot_id）、`PublishedDocumentRepository`（获取 published_document_id）。
+3. 返回字段：
+   ```json
+   {
+     "intake_job_id": "job_...",
+     "source_file_id": "src_...",
+     "tenant_id": "...",
+     "collection_id": "...",
+     "state": "PUBLISHED",
+     "current_stage": "...",
+     "parse_snapshot_id": "pss_..." | null,
+     "ticket_id": "apv_..." | null,
+     "published_document_id": "pub_..." | null,
+     "final_doc_id": "doc_..." | null,
+     "error_message": null,
+     "created_at": "...",
+     "updated_at": "..."
+   }
+   ```
+
+#### 2.3 在 publishing-worker 增加 published document 只读接口
+
+**文件**：`services/intake-pipeline/publishing-worker/src/publishing_worker/main.py`
+
+**动作**：
+1. 新增端点：
+   ```python
+   @app.get("/internal/published-documents/{published_document_id}")
+   async def get_published_document(published_document_id: str) -> dict:
+   ```
+2. 查询 `PublishedDocumentRepository`，返回：
+   ```json
+   {
+     "published_document_id": "pub_...",
+     "final_doc_id": "doc_...",
+     "source_file_id": "src_...",
+     "intake_job_id": "job_...",
+     "tenant_id": "...",
+     "collection_id": "...",
+     "state": "PUBLISHED",
+     "version": 1,
+     "created_at": "...",
+     "updated_at": "..."
+   }
+   ```
+   `source_file_id` 和 `intake_job_id` 通过 `final_doc_id` 关联 `IntakeJobRepository` 获取。
+
+#### 2.4 重构 workbench 的 downstream clients
+
+**文件**：
+- `services/workbench-api/src/workbench_api/config.py`
+- `services/workbench-api/src/workbench_api/downstream_clients/intake_client.py`
+- 新增：`services/workbench-api/src/workbench_api/downstream_clients/document_service_client.py`（如果当前只有 upload）
+- 新增：`services/workbench-api/src/workbench_api/downstream_clients/ingestion_client.py`
+- 新增：`services/workbench-api/src/workbench_api/downstream_clients/publishing_client.py`
+
+**动作**：
+1. `config.py`：
+   - 删除 `intake_base_url`（它指向 compat root）。
+   - 保留并明确：
+     - `document_service_base_url`
+     - `ingestion_base_url`
+     - `approval_base_url`
+     - `publishing_base_url`
+     - `indexing_base_url`
+2. `intake_client.py`：
+   - 删除 `create_source_file()`（无调用方且端点已不存在）。
+   - 删除 `get_source_file()` / `get_intake_job()` / `get_published_document()`，或者保留为 orchestrator/compat 专用（但不允许默认路径使用）。
+3. 新建/扩展：
+   - `DocumentServiceClient`：增加 `get_source_file(source_file_id)` 调用 `GET /internal/source-files/{id}`。
+   - 新建 `IngestionClient`：提供 `get_intake_job(intake_job_id)` 调用 `GET /internal/intake-jobs/{id}`。
+   - 新建 `PublishingClient`：提供 `get_published_document(published_document_id)` 调用 `GET /internal/published-documents/{id}`。
+4. `__init__.py` 暴露新的 clients。
+
+#### 2.5 修改 workbench 查询代码使用新 clients
+
+**文件**：
+- `services/workbench-api/src/workbench_api/task_projection/service.py`
+- `services/workbench-api/src/workbench_api/source_files/routes.py`
+- `services/workbench-api/src/workbench_api/workspace/service.py`（如果用到相关接口）
+
+**动作**：
+1. `task_projection/service.py`：
+   - 注入 `DocumentServiceClient`、`IngestionClient`、`PublishingClient`。
+   - `_derive_task_view()` 中：
+     - `self._intake_client.get_source_file(...)` → `self._document_client.get_source_file(...)`
+     - `self._intake_client.get_intake_job(...)` → `self._ingestion_client.get_intake_job(...)`
+     - `self._intake_client.get_published_document(...)` → `self._publishing_client.get_published_document(...)`
+2. `source_files/routes.py`：把 `IntakeClient` 替换为 `DocumentServiceClient`。
+
+#### 2.6 修复 workbench tests
+
+**文件**：`services/workbench-api/tests/conftest.py`
+
+**动作**：
+1. 修改下游 URL monkeypatch：
+   - `config.document_service_base_url = "http://localhost:8006"` 等保持不变，但要确保测试中有 document-service / ingestion / publishing 的 mock 或真实挂载。
+2. 如果 workbench tests 不启动真实 intake-pipeline 服务，则需要 mock 新的 clients。
+
+**验收标准**：
+- 完成 Phase 2 后，workbench-api 代码中**不再 import IntakeClient 来读取 source file / intake job / published document**。
+- `grep -n "intake_base_url\|INTAKE_BASE_URL" services/workbench-api/src/` 无结果（或明确标记为 legacy-only）。
+- `test_intake_real_chain.py` 仍能通过。
+
+---
+
+### Phase 3：退役并删除 Compat Root
+
+**目标**：`src/intake_pipeline/` 下的业务代码全部删除；任何对 `/intake/v1/*` 和 `/intake/internal/source-files` 的调用消失。
+
+#### 3.1 删除 `intake_pipeline/main.py` 业务代码
+
+**文件**：`services/intake-pipeline/src/intake_pipeline/main.py`
+
+**动作**：
+1. 删除所有 Pydantic request/record 模型。
+2. 删除 `IntakeService` 及其方法。
+3. 删除所有 `/v1/*` 端点：
+   - `POST /v1/documents`
+   - `GET /v1/documents/{source_file_id}`
+   - `POST /v1/documents/{source_file_id}/approval-tickets`
+   - `GET /v1/approval-tickets/{ticket_id}`
+   - `POST /v1/approval-tickets/{ticket_id}/approve`
+   - `POST /v1/documents/{source_file_id}/approve-and-publish`
+4. 删除所有 `/internal/*` 只读端点（已迁移到各自 owner）：
+   - `GET /internal/source-files/{source_file_id}`
+   - `GET /internal/intake-jobs/{intake_job_id}`
+   - `GET /internal/published-documents/{published_document_id}`
+   - `GET /internal/lineage/source-files/{source_file_id}`
+   - `GET /internal/lineage/traces/{trace_id}`
+5. 保留 `/health` 端点；或如果整服务不再挂载，直接删除文件。
+
+#### 3.2 删除辅助模块
+
+**文件**：
+- `services/intake-pipeline/src/intake_pipeline/publishing_facade.py` — 整文件删除
+- `services/intake-pipeline/src/intake_pipeline/lineage.py` — 整文件删除
+- `services/intake-pipeline/src/intake_pipeline/state_models.py` — 整文件删除
+- `services/intake-pipeline/src/intake_pipeline/indexing_command_gateway.py` — 整文件删除
+- `services/intake-pipeline/src/intake_pipeline/_compat.py` — 整文件删除
+
+#### 3.3 清理 smoke tests 中的 compat 挂载
+
+**文件**：`services/smoke_tests/conftest.py`
+
+**动作**：
+1. 删除 `import intake_pipeline.main as _intake_main` 及相关 `httpx` patch。
+2. 删除 `combined_app.mount("/intake", intake_app)`。
+3. 删除环境变量：
+   - `REALITY_RAG_ENABLE_COMPAT_WRITES = "true"`
+   - `ALLOW_LOCAL_FALLBACK_FOR_TESTS = "true"`
+   - `REALITY_RAG_INTAKE_RUNTIME_DIR`
+4. 更新 `test_mvp_python_chain.py` 中依赖 `/intake/v1/documents` 的测试；如果无法快速改写，直接删除该文件或标记为 skip（因为它测的是将被删除的 compat root）。
+
+#### 3.4 清理 workbench config 中的 legacy URL
+
+**文件**：`services/workbench-api/src/workbench_api/config.py`
+
+**动作**：
+1. 删除 `intake_base_url` 字段（如果完成 Phase 2 后已无引用）。
+
+**验收标准**：
+- `grep -rn "/v1/documents\|/v1/approval-tickets\|approve-and-publish" services/ packages/ apps/web/src/` 无结果。
+- `grep -rn "intake_pipeline.main\|from intake_pipeline import" services/ packages/` 无业务引用（仅可能 tests 中残留，一并清理）。
+- `src/intake_pipeline/main.py` 行数 < 50（仅 health）或文件不存在。
+
+---
+
+### Phase 4：工程化 intake_runtime 并清理 shim
+
+**目标**：`intake_runtime` 成为正式的 workspace package；ingestion-worker 不再假装自己有本地实现。
+
+#### 4.1 将 intake_runtime 声明为 workspace package
+
+**文件**：
+- `E:/AI/My-Project/Enterprise KnowledgeBase/pyproject.toml`
+- `services/intake-pipeline/pyproject.toml`
+
+**动作**：
+1. 在根 `pyproject.toml` 新增 workspace member：
+   ```toml
+   "packages/intake_runtime",
+   ```
+   或等效地把 `services/intake-pipeline/src/intake_runtime` 作为 editable 包暴露。
+2. 方案选择（二选一，推荐 A）：
+   - **A**：在 `services/intake-pipeline/pyproject.toml` 中声明 `intake_runtime` 为 package（当前 `tool.setuptools.packages.find.where = ["src"]` 已经会包含它，所以只要确保根 workspace 正确解析即可）。
+   - **B**：把 `src/intake_runtime` 移到 `packages/intake_runtime/src/intake_runtime` 作为独立 package。
+3. 无论哪种方案，目标是：所有 worker 可以通过 `from intake_runtime.xxx import ...` 正常 import，不需要 `sys.path.insert`。
+
+#### 4.2 删除 ingestion-worker 的 shim 文件
+
+**文件**：
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/agent_review_cache.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/agent_reviewer.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/orchestrator.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/index_assets.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline_utils.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/quality_utils.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/stage_task_worker.py`
+
+**动作**：整文件删除。
+
+#### 4.3 更新 ingestion-worker 中的 import
+
+**文件**：
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/outbox_deliver.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/app_factory.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/job_event_flow.py`
+- 其他 import 了上述 shim 的文件
+
+**动作**：
+1. 把 `from ingestion_worker.agent_review_cache import ...` 改为 `from intake_runtime.agent_review_cache import ...`。
+2. 把 `from ingestion_worker.orchestrator import ...` 改为 `from intake_runtime.orchestrator import ...`。
+3. 以此类推。
+
+#### 4.4 处理 stage_runtime adapter
+
+**文件**：`services/intake-pipeline/ingestion-worker/src/ingestion_worker/stage_runtime.py`
+
+**动作**：
+1. 当前文件大部分是 `from intake_runtime.stage_runtime import ...` 的透传。
+2. 删除纯透传符号，直接让调用方从 `intake_runtime.stage_runtime` import。
+3. 特殊处理：
+   - `run_publishing()` 和 `execute_publishing_task()` 因为注入了 `persist_fn=persist_document_and_policy`，暂时保留。
+   - 但该 `persist_document_and_policy` 来自 `ingestion_worker.domains.publishing_domain`，最终应改到 publishing-worker 的公共 helper（见 4.5）。
+
+#### 4.5 统一 publishing persistence helper
+
+**文件**：
+- `services/intake-pipeline/src/intake_runtime/publishing_persistence.py`
+- `services/intake-pipeline/publishing-worker/src/publishing_worker/publishing_domain.py`
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/domains/publishing_domain.py`
+
+**动作**：
+1. `intake_runtime.publishing_persistence.persist_document_and_policy()` 是所有 publishing 事实写入的**唯一实现**。
+2. `publishing_worker.publishing_domain.persist_document_and_policy()` 已经是对 `intake_runtime.publishing_persistence.persist_document_and_policy()` 的合法委托。
+3. `ingestion_worker.domains.publishing_domain.persist_document_and_policy()` 只用于 ingestion-worker 的 sync pipeline；删除该文件和对应 adapter。
+4. 如果 `intake_runtime.stage_runtime.execute_publishing_task()` 需要 `persist_fn`，默认使用 `intake_runtime.publishing_persistence.persist_document_and_policy`。
+
+**验收标准**：
+- `find services/intake-pipeline/ingestion-worker/src/ingestion_worker -name "*.py"` 后只剩：
+  - `__init__.py`
+  - `app_factory.py`
+  - `document_service_client.py`
+  - `indexing_service.py`
+  - `job_event_flow.py`
+  - `main.py`
+  - `outbox_deliver.py`
+  - `pipeline.py`
+  - `stage_runtime.py`（如果保留 publishing adapter）
+- 所有 `from ingestion_worker.xxx import yyy` 不再指向 shim 模块。
+
+---
+
+### Phase 5：Artifact 边界收口
+
+**目标**：`approval-service` 只从稳定的 `result_ref` 读取 artifact，不再 fallback 组装。
+
+#### 5.1 agent-review-worker 必须写入真实 artifact
+
+**文件**：`services/intake-pipeline/src/intake_runtime/stage_runtime.py`
+
+**动作**：
+1. 检查 `execute_review_task()` 调用链：
+   - `execute_review_task()` → `run_review()` → `run_review_stage()` → `get_agent_reviewer().review()`
+2. 确保 review 结果写入 `stage_results.result_ref`，而不是只写 `summary_json`。
+3. 如果当前 `result_ref` 为空，修改 `execute_review_task()` 在成功后：
+   - 把 `AgentReview` + artifact envelope 序列化为 JSON
+   - 写入 deterministic path（如 `s3://.../artifacts/{intake_job_id}/agent_review.json` 或本地 runtime 目录）
+   - 更新 `StageResultModel.result_ref = path`
+4. artifact envelope 必须包含：
+   ```json
+   {
+     "review_run_id": "...",
+     "intake_job_id": "...",
+     "source_file_id": "...",
+     "parse_snapshot_id": "...",
+     "artifact_version": "v1",
+     "review_model": "...",
+     "prompt_version": "...",
+     "artifact_schema_version": "v2",
+     "generated_at": "...",
+     "agent_review": { "anchored_findings": [...], ... }
+   }
+   ```
+
+#### 5.2 approval-service 删除 fallback 组装
+
+**文件**：`services/intake-pipeline/approval-service/src/approval_service/review_artifacts.py`
+
+**动作**：
+1. 修改 `load_review_artifact_payload(session, intake_job_id)`：
+   ```python
+   if row is None:
+       return None
+   if row.result_ref:
+       path = Path(row.result_ref)
+       if path.exists() and path.is_file():
+           return json.loads(path.read_text(encoding="utf-8"))
+   # 删除以下 fallback：
+   # review_summary = row.summary_json or {}
+   # review_context = review_summary.get("review_context", {}) ...
+   # return { "review_run_id": ..., "agent_review": ..., ... }
+   return None
+   ```
+2. 调用方（`get_agent_review_internal`）在 payload 为 None 时返回 404，而不是 fallback 组装。
+
+#### 5.3 删除 `summary_json` 中的 artifact 语义滥用
+
+**动作**：
+1. 明确 `stage_results.summary_json` 只用于**简短摘要**（如 `conversion_status`、`preliminary_doc_id`）。
+2. 不要把完整的 `agent_review` 或 `review_context` 塞进 `summary_json` 作为 artifact 传输通道。
+3. 如果现有代码依赖 summary_json 中的 `review_context`，一并改到读 `result_ref`。
+
+#### 5.4 测试 artifact 边界
+
+**文件**：`services/intake-pipeline/approval-service/tests/test_*.py`
+
+**动作**：
+1. 新增/修改测试：
+   - `anchored_findings = []` 时返回 200，findings 为空数组。
+   - `anchored_findings` 有 1 条时正确返回。
+   - `anchored_findings` 有多条时正确去重/返回。
+   - `result_ref` 缺失时返回 404，不带 fallback 数据。
+
+**验收标准**：
+- `approval_service/review_artifacts.py` 中不再出现 `review_summary.get("review_context", {})` 之类的 fallback 逻辑。
+- `agent-review-worker` 写入的 artifact 文件能通过 `approval-service` `/internal/tickets/{ticket_id}/agent-review` 原样读出。
+
+---
+
+### Phase 6：投影与 reconciler 决策
+
+**目标**：明确 workbench 投影是主读模型还是实时查询是主读模型；禁止双保险。
+
+#### 6.1 决策
+
+**选项 A（推荐）**：projection 是主读模型
+- 删除 `ProjectionReconciler` 的后台循环。
+- 删除 `task_projection/service.py` 中实时 fallback 查下游的逻辑。
+- 所有 owner 服务必须通过 `/internal/events/{service}` 把变更事件推给 workbench。
+- `is_stale` 字段保留用于调试，但不应成为常规修复路径。
+
+**选项 B**：保留 reconciler 作为修复机制
+- 定义明确的 `is_stale = true` 触发条件（如事件处理失败、超过 N 分钟未更新）。
+- projection 写入路径必须优先，reconciler 只在异常后触发。
+- 在 `task_projection/service.py` 中只有在 projection 不存在或 `is_stale=true` 时才查询下游。
+
+**本 plan 推荐选项 A**。理由是：如果事件链路不可靠，应该修复事件链路，而不是靠后台轮询掩盖。
+
+#### 6.2 实施（选项 A）
+
+**文件**：
+- `services/workbench-api/src/workbench_api/main.py`
+- `services/workbench-api/src/workbench_api/projections/reconciler.py`
+- `services/workbench-api/src/workbench_api/task_projection/service.py`
+
+**动作**：
+1. `main.py`：删除 lifespan 中对 `reconciliation_loop()` 的启动；保留 `create_app(start_reconciler=False)` 参数但 deprecate。
+2. `reconciler.py`：保留 `ProjectionReconciler` 类用于显式手动修复，但删除 `reconciliation_loop()` 的 `while True`。
+3. `task_projection/service.py`：删除 `_derive_task_view()` 中实时查询 `intake_client`、`approval_client`、`indexing_client` 的 fallback 分支。只从 projection repository 读取。
+4. 更新 workbench tests 中的 fixture：`create_app(start_reconciler=False)`。
+
+#### 6.3 确保事件链路完整
+
+**文件**：
+- `services/intake-pipeline/ingestion-worker/src/ingestion_worker/outbox_deliver.py`
+- `services/intake-pipeline/approval-service/src/approval_service/approval_domain.py`
+
+**动作**：
+1. 检查 ingestion-worker 的 `_forward_event_to_workbench()` 是否覆盖了所有需要投影的事件类型。
+2. 检查 approval-service 的 `_publish_pending_event()` / `_publish_decided_event()` 是否正确 forward。
+3. 确认 workbench `events/routes.py` 的 adapter 能把这些事件转为 `ProjectionEvent`。
+
+**验收标准**：
+- workbench-api 启动后不再运行 `reconciliation_loop`。
+- `task_projection/service.py` 中不再直接调用 `self._intake_client.get_*()`、`self._approval_client.get_*()`、`self._indexing_client.get_*()`。
+- workbench tests 仍能通过（需要提前确保事件 forward 链路完整）。
+
+---
+
+## 4. 验收标准总表
+
+| Phase | 验收项 | 验证命令 |
 |---|---|---|
-| `document-service` | upload session、object blob、source file、scan、`FileReady` outbox | approval、publishing、indexing、workbench projection |
-| `ingestion-worker` | orchestrator、`intake_job` state、stage scheduling、outbox dispatch | conversion/review/publishing 具体执行、document owner API、indexing owner API |
-| `conversion-worker` | conversion stage execution | source file owner、approval、publishing、indexing owner |
-| `agent-review-worker` | review stage execution、真实 `AgentReview artifact` 生成与持久化 | approval decision、review payload 下游 owner、workbench projection owner |
-| `approval-service` | ticket lifecycle、decision、`final_doc_id`、approval audit、`AgentReview artifact` 只读查询 | review 执行、伪 artifact 拼装、finding 语义 owner |
-| `publishing-worker` | publish stage、published document state、asset/document persist、index build command | approval decision、retrieval direct lifecycle patch |
-| `services/indexing` | parse snapshot / chunk / indexing owner | intake compat owner |
-| `src/intake_pipeline/main.py` | compat/smoke helper only | 正式 intake owner、正式 internal API、正式 publish/index 主链 |
-
-正式链路目标：
-
-```text
-document-service:/upload or /internal/source-files
-  -> FileReady outbox
-  -> ingestion-worker orchestrator
-  -> conversion-worker
-  -> agent-review-worker
-  -> approval-service
-  -> publishing-worker
-  -> services/indexing
-```
-
-关键边界约束：
-
-- `document-service` 是唯一 source file owner
-- `ingestion-worker` / orchestrator 是唯一 `intake_job` owner
-- `agent-review-worker` 是唯一 review artifact 写入方
-- `approval-service` 只读 review artifact，不再生成伪 artifact
-- 当前阶段不让 `workbench` 成为任何 owner
-
-
-## 4. 已确认的核心问题
-
-### 4.1 根 `intake_pipeline.main` 仍像正式服务
-
-问题：
-
-- 仍暴露 `/v1/documents`、`/v1/approval-tickets` 等 legacy 入口
-- 仍保留本地状态、直连 publish/indexing 的 compat 逻辑
-- compat/smoke 成功会掩盖真实链路问题
-
-现状：
-
-- 模块头注释已明确 self-positioning 为 compatibility-only
-- `/internal/source-files*` 写接口已从 compat 根服务退场，仅保留只读诊断视图
-
-结论：
-
-- 该项不是 `未开始`，而是 `进行中`
-
-### 4.2 `/internal/source-files` owner 已部分收口，但尚未完全退役 compat 入口
-
-问题：
-
-- 当前主写路径已在 `document-service`
-- 但仓库里仍保留 compat 根服务的 source-file 诊断接口与旧路径叙事
-
-现状：
-
-- `document-service` 已承载 `/internal/source-files` 及后续 claim/mark/start-scan/complete-scan 等写接口
-- compat 根服务已有注释说明写 owner 已退役
-
-结论：
-
-- 该项状态应为 `进行中`，不是纯待做
-
-### 4.3 split workers 的反向 import 问题已明显缓解，但运行时边界仍未完全收口
-
-问题：
-
-- 原 plan 假设 split workers 仍大量反向 import `ingestion_worker.*`
-- 当前工作树里，这一点已经不是主矛盾
-
-现状：
-
-- `conversion-worker`、`agent-review-worker`、`publishing-worker` 当前源码中未再直接依赖 `ingestion_worker.*`
-- 但仍存在 `intake_runtime` 共享层、隐式导入路径、顶层包名冲突等问题
-
-结论：
-
-- 原 plan 对问题描述已经过时
-- 应改为“运行时边界与导入目标歧义尚未彻底解决”
-
-### 4.4 fallback / shim / `StageContext` 仍在主链
-
-问题：
-
-- fallback 让错误拓扑在开发环境继续“假装可用”
-- shim 继续诱导新代码依赖旧路径
-- `StageContext` 仍在 runtime、adapter、tests 中承担过渡职责
-
-现状：
-
-- `pure_stages.py` 与 schema input/output 已存在
-- `StageContext` 仍未退回纯 adapter 边界
-
-结论：
-
-- 该项为 `进行中`
-
-### 4.5 `AgentReview artifact` 不再是纯 stub，但尚未完全收口为最终态
-
-问题：
-
-- 原 plan 将其描述为“当前返回硬编码 artifact”，这已经不准确
-
-现状：
-
-- `packages/contracts` 已有 `anchored_findings`
-- `agent_reviewer.py` 已有 findings extraction 规则
-- `approval-service/review_artifacts.py` 已能从 `StageResultModel.result_ref` 或 `summary_json` 读取 artifact payload
-- `approval-service` 已能把 findings 归一化并透传下游字段
-
-仍未完成的点：
-
-- artifact store 仍带 fallback 组装逻辑
-- 读取链路、owner 边界、幂等语义还没完全定死
-- 下游 payload 里仍可能出现 envelope / finding 字段重复与边界漂移
-
-结论：
-
-- 该项应改为 `进行中`
-
-### 4.6 测试生命周期与后台任务治理缺位
-
-问题：
-
-- 多个 worker app 在 lifespan 中启动无限轮询后台任务
-- 错误的测试夹具会导致 shutdown 不可靠，后台任务残留
-- 残留任务若持续异常，会放大日志捕获与内存占用
-- 这正是本轮“Python 涨到 12GB”的直接风险源
-
-现状：
-
-- 当前工作树已对若干 smoke test 进行局部止血
-- 但原 plan 完全没有覆盖这类问题
-
-结论：
-
-- 该项必须上升为最高优先级整改内容
-
-### 4.7 包解析与测试导入目标冲突
-
-问题：
-
-- 仓库中存在重复顶层包名与多源 `pythonpath`
-- 在仓库根执行测试时，测试可能导入错误目标
-
-影响：
-
-- 测试即使“通过”也可能测错服务
-- 这会让整改计划的验收失真
-
-结论：
-
-- 该项必须纳入运行时边界整改，而不是留给后续处理
-
-
-## 5. 对原方案的保留与修订
-
-### 5.1 保留的方向
-
-以下方向仍然成立：
-
-- source file owner 收敛到 `document-service`
-- intake orchestrator 收敛到 `ingestion-worker`
-- compat 根入口降级
-- `AgentReview artifact` 由 `agent-review-worker` 生产、`approval-service` 只读消费
-- workbench / matcher / frontend 闭环建立在真实 findings 之上
-
-### 5.2 必须修订的地方
-
-以下内容必须改写：
-
-- 旧 worktree 路径约束
-- “`AgentReview artifact` 仍是 stub”的表述
-- “split workers 仍大量反向 import `ingestion_worker.*`”的表述
-- “每一步删除前必须跑 `services/intake-pipeline/* tests`”的验收方式
-- 缺少测试生命周期与资源治理这一整改主线
-
-
-## 6. `AgentReview` 正式目标
-
-这部分方向基本保留，但按当前代码现状视为**延续整改**而不是从零开始。
-
-### 6.1 reviewer 目标架构
-
-- **单文档、单 agent**
-- **文档级并发**
-- **两阶段 review**
-
-### 6.2 Main Review
-
-输入：
-
-- canonical markdown
-- quality report
-- collection / authority context
-
-输出至少包含：
-
-- `document_type`
-- `suggested_authority_level`
-- `detected_pii`
-- `diff_summary`
-- `decision`
-- `confidence`
-- `reasons`
-- `risk_tags`
-- `suggested_actions`
-- `publish_recommendation`
-- `sections_requiring_review`
-
-### 6.3 Findings Extraction
-
-触发条件：
-
-- `decision != approve`
-- 或 `publish_recommendation != published`
-- 或 `confidence < REVIEW_FINDINGS_THRESHOLD`
-- 或命中 `REVIEW_FINDINGS_REQUIRED_TAGS`
-
-输出：
-
-- `anchored_findings[]`
-
-正式要求：
-
-1. 一份文档一次调用，输出该文档全部主要问题
-2. 多个本质相同问题只保留一个 finding
-3. 多个片段支持同一问题时只保留最有代表性的 `source_quote`
-4. 无法稳定定位原文证据时，不编造 finding
-5. 即使主 review 判断有风险，也允许 `anchored_findings=[]`
-
-### 6.4 artifact 边界
-
-artifact envelope 至少包含：
-
-```text
-review_run_id
-intake_job_id
-source_file_id
-parse_snapshot_id
-artifact_version
-review_model
-prompt_version
-artifact_schema_version
-generated_at
-```
-
-每个 `AnchoredFinding` 至少包含：
-
-```text
-finding_id
-source_quote
-problem_summary
-severity
-confidence
-```
-
-边界要求：
-
-- `finding_id` 必须由 review artifact 生产侧稳定生成
-- `approval-service` 不得把 fallback 组装长期固化为正式 owner 行为
-- cache 不得充当 artifact store
-
-
-## 7. 分阶段整改计划
-
-本计划改为三条线推进：
-
-1. **止血主线**：先控制测试资源、后台任务、导入冲突
-2. **边界整改主线**：再收口 owner、正式链路、compat、fallback
-3. **能力建设主线**：最后收口 `AgentReview artifact` 与闭环集成
-
-### 7.1 Phase S：测试与资源止血
-
-目标：
-
-- 防止测试再次拖死机器
-- 让后续所有整改建立在可安全执行的反馈回路上
-
-动作：
-
-- 统一 `TestClient` 使用规范：必须 `with TestClient(...)` 或 `yield` fixture
-- worker health/smoke test 默认不得启动真实 lifespan poller
-- 为带 `while True` poll loop 的 app 提供显式 test mode / noop lifespan
-- 建立最小回归集，默认只跑单服务定向测试
-- 为 targeted smoke 增加超时、日志边界、必要时的内存观察
-- 识别并修复测试导入错包问题
-
-验收：
-
-- 不再存在裸 `return TestClient(app)` 的 fixture
-- health/smoke 测试不会启动常驻后台 poller
-- targeted test 可在受控时间内完成
-- 从仓库根运行定向测试时，不会测错服务目标
-
-### 7.2 Phase 0：冻结 compat 扩散，前移 fail-fast
-
-目标：
-
-- 停止继续向 compat 链路堆功能
-- 尽早暴露错误拓扑，而不是继续靠 fallback 伪装成真实链路
-
-动作：
-
-- 继续强化 `src/intake_pipeline/main.py` 的 compatibility-only 定位
-- README / 启动脚本明确区分真实链路与 compat 链路
-- 不再向根 compat 服务新增正式业务接口
-- 给 shim 加 deprecation 标记
-- 对关键 downstream URL 前移 fail-fast
-- 明确哪些 fallback 只允许测试使用
-
-验收：
-
-- 缺失关键 downstream 配置不会静默走本地 fallback
-- 文档明确声明正式 owner 边界和 compat 边界
-
-### 7.3 Phase 1：统一 source file owner，并前移默认验证路径
-
-目标：
-
-- `/internal/source-files` 只有一个正式 owner
-- source file owner 与 intake job owner 明确分离
-- 默认验证路径切到真实链路
-
-动作：
-
-- 保持 `document-service` 作为唯一 source file 写 owner
-- 保持 `FileReady -> ingestion-worker` 为正式 intake 启动路径
-- README、脚本、smoke 默认路径切到真实链路
-- compat 路径仅保留为显式 legacy/smoke helper
-
-验收：
-
-- source file 持久化与 idempotency 正常
-- `document-service -> FileReady -> ingestion-worker intake_job created` 真实链路 smoke 通过
-- 默认 smoke 不再以 compat 根入口为首选
-
-### 7.4 Phase 2A：显式收口运行时边界
-
-目标：
-
-- 拿到“可部署、可测试、依赖显式”的 split workers
-
-动作：
-
-- 清理隐式 `PYTHONPATH` / workspace layout 依赖
-- 消除重复顶层包名造成的导入歧义
-- 清理启动脚本里对其它 worker 塞 `ingestion-worker/src` 的默认方式
-- 让包依赖与运行依赖都显式化
-
-验收：
-
-- split workers 不依赖隐式 `PYTHONPATH`
-- 从仓库根运行定向测试不会导入错包
-- 运行时边界可证明已显式化
-
-### 7.5 Phase 2B：确有必要时再提 shared runtime
-
-目标：
-
-- 仅在 2A 完成后仍存在明显共享实现耦合时，再提 shared runtime
-
-说明：
-
-- 2B 不是整改主线前置阻塞项
-- 2B 是结构整理，不是止血项
-
-### 7.6 Phase 3：清理 shim / fallback / `StageContext`
-
-目标：
-
-- 主链不再依赖 shim / fallback / legacy context
-
-动作：
-
-- 删除纯 re-export shim
-- 把 local fallback 收敛到显式测试场景
-- `StageContext` 限缩到 adapter 层
-- 新 stage 逻辑只收 schema input / output
-
-验收：
-
-- 生产配置缺 URL 时 fail fast
-- 主业务代码不再 import shim
-- 新逻辑不以 `StageContext` 作为核心接口
-
-### 7.7 Phase 4：退役根 compat 主链
-
-目标：
-
-- `/v1/documents` 不再作为默认正式主链
-
-动作：
-
-- compat smoke 与 real-chain smoke 分开
-- README 默认流程维持真实链路
-- 根 `intake_pipeline.main` 不再被正式消费者使用
-
-验收：
-
-- 真实链路 smoke 不依赖 `/v1/documents`
-- compat 链路只作为显式 legacy/smoke helper 存在
-
-### 7.8 Phase 5：收口真实 `AgentReview artifact`
-
-前置条件：
-
-- Phase S 完成
-- 边界整改主线至少完成到 Phase 3
-
-子阶段：
-
-- 5A：reviewer 架构收口到单文档、单 agent、文档级并发、两阶段 review
-- 5B：contracts 与 artifact 字段边界收口
-- 5C：`agent-review-worker` 写入真实 artifact
-- 5D：`approval-service` 改为只读 artifact，删除长期 fallback 语义
-
-验收：
-
-- `approval-service` 不再依赖伪 artifact 组装作为常态路径
-- artifact 能稳定定位到 `source_file_id`、`parse_snapshot_id`
-- `anchored_findings` 支持空集合与多条 finding
-- `finding_id` 稳定生成
-
-### 7.9 Phase 6：workbench / indexing 闭环集成
-
-该阶段在真实 artifact 稳定后推进：
-
-1. approval callback / event payload 携带完整 findings
-2. adapter 将每个 finding 展开为 projection event
-3. projector 写入 agent review projection
-4. matcher 扫描未匹配 findings
-5. 调 indexing 的 `parse-snapshots/{id}/chunks` 拿 chunk 全文
-6. 对 `source_quote` 与 chunk content 做模糊匹配
-7. 回填 `evidence_id / page_from / page_to`
-8. routes 返回 matched / unmatched findings
-9. frontend 用 `source_quote` 做搜索与跳转
-
-### 7.10 Phase 7：删除旧代码
-
-删除前置要求：
-
-- 不跑无边界的全量测试
-- 仅在 targeted tests、contracts tests、real-chain smoke 都通过时推进删除
-
-
-## 8. 当前阶段做与不做
-
-### 当前阶段做
-
-- 先完成 Phase S
-- 再推进整改主线 Phase 0-4
-- 在整改主线稳定后推进 Phase 5
-
-当前阶段重点：
-
-- 测试生命周期与资源治理
-- owner 收敛
-- 默认验证路径切到真实链路
-- 运行时依赖显式化
-- fallback / shim / `StageContext` 清理
-
-### 当前阶段不做
-
-- 新的 agent 缓存设计与实现
-- 提前做 shared runtime 抽包
-- 在止血完成前直接跑 intake-pipeline 全量测试
-
-
-## 9. 验收标准
-
-### 9.1 止血主线验收
-
-- 不再存在裸 `return TestClient(app)` fixture
-- worker health/smoke test 不会启动常驻 poller
-- targeted tests 有明确超时与清理边界
-- 从仓库根运行定向测试不会导入错包
-
-### 9.2 整改主线验收
-
-- `document-service` 是唯一 source file owner
-- `ingestion-worker` / orchestrator 是唯一 `intake_job` owner
-- 默认验证路径已切到真实链路
-- split workers 的依赖与运行边界已显式化
-- 生产不启用 local fallback
-- `StageContext` 只作为 legacy adapter，不是新逻辑主接口
-- compat 主链已降级为显式 legacy/smoke-only
-
-### 9.3 `AgentReview artifact` 验收
-
-- reviewer 正式架构是“单文档、单 agent、文档级并发、两阶段 review”
-- `agent-review-worker` 能产出真实 artifact
-- `approval-service` 不再依赖 stub/伪 artifact 作为正式路径
-- `anchored_findings` 支持 0 个、1 个或多个 finding
-- 相近问题经过去重后不会被拆成多条重复 finding
-- 主 review 有风险但无稳定证据时允许空 findings
-
-### 9.4 最终全链路验收
-
-- approval 能把真实 findings 提供给 workbench
-- workbench 能把 findings 投影为结构化问题列表
-- 未匹配 findings 能通过 matcher 回填 `evidence_id/page_from/page_to`
-- frontend 能在已匹配与未匹配两种情况下展示问题并跳转
-
-
-## 10. 建议实施顺序
-
-最稳妥的顺序：
-
-1. 先做 Phase S，先止血
-2. 再做 Phase 0，冻结 compat 扩散，并前移 fail-fast
-3. 再做 Phase 1，解决 source file / intake job owner 冲突，并前移默认验证路径切换
-4. Phase 1 完成后立刻建立最小真实链路 smoke
-5. 再做 Phase 2A，先把 split workers 的依赖与导入目标显式化
-6. 如 2A 后仍有明显共享实现耦合，再做 Phase 2B shared runtime
-7. 再做 Phase 3，清理 fallback / shim / `StageContext`
-8. 再做 Phase 4，退役根 compat 主链
-9. 整改主线稳定后，再做 Phase 5，收口真实 `AgentReview artifact`
-10. 再做 Phase 6 workbench / indexing 闭环集成
-11. 最后做 Phase 7 删除旧代码
-
-禁止事项：
-
-- 不要跳过 Phase S，直接跑整套测试
-- 不要跳过 owner / 链路整改，直接做 findings 投影
-- 不要把 shared runtime 抽包误当成当前最小前置项
-
-正确顺序是：**先止血，再收口边界，再补 artifact，最后接闭环。**
+| S | 根 `uv run pytest services/intake-pipeline/document-service/tests -x -q` 通过 | 命令执行 |
+| S | 根 `uv run pytest services/intake-pipeline/approval-service/tests -x -q` 通过 | 命令执行 |
+| S | 根 `uv run pytest services/intake-pipeline/ingestion-worker/tests/test_repo_guardrails.py -x -q` 通过 | 命令执行 |
+| S | `services/smoke_tests/conftest.py` 中无 `sys.path.insert` | `grep -n "sys.path.insert"` |
+| 1 | `pipeline.py` 中无 `_drain_outbox_until_source_files_terminal` | `grep -n "_drain_outbox"` |
+| 1 | `app_factory.py` 中无 monitor routes | `grep -n "monitor/runs"` |
+| 1 | real-chain smoke 通过，且 worker 日志/DB 证明真实 worker 被调用 | 运行 `test_intake_real_chain.py` |
+| 2 | document-service 有 `GET /internal/source-files/{id}` | 看路由 |
+| 2 | ingestion-worker 有 `GET /internal/intake-jobs/{id}` | 看路由 |
+| 2 | publishing-worker 有 `GET /internal/published-documents/{id}` | 看路由 |
+| 2 | workbench `task_projection/service.py` 使用新的 document/ingestion/publishing clients | `grep -n "IntakeClient" services/workbench-api/src/workbench_api/task_projection/` |
+| 3 | `grep -rn "/v1/documents\|/v1/approval-tickets\|approve-and-publish" services/ packages/ apps/web/src/` 无结果 | grep |
+| 3 | `src/intake_pipeline/main.py` 行数 < 50 或文件不存在 | `wc -l` |
+| 3 | smoke tests 不再 mount `/intake` 也不再启用 compat writes | 看 `conftest.py` |
+| 4 | ingestion-worker 只剩核心文件（见上文列表） | `find` |
+| 4 | 所有 `from ingestion_worker.xxx` 的 import 不再指向已删除 shim | `grep -rn "from ingestion_worker" services/intake-pipeline/` |
+| 4 | `intake_runtime` 可以从仓库根正常 import | `uv run python -c "from intake_runtime import orchestrator"` |
+| 5 | `approval_service/review_artifacts.py` 无 fallback 组装 | `grep -n "summary_json" services/intake-pipeline/approval-service/src/approval_service/review_artifacts.py` |
+| 5 | agent-review-worker 写入 `result_ref` | 看 `stage_runtime.execute_review_task` |
+| 5 | approval-service `/internal/tickets/{id}/agent-review` 在 result_ref 缺失时返回 404 | 测试 |
+| 6 | workbench-api lifespan 不启动 reconciler | 看 `main.py` |
+| 6 | `task_projection/service.py` 不直接 fallback 查下游 | grep |
+
+---
+
+## 5. 禁止事项
+
+1. **禁止保留 bypass**：任何“为了测试先留着”的 compat 入口、sync drain、fallback 组装都必须显式标记为 `TODO(delete-compat)` 并在同一 Phase 内删除。
+2. **禁止新增 owner 职责到 workbench-api**：workbench 只能做 projection、adapter、UI integration。
+3. **禁止直接跑 intake-pipeline 全量测试作为默认验收**：必须按上表跑 targeted tests。
+4. **禁止把 `intake_runtime` 的共享逻辑再复制一份到 ingestion-worker**：所有新代码直接 import `intake_runtime.xxx`。
+5. **禁止用 `summary_json` 传递 artifact**：artifact 必须走 `result_ref`。
+
+---
+
+## 6. 执行顺序建议
+
+**必须严格按以下顺序执行**：
+
+1. **Phase S**：不完成，后续全部失真。
+2. **Phase 2**（修复 workbench 查询接口）：必须在 Phase 3 之前，否则删除 compat root 后 workbench 会 404。
+3. **Phase 1**（强制 split）+ **Phase 4**（清理 shim）：可并行，但建议先做 Phase 1（删除 sync pipeline）再做 Phase 4（清理不会重新引入 sync pipeline）。
+4. **Phase 3**（删除 compat root）：必须在 Phase 2 完成后。
+5. **Phase 5**（artifact 边界）：可以在 Phase 1-4 稳定后做。
+6. **Phase 6**（reconciler）：最后做，因为依赖事件链路已完整。
+
+---
+
+## 7. 附录：关键文件速查
+
+| 职责 | 文件路径 |
+|---|---|
+| Compat Root 主文件 | `services/intake-pipeline/src/intake_pipeline/main.py` |
+| Sync Pipeline drain | `services/intake-pipeline/ingestion-worker/src/ingestion_worker/pipeline.py:248-339` |
+| Ingestion worker app factory | `services/intake-pipeline/ingestion-worker/src/ingestion_worker/app_factory.py` |
+| Outbox deliver | `services/intake-pipeline/ingestion-worker/src/ingestion_worker/outbox_deliver.py` |
+| Document service | `services/intake-pipeline/document-service/src/document_service/main.py` |
+| Approval service | `services/intake-pipeline/approval-service/src/approval_service/main.py` |
+| Approval artifact | `services/intake-pipeline/approval-service/src/approval_service/review_artifacts.py` |
+| Publishing worker | `services/intake-pipeline/publishing-worker/src/publishing_worker/main.py` |
+| Publishing persistence | `services/intake-pipeline/src/intake_runtime/publishing_persistence.py` |
+| Agent reviewer | `services/intake-pipeline/src/intake_runtime/agent_reviewer.py` |
+| Stage runtime | `services/intake-pipeline/src/intake_runtime/stage_runtime.py` |
+| Workbench config | `services/workbench-api/src/workbench_api/config.py` |
+| Workbench intake client | `services/workbench-api/src/workbench_api/downstream_clients/intake_client.py` |
+| Workbench task projection | `services/workbench-api/src/workbench_api/task_projection/service.py` |
+| Workbench reconciler | `services/workbench-api/src/workbench_api/projections/reconciler.py` |
+| Smoke conftest | `services/smoke_tests/conftest.py` |
+| Real-chain smoke | `services/smoke_tests/test_intake_real_chain.py` |
+| MVP compat smoke | `services/smoke_tests/test_mvp_python_chain.py` |
+| Root pyproject | `E:/AI/My-Project/Enterprise KnowledgeBase/pyproject.toml` |
+
+---
+
+*本方案重写自原 INTAKE_PIPELINE_REMEDIATION_PLAN.md，按当前代码真实状态校准。执行时必须逐项验收，禁止跳过。*

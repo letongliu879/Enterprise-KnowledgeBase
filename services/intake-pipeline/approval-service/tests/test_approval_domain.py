@@ -146,7 +146,35 @@ class TestAutoApprove:
         )
         assert ticket.confirmed_tags == ["financial_report"]
 
-    def test_pending_event_includes_artifact_findings(self, approval_svc, session):
+    def test_pending_event_includes_artifact_findings(self, approval_svc, session, tmp_path):
+        import json
+        artifact_path = tmp_path / "review_artifact.json"
+        artifact_path.write_text(json.dumps({
+            "review_run_id": "att_review_001",
+            "intake_job_id": "ij-1",
+            "source_file_id": "sf_001",
+            "parse_snapshot_id": "ps_001",
+            "artifact_version": "v1",
+            "result_hash": "hash:review",
+            "agent_review": {
+                "decision": "request_changes",
+                "anchored_findings": [
+                    {
+                        "finding_id": "finding_001",
+                        "source_quote": "Original quote",
+                        "problem_summary": "Needs correction",
+                        "severity": "high",
+                        "confidence": 0.91,
+                    }
+                ],
+            },
+            "review_context": {
+                "artifact_metadata": {
+                    "source_file_id": "sf_001",
+                    "parse_snapshot_id": "ps_001",
+                }
+            },
+        }))
         session.add(
             StageResultModel(
                 stage_result_id="res_review_001",
@@ -156,26 +184,7 @@ class TestAutoApprove:
                 stage_name="agent_review",
                 idempotency_key="review:key",
                 result_hash="hash:review",
-                summary_json={
-                    "agent_review": {
-                        "decision": "request_changes",
-                        "anchored_findings": [
-                            {
-                                "finding_id": "finding_001",
-                                "source_quote": "Original quote",
-                                "problem_summary": "Needs correction",
-                                "severity": "high",
-                                "confidence": 0.91,
-                            }
-                        ],
-                    },
-                    "review_context": {
-                        "artifact_metadata": {
-                            "source_file_id": "sf_001",
-                            "parse_snapshot_id": "ps_001",
-                        }
-                    },
-                },
+                result_ref=str(artifact_path),
             )
         )
         session.flush()

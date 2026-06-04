@@ -21,36 +21,20 @@ from .projections.routes import router as projection_router
 
 
 @asynccontextmanager
-async def _build_lifespan(*, start_reconciler: bool):
+async def _build_lifespan():
     """Application lifespan manager.
 
-    Starts background reconciliation loop on startup when enabled.
-    Gracefully cancels on shutdown.
+    Projection is the sole read model; no background reconciler needed.
     """
-    import asyncio
-    from .projections.reconciler import reconciliation_loop
-
-    if start_reconciler:
-        reconcile_task = asyncio.create_task(reconciliation_loop())
     yield
-    if start_reconciler:
-        reconcile_task.cancel()
-        try:
-            await reconcile_task
-        except asyncio.CancelledError:
-            pass
 
 
-def create_app(*, start_reconciler: bool = True) -> FastAPI:
-    """Workbench API factory.
-
-    Tests should call ``create_app(start_reconciler=False)`` to avoid
-    launching the background reconciliation loop.
-    """
+def create_app() -> FastAPI:
+    """Workbench API factory."""
     application = FastAPI(
         title="Reality-RAG Workbench",
         version="0.1.0",
-        lifespan=lambda app: _build_lifespan(start_reconciler=start_reconciler),
+        lifespan=lambda app: _build_lifespan(),
     )
 
     application.include_router(auth_router)

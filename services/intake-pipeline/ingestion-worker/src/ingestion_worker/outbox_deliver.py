@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import asyncio
 import os
+import httpx
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -57,8 +58,6 @@ def _serialize_workbench_native_event(event: OutboxEvent, *, aggregate_version: 
 
 
 def _forward_event_to_workbench(service: str, event: OutboxEvent, *, aggregate_version: int) -> bool:
-    import httpx
-
     url = _workbench_events_url(service)
     api_key = _workbench_service_key(service)
     if not url or not api_key:
@@ -155,6 +154,7 @@ def _deliver_approval_event(event: OutboxEvent) -> bool:
             path = "/internal/approval/auto-reject"
         else:
             path = "/internal/approval/pending"
+        logger.error("DEBUG: httpx type=%s, url=%s", type(httpx).__name__, f"{remote_url}{path}")
         resp = httpx.post(f"{remote_url}{path}", json=payload, timeout=30.0)
         return resp.status_code < 500
     except Exception:
@@ -384,6 +384,19 @@ def make_deliver_callback() -> Any:
         if handler is None:
             logger.warning("outbox: no handler for event type %s", event.event_type)
             return True
-        return handler(event)
+        
+        success = handler(event)
+        if not success:
+            return False
+        
+        # Forward relevant events to workbench for projection updates
+        if event.event_type in {
+            EventType.FILE_READY.value,
+            EventType.STAGE_COMPLETED.value,
+            EventType.PUBLISH_COMPLETED.value,
+        }:
+            return _forward_event_to_workbench("intake", event, aggregate_version=1)
+        
+        return True
 
     return deliver

@@ -8,7 +8,6 @@ from ingestion_worker.app_factory import create_app
 def test_health_returns_200():
     with TestClient(
         create_app(
-            include_monitor_routes=False,
             include_indexing_routes=False,
             start_background_poller=False,
         )
@@ -24,7 +23,6 @@ def test_health_returns_200():
 def test_health_response_is_json():
     with TestClient(
         create_app(
-            include_monitor_routes=False,
             include_indexing_routes=False,
             start_background_poller=False,
         )

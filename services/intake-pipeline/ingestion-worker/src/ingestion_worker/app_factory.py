@@ -25,7 +25,6 @@ from reality_rag_persistence.metrics import intake_metrics
 logger = logging.getLogger(__name__)
 
 _pipeline: Any | None = None
-_monitored_ingestion_service: Any | None = None
 _indexing_service: Any | None = None
 _outbox_dispatcher_task: asyncio.Task[None] | None = None
 
@@ -48,15 +47,6 @@ def _default_indexing_service_factory():
     return get_indexing_service()
 
 
-def _default_monitored_ingestion_service_factory(app: FastAPI):
-    from .monitor_service import MonitoredIngestionService
-
-    return MonitoredIngestionService(
-        pipeline=_get_pipeline_for_app(app),
-        indexing_service=_get_indexing_service_for_app(app),
-    )
-
-
 def _get_pipeline_for_app(app: FastAPI):
     pipeline = getattr(app.state, "pipeline_instance", None)
     if pipeline is None:
@@ -71,14 +61,6 @@ def _get_indexing_service_for_app(app: FastAPI):
         indexing_service = app.state.indexing_service_factory()
         app.state.indexing_service_instance = indexing_service
     return indexing_service
-
-
-def _get_monitored_ingestion_service_for_app(app: FastAPI):
-    monitored = getattr(app.state, "monitored_ingestion_service_instance", None)
-    if monitored is None:
-        monitored = app.state.monitored_ingestion_service_factory(app)
-        app.state.monitored_ingestion_service_instance = monitored
-    return monitored
 
 
 def _build_lifespan(*, start_background_poller: bool):
@@ -129,8 +111,6 @@ def create_app(
     *,
     pipeline_factory: Callable[[], Any] | None = None,
     indexing_service_factory: Callable[[], Any] | None = None,
-    monitored_ingestion_service_factory: Callable[[FastAPI], Any] | None = None,
-    include_monitor_routes: bool = True,
     include_indexing_routes: bool = True,
     start_background_poller: bool = True,
 ) -> FastAPI:
@@ -143,12 +123,8 @@ def create_app(
 
     app.state.pipeline_factory = pipeline_factory or _default_pipeline_factory
     app.state.indexing_service_factory = indexing_service_factory or _default_indexing_service_factory
-    app.state.monitored_ingestion_service_factory = (
-        monitored_ingestion_service_factory or _default_monitored_ingestion_service_factory
-    )
     app.state.pipeline_instance = None
     app.state.indexing_service_instance = None
-    app.state.monitored_ingestion_service_instance = None
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
@@ -171,17 +147,20 @@ def create_app(
         except AgentReviewError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    if include_monitor_routes:
-        from .monitor_models import MonitorRunRequest, MonitorRunSummary
+    @app.get("/internal/intake-jobs/{job_id}")
+    async def get_intake_job(job_id: str) -> dict:
+        from reality_rag_persistence.database import get_session
+        from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 
-        @app.post("/internal/ingestion/monitor/runs", response_model=MonitorRunSummary)
-        async def start_monitored_run(request: MonitorRunRequest) -> MonitorRunSummary:
-            from intake_runtime.agent_reviewer import AgentReviewError
-
-            try:
-                return _get_monitored_ingestion_service_for_app(app).start(request)
-            except AgentReviewError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+        session = get_session()
+        try:
+            repo = IntakeJobRepository(session)
+            job = repo.get(job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail=f"Intake job {job_id} not found")
+            return job.model_dump(mode="json")
+        finally:
+            session.close()
 
     if include_indexing_routes:
         @app.post("/internal/indexing/run", response_model=IndexJobResult)
@@ -198,7 +177,7 @@ def create_app(
             from .indexing_service import IndexJobError
 
             try:
-                return _get_indexing_service_for_app(app).activate(
+                return await _get_indexing_service_for_app(app).activate(
                     request.collection_id,
                     request.index_version,
                 )
@@ -210,7 +189,7 @@ def create_app(
             from .indexing_service import IndexJobError
 
             try:
-                return _get_indexing_service_for_app(app).rollback(
+                return await _get_indexing_service_for_app(app).rollback(
                     request.collection_id,
                     request.index_version,
                 )
@@ -221,7 +200,7 @@ def create_app(
 
 
 def bind_default_runtime_app(app: FastAPI):
-    global _pipeline, _monitored_ingestion_service, _indexing_service
+    global _pipeline, _indexing_service
 
     def get_pipeline():
         nonlocal app
@@ -229,16 +208,10 @@ def bind_default_runtime_app(app: FastAPI):
         _pipeline = _get_pipeline_for_app(app)
         return _pipeline
 
-    def get_monitored_ingestion_service():
-        nonlocal app
-        global _monitored_ingestion_service
-        _monitored_ingestion_service = _get_monitored_ingestion_service_for_app(app)
-        return _monitored_ingestion_service
-
     def get_indexing_service():
         nonlocal app
         global _indexing_service
         _indexing_service = _get_indexing_service_for_app(app)
         return _indexing_service
 
-    return get_pipeline, get_monitored_ingestion_service, get_indexing_service
+    return get_pipeline, get_indexing_service

@@ -134,6 +134,7 @@ class UploadSessionService:
                 filename=filename,
                 content_bytes=content_bytes,
                 mime_type=mime_type,
+                upload_id=upload_id,
             )
         except DownstreamError as e:
             if e.code == "DOWNSTREAM_NOT_IMPLEMENTED":

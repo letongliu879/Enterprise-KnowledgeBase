@@ -8,11 +8,13 @@ from .errors import DownstreamError
 
 class IntakeClient:
     def __init__(self, base_url: str | None = None):
-        self._base_url = (base_url or config.intake_base_url).rstrip("/")
+        self._ingestion_worker_url = (base_url or config.ingestion_worker_url).rstrip("/")
+        self._document_service_url = config.document_service_base_url.rstrip("/")
+        self._publishing_url = config.publishing_base_url.rstrip("/")
         self._timeout = config.default_http_timeout
 
     async def create_source_file(self, command: dict) -> dict:
-        url = f"{self._base_url}/internal/source-files"
+        url = f"{self._document_service_url}/internal/source-files"
         # Unwrap command envelope to flat RegisterSourceFileRequest format
         payload = command.get("payload", {})
         flat_request = {
@@ -31,15 +33,15 @@ class IntakeClient:
         return await self._post(url, flat_request)
 
     async def get_source_file(self, source_file_id: str) -> dict:
-        url = f"{self._base_url}/internal/source-files/{source_file_id}"
+        url = f"{self._document_service_url}/internal/source-files/{source_file_id}"
         return await self._get(url)
 
     async def get_intake_job(self, intake_job_id: str) -> dict:
-        url = f"{self._base_url}/internal/intake-jobs/{intake_job_id}"
+        url = f"{self._ingestion_worker_url}/internal/intake-jobs/{intake_job_id}"
         return await self._get(url)
 
     async def get_published_document(self, published_document_id: str) -> dict:
-        url = f"{self._base_url}/internal/published-documents/{published_document_id}"
+        url = f"{self._publishing_url}/internal/published-documents/{published_document_id}"
         return await self._get(url)
 
     async def _get(self, url: str) -> dict:

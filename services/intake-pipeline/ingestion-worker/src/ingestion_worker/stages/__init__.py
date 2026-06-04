@@ -1,10 +1,10 @@
 """Pipeline stage contracts for ingestion-worker."""
 
-from .protocol import PipelineStage, StageContext
+from intake_runtime.stages.protocol import PipelineStage, StageContext
 
 # Phase 1 schema contracts
-from . import schemas, hash_utils, adapters
-from .schemas import (
+from intake_runtime.stages import schemas, hash_utils, adapters
+from intake_runtime.stages.schemas import (
     ConversionStageInput,
     ConversionStageOutput,
     ReviewStageInput,

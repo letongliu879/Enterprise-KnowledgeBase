@@ -1,13 +1,14 @@
 Metadata-Version: 2.4
 Name: ingestion-worker
 Version: 0.1.0
-Requires-Python: ==3.14.*
+Requires-Python: >=3.12
 Requires-Dist: fastapi>=0.100
 Requires-Dist: uvicorn[standard]
-Requires-Dist: reality-rag-ai-clients
 Requires-Dist: reality-rag-contracts
-Requires-Dist: reality-rag-indexing
+Requires-Dist: enterprise-kb-indexing
 Requires-Dist: reality-rag-persistence
+Requires-Dist: reality-rag-documents
+Requires-Dist: intake-runtime
 Requires-Dist: httpx
 Requires-Dist: prometheus-client>=0.20
 Provides-Extra: dev

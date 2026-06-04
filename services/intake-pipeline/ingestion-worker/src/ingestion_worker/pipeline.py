@@ -9,24 +9,18 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from reality_rag_contracts import (
-    AgentReview,
     ConversionReport,
     ConversionResult,
     ConversionStatus,
     IngestionJob,
-    IntakeJobState,
     JobStatus,
     PublishStatus,
-    StageName,
 )
 from reality_rag_persistence.database import get_session
-from reality_rag_persistence.outbox import OutboxDispatcher
 from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.ingestion import IngestionRepository
-from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
-from reality_rag_persistence.repositories.tenants import TenantRepository
 from reality_rag_persistence.telemetry import TelemetryStore
 from reality_rag_documents import object_id_from_hash
 
@@ -34,17 +28,9 @@ from intake_runtime.agent_review_cache import get_agent_review_cache
 from intake_runtime.agent_reviewer import get_agent_reviewer
 from intake_runtime.converters.base import BaseConverter
 from intake_runtime.pipeline_utils import report_asset_path, write_json_asset
-from intake_runtime.stage_runtime import execute_conversion_task, execute_publishing_task, execute_review_task
-from intake_runtime.stage_runtime import json_summary
-from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
 from intake_runtime.stages.pure_stages import _logical_document_id
 
 from .document_service_client import DocumentServiceClient
-from .domains.publishing_domain import persist_document_and_policy
-from .pipeline_report import build_error_message, resolve_job_status
-
-if TYPE_CHECKING:
-    from .monitor_context import MonitorContext
 
 
 class IngestionPipeline:
@@ -66,9 +52,7 @@ class IngestionPipeline:
         self,
         collection_id: str,
         source_files: list[str],
-        monitor: MonitorContext | None = None,
     ) -> IngestionJob:
-        del monitor
         job_id = f"ingest-{uuid4().hex[:8]}"
         now = datetime.now(timezone.utc)
         details: list[ConversionResult] = []
@@ -134,12 +118,12 @@ class IngestionPipeline:
         finally:
             session.close()
 
-        self._drain_outbox_until_source_files_terminal(source_file_ids)
-        report = self._build_report_for_source_files(
+        # Phase 1: sync pipeline removed. Outbox events now drive real split workers.
+        # The caller should poll or wait for projection events to determine terminal state.
+        report = _build_report_from_details(
             job_id=job_id,
             source_files=source_files,
-            source_file_ids=source_file_ids,
-            immediate_details=details,
+            details=details,
         )
         rap_path = report_asset_path(collection_id, job_id)
         write_json_asset(rap_path, report.model_dump(mode="json"))
@@ -147,7 +131,7 @@ class IngestionPipeline:
         job = IngestionJob(
             job_id=job_id,
             job_type="ingestion",
-            status=resolve_job_status(report),
+            status=JobStatus.PENDING,
             collection_id=collection_id,
             source_files=source_files,
             source_file_ids=source_file_ids,
@@ -155,7 +139,7 @@ class IngestionPipeline:
             report_asset_path=rap_path,
             created_at=now,
             updated_at=datetime.now(timezone.utc),
-            error_message=build_error_message(report),
+            error_message=None,
         )
         save_session = get_session()
         try:
@@ -245,185 +229,7 @@ class IngestionPipeline:
         except Exception:
             pass
 
-    def _drain_outbox_until_source_files_terminal(
-        self,
-        source_file_ids: list[str],
-        *,
-        max_rounds: int = 40,
-    ) -> None:
-        from .outbox_deliver import make_deliver_callback
-
-        orchestrator_dispatcher = OutboxDispatcher(
-            session_factory=get_session,
-            deliver=make_deliver_callback(),
-            should_process=lambda event: event.event_type != "StageTaskRequested",
-            batch_size=100,
-        )
-        conversion_dispatcher = OutboxDispatcher(
-            session_factory=get_session,
-            deliver=make_stage_task_deliver(
-                stage_name=StageName.CONVERSION,
-                consumer_id="conversion-worker:stage-task:sync-pipeline",
-                worker_id="worker-conversion-sync",
-                execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_conversion_task(
-                    session,
-                    stage_task_id,
-                    intake_job_id,
-                    self,
-                    worker_id,
-                ),
-            ),
-            should_process=make_stage_task_filter(StageName.CONVERSION),
-            batch_size=100,
-        )
-        review_dispatcher = OutboxDispatcher(
-            session_factory=get_session,
-            deliver=make_stage_task_deliver(
-                stage_name=StageName.AGENT_REVIEW,
-                consumer_id="agent-review-worker:stage-task:sync-pipeline",
-                worker_id="worker-agent-review-sync",
-                execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_review_task(
-                    session,
-                    stage_task_id,
-                    intake_job_id,
-                    self,
-                    worker_id,
-                ),
-            ),
-            should_process=make_stage_task_filter(StageName.AGENT_REVIEW),
-            batch_size=100,
-        )
-        publishing_dispatcher = OutboxDispatcher(
-            session_factory=get_session,
-            deliver=make_stage_task_deliver(
-                stage_name=StageName.PUBLISHING,
-                consumer_id="publishing-worker:stage-task:sync-pipeline",
-                worker_id="worker-publishing-sync",
-                execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_publishing_task(
-                    session,
-                    stage_task_id,
-                    intake_job_id,
-                    worker_id,
-                    persist_fn=persist_document_and_policy,
-                ),
-            ),
-            should_process=make_stage_task_filter(StageName.PUBLISHING),
-            batch_size=100,
-        )
-        for _ in range(max_rounds):
-            orchestrator_dispatcher.poll_and_dispatch()
-            conversion_dispatcher.poll_and_dispatch()
-            review_dispatcher.poll_and_dispatch()
-            publishing_dispatcher.poll_and_dispatch()
-            orchestrator_dispatcher.poll_and_dispatch()
-            if self._source_file_jobs_are_terminal(source_file_ids):
-                return
-
-    def _source_file_jobs_are_terminal(self, source_file_ids: list[str]) -> bool:
-        session = get_session()
-        try:
-            repo = IntakeJobRepository(session)
-            for source_file_id in source_file_ids:
-                job = repo.get_by_source_file_id(source_file_id)
-                if job is None or job.state not in {
-                    IntakeJobState.PUBLISHED.value,
-                    IntakeJobState.REJECTED.value,
-                    IntakeJobState.FAILED.value,
-                    IntakeJobState.CANCELLED.value,
-                    IntakeJobState.EXPIRED.value,
-                    IntakeJobState.AWAITING_APPROVAL.value,
-                }:
-                    return False
-            return True
-        finally:
-            session.close()
-
-    def _build_report_for_source_files(
-        self,
-        *,
-        job_id: str,
-        source_files: list[str],
-        source_file_ids: list[str],
-        immediate_details: list[ConversionResult],
-    ) -> ConversionReport:
-        from reality_rag_persistence.models import StageResultModel
-
-        details = list(immediate_details)
-        session = get_session()
-        try:
-            intake_repo = IntakeJobRepository(session)
-            document_repo = DocumentRepository(session)
-            source_repo = SourceFileRepository(session)
-            for source_file_id in source_file_ids:
-                source_file = source_repo.get(source_file_id)
-                if source_file is None:
-                    continue
-                intake_job = intake_repo.get_by_source_file_id(source_file.source_file_id)
-                if intake_job is None:
-                    details.append(
-                        ConversionResult(
-                            source_file_path=source_file.object_id,
-                            conversion_status=ConversionStatus.FAILED,
-                            error_message="Intake job was not created",
-                        )
-                    )
-                    continue
-                row = (
-                    session.query(StageResultModel)
-                    .filter(StageResultModel.intake_job_id == intake_job.intake_job_id)
-                    .filter(StageResultModel.stage_name == StageName.CONVERSION.value)
-                    .first()
-                )
-                if row is None or not row.summary_json:
-                    details.append(
-                        ConversionResult(
-                            source_file_path=source_file.object_id,
-                            conversion_status=(
-                                ConversionStatus.FAILED
-                                if intake_job.state == IntakeJobState.FAILED.value
-                                else ConversionStatus.SUCCESS
-                            ),
-                            error_message=intake_job.error_message or "",
-                        )
-                    )
-                    continue
-
-                summary = row.summary_json
-                published_doc = document_repo.get_by_source_content_hash(
-                    source_file.content_hash,
-                    source_file.collection_id,
-                )
-                detail = ConversionResult.model_validate(
-                    summary.get("conversion_result")
-                    or {
-                        "source_file_path": source_file.object_id,
-                        "conversion_status": ConversionStatus.SUCCESS.value,
-                    }
-                )
-                resolved_doc_id = (
-                    (published_doc.doc_id if published_doc is not None else "")
-                    or intake_job.final_doc_id
-                    or intake_job.preliminary_doc_id
-                    or summary.get("preliminary_doc_id", detail.doc_id)
-                )
-                detail = detail.model_copy(update={"doc_id": resolved_doc_id})
-                document = published_doc
-                if document is None and detail.doc_id:
-                    document = document_repo.get(detail.doc_id)
-                if document is None and summary.get("preliminary_doc_id"):
-                    document = document_repo.get(summary.get("preliminary_doc_id"))
-                if document is not None:
-                    canonical_asset_path = document.asset_paths.get(
-                        "canonical_md",
-                        detail.canonical_asset_path,
-                    )
-                    if not canonical_asset_path and document.asset_paths:
-                        canonical_asset_path = next(iter(document.asset_paths.values()), "")
-                    detail = detail.model_copy(update={"canonical_asset_path": canonical_asset_path})
-                details.append(detail)
-        finally:
-            session.close()
-        return _build_report_from_details(job_id=job_id, source_files=source_files, details=details)
+    # Sync pipeline helpers removed in Phase 1. Split workers now consume outbox events.
 
 
 def _build_report_from_details(

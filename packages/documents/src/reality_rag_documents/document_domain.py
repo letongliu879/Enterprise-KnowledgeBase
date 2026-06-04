@@ -35,6 +35,7 @@ from reality_rag_contracts import (
     UploadSession,
     UploadSessionStatus,
 )
+from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.object_blobs import ObjectBlobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from reality_rag_persistence.repositories.upload_sessions import UploadSessionRepository
@@ -88,6 +89,7 @@ class DocumentService:
         self._upload_repo = UploadSessionRepository(session)
         self._object_repo = ObjectBlobRepository(session)
         self._source_repo = SourceFileRepository(session)
+        self._collection_repo = CollectionRepository(session)
         self._scan_adapter = scan_adapter or NoOpScanAdapter()
         self._event_publisher = EventPublisher(session)
 
@@ -102,11 +104,12 @@ class DocumentService:
         trace_id: str = "",
         expected_size: int | None = None,
         expected_sha256: str | None = None,
+        upload_id: str | None = None,
     ) -> UploadSession:
         """Create a new upload session in ACTIVE state."""
-        upload_id = _generate_upload_id()
+        effective_upload_id = upload_id or _generate_upload_id()
         return self._upload_repo.create(
-            upload_id=upload_id,
+            upload_id=effective_upload_id,
             source=source,
             user_id=user_id,
             trace_id=trace_id,
@@ -361,6 +364,8 @@ class DocumentService:
 
     def _emit_file_ready(self, sf: SourceFile) -> None:
         """Emit FileReady outbox event for a READY source file."""
+        collection = self._collection_repo.get(sf.collection_id)
+        tenant_id = collection.tenant_id if collection else "default"
         self._event_publisher.publish(
             event_type=EventType.FILE_READY,
             aggregate_type="source_file",
@@ -370,9 +375,12 @@ class DocumentService:
                 "object_id": sf.object_id,
                 "content_hash": sf.content_hash,
                 "collection_id": sf.collection_id,
+                "tenant_id": tenant_id,
                 "visibility": sf.visibility,
                 "original_name": sf.original_name,
                 "size_bytes": sf.size_bytes,
+                "upload_id": sf.upload_id or sf.source_file_id,
+                "state": sf.state.value if hasattr(sf.state, "value") else str(sf.state),
             },
             trace_id=sf.upload_id or "",
         )

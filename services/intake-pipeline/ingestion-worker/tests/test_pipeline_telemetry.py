@@ -16,7 +16,7 @@ from reality_rag_contracts import (
 from reality_rag_persistence.telemetry import TelemetryStore
 
 from ingestion_worker.pipeline import IngestionPipeline
-from ingestion_worker.stages.protocol import StageContext
+from intake_runtime.stages.protocol import StageContext
 
 
 class FakeTelemetryStore(TelemetryStore):

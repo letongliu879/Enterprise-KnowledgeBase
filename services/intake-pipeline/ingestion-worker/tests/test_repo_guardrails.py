@@ -46,11 +46,6 @@ def test_background_worker_app_factories_support_disabling_pollers():
         app = factory(start_background_poller=False)
         assert app.title, f"{name} create_app() should return a configured FastAPI app"
 
-    # Workbench uses a different parameter name for the reconciler background loop.
-    wb_params = signature(create_workbench_app).parameters
-    assert "start_reconciler" in wb_params, "workbench_api must expose start_reconciler"
-    assert wb_params["start_reconciler"].default is True, (
-        "workbench_api start_reconciler should default to True"
-    )
-    wb_app = create_workbench_app(start_reconciler=False)
+    # Workbench no longer has a background reconciler (projection is sole read model).
+    wb_app = create_workbench_app()
     assert wb_app.title, "workbench_api create_app() should return a configured FastAPI app"

@@ -169,7 +169,7 @@ class TestOutboxDeliverCallbacks:
         deliver = make_deliver_callback()
         session = get_session()
         try:
-            from ingestion_worker.orchestrator import OrchestratorService
+            from intake_runtime.orchestrator import OrchestratorService
 
             job = OrchestratorService(session).create_intake_job("src-appr", "obj-appr", "col-1")
             session.commit()
@@ -197,7 +197,7 @@ class TestOutboxDeliverCallbacks:
         deliver = make_deliver_callback()
         session = get_session()
         try:
-            from ingestion_worker.orchestrator import OrchestratorService
+            from intake_runtime.orchestrator import OrchestratorService
 
             job = OrchestratorService(session).create_intake_job("src-appr-fwd", "obj-appr-fwd", "col-1")
             session.commit()
@@ -240,7 +240,7 @@ class TestOutboxDeliverCallbacks:
         deliver = make_deliver_callback()
         session = get_session()
         try:
-            from ingestion_worker.orchestrator import OrchestratorService
+            from intake_runtime.orchestrator import OrchestratorService
 
             if TenantRepository(session).get("default") is None:
                 TenantRepository(session).save(Tenant(tenant_id="default", name="Default"))
@@ -341,7 +341,7 @@ class TestOutboxDeliverCallbacks:
         deliver = make_deliver_callback()
         session = get_session()
         try:
-            from ingestion_worker.orchestrator import OrchestratorService
+            from intake_runtime.orchestrator import OrchestratorService
 
             if TenantRepository(session).get("default") is None:
                 TenantRepository(session).save(Tenant(tenant_id="default", name="Default"))

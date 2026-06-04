@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from reality_rag_contracts import StageName, StageTaskState
 from reality_rag_persistence.database import get_session
 
-from ingestion_worker.orchestrator import OrchestratorService
+from intake_runtime.orchestrator import OrchestratorService
 
 
 class TestOrchestratorLease:

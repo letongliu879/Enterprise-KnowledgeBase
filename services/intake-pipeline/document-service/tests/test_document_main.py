@@ -34,7 +34,7 @@ def test_upload_creates_source_file_and_outbox(client: TestClient, monkeypatch, 
 
     resp = client.post(
         "/upload",
-        data={"collection_id": "col-1", "visibility": "internal"},
+        data={"collection_id": "col_policy", "visibility": "internal"},
         files={"file": ("report.docx", b"hello reality rag", "application/octet-stream")},
     )
 
@@ -42,7 +42,7 @@ def test_upload_creates_source_file_and_outbox(client: TestClient, monkeypatch, 
     data = resp.json()
     assert data["duplicate"] is False
     assert data["status"] == "ready"
-    assert data["collection_id"] == "col-1"
+    assert data["collection_id"] == "col_policy"
     assert data["visibility"] == "INTERNAL"
     assert data["content_hash"].startswith("sha256:")
 
@@ -70,7 +70,7 @@ def test_upload_returns_existing_active_source_file(client: TestClient, monkeypa
 
     first = client.post(
         "/upload",
-        data={"collection_id": "col-1"},
+        data={"collection_id": "col_policy"},
         files={"file": ("dup.docx", b"same bytes", "application/octet-stream")},
     )
     assert first.status_code == 200
@@ -78,7 +78,7 @@ def test_upload_returns_existing_active_source_file(client: TestClient, monkeypa
 
     second = client.post(
         "/upload",
-        data={"collection_id": "col-1"},
+        data={"collection_id": "col_policy"},
         files={"file": ("dup-again.docx", b"same bytes", "application/octet-stream")},
     )
     assert second.status_code == 200
@@ -103,7 +103,7 @@ def test_upload_returns_existing_published_document(client: TestClient, monkeypa
                 doc_id="doc-published-1",
                 logical_document_id="logical-published-1",
                 tenant_id="default",
-                collection_id="col-1",
+                collection_id="col_policy",
                 source_hash="sha256:published-bytes",
                 source_content_hash=content_hash,
                 version=1,
@@ -117,7 +117,7 @@ def test_upload_returns_existing_published_document(client: TestClient, monkeypa
 
     resp = client.post(
         "/upload",
-        data={"collection_id": "col-1"},
+        data={"collection_id": "col_policy"},
         files={"file": ("published.docx", content, "application/octet-stream")},
     )
 
