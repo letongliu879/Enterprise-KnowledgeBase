@@ -134,17 +134,6 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _run_coroutine_blocking(coro_factory):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro_factory())
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(lambda: asyncio.run(coro_factory()))
-        return future.result()
-
-
 def _safe_text(value: object) -> str:
     if value is None:
         return ""
@@ -702,8 +691,8 @@ def _load_prepared_document_for_intake_job(
         session.close()
 
 
-class _RemoteIndexingService:
-    """HTTP client facade that mirrors the legacy IndexingService API."""
+class IndexingService:
+    """HTTP client for the indexing-service owner."""
 
     async def run(self, request: IndexJobRequest) -> IndexJobResult:
         prepared_documents = _load_prepared_documents(request)
@@ -841,18 +830,11 @@ class _RemoteIndexingService:
             backend_mode="modern-indexing-service",
         )
 
-    def activate(self, collection_id: str, index_version: str | None = None) -> IndexSwitchResult:
-        req = IndexSwitchRequest(
-            collection_id=collection_id,
-            index_version=index_version,
-        )
-        return _run_coroutine_blocking(lambda: self._activate_async(req))
-
-    async def _activate_async(self, request: IndexSwitchRequest) -> IndexSwitchResult:
-        target_index_version = request.index_version or self._latest_index_version(request.collection_id)
+    async def activate(self, collection_id: str, index_version: str | None = None) -> IndexSwitchResult:
+        target_index_version = index_version or self._latest_index_version(collection_id)
         if not target_index_version:
-            raise IndexJobError(f"No index version found for collection '{request.collection_id}'")
-        previous_index_version = self._active_index_version(request.collection_id)
+            raise IndexJobError(f"No index version found for collection '{collection_id}'")
+        previous_index_version = self._active_index_version(collection_id)
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 _url(f"/internal/index-versions/{target_index_version}/activate")
@@ -860,24 +842,17 @@ class _RemoteIndexingService:
             if resp.status_code >= 400:
                 raise IndexJobError(resp.text)
         return IndexSwitchResult(
-            collection_id=request.collection_id,
+            collection_id=collection_id,
             active_index_version=target_index_version,
             previous_index_version=previous_index_version,
             target_index_version=target_index_version,
             status="indexed",
         )
 
-    def rollback(self, collection_id: str, index_version: str | None = None) -> IndexSwitchResult:
-        req = IndexSwitchRequest(
-            collection_id=collection_id,
-            index_version=index_version,
-        )
-        return _run_coroutine_blocking(lambda: self._rollback_async(req))
-
-    async def _rollback_async(self, request: IndexSwitchRequest) -> IndexSwitchResult:
-        target_index_version = request.index_version or self._active_index_version(request.collection_id)
+    async def rollback(self, collection_id: str, index_version: str | None = None) -> IndexSwitchResult:
+        target_index_version = index_version or self._active_index_version(collection_id)
         if not target_index_version:
-            raise IndexJobError(f"No active index version found for collection '{request.collection_id}'")
+            raise IndexJobError(f"No active index version found for collection '{collection_id}'")
         fallback_index_version = self._previous_index_version(target_index_version)
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
@@ -886,7 +861,7 @@ class _RemoteIndexingService:
             if resp.status_code >= 400:
                 raise IndexJobError(resp.text)
         return IndexSwitchResult(
-            collection_id=request.collection_id,
+            collection_id=collection_id,
             active_index_version=fallback_index_version or target_index_version,
             previous_index_version=target_index_version,
             target_index_version=fallback_index_version,
@@ -927,52 +902,12 @@ class _RemoteIndexingService:
             session.close()
 
 
-class _IndexingServiceFacade:
-    """Dispatch indexing requests to the indexing-service owner."""
-
-    def __init__(self) -> None:
-        self._remote: _RemoteIndexingService | None = None
-
-    def _get_remote(self) -> _RemoteIndexingService:
-        _require_remote_url()
-        if self._remote is None:
-            self._remote = _RemoteIndexingService()
-        return self._remote
-
-    async def run(self, request: IndexJobRequest) -> IndexJobResult:
-        return await self._get_remote().run(request)
-
-    async def run_intake_job(
-        self,
-        *,
-        intake_job_id: str,
-        collection_id: str,
-        index_version: str = "",
-        options: dict[str, Any] | None = None,
-    ) -> IndexJobResult:
-        return await self._get_remote().run_intake_job(
-            intake_job_id=intake_job_id,
-            collection_id=collection_id,
-            index_version=index_version,
-            options=options,
-        )
-
-    def activate(self, collection_id: str, index_version: str | None = None) -> IndexSwitchResult:
-        return self._get_remote().activate(collection_id, index_version)
-
-    def rollback(self, collection_id: str, index_version: str | None = None) -> IndexSwitchResult:
-        return self._get_remote().rollback(collection_id, index_version)
+_indexing_svc: IndexingService | None = None
 
 
-IndexingService = _IndexingServiceFacade
-
-
-_indexing_svc: _IndexingServiceFacade | None = None
-
-
-def get_indexing_service() -> _IndexingServiceFacade:
-    """Return the indexing-service HTTP facade."""
+def get_indexing_service() -> IndexingService:
+    """Return the indexing-service HTTP client."""
     global _indexing_svc
     if _indexing_svc is None:
-        _indexing_svc = _IndexingServiceFacade()
+        _indexing_svc = IndexingService()
     return _indexing_svc
