@@ -446,6 +446,25 @@ name = "enterprise-knowledgebase"
 version = "0.1.0"
 source = { virtual = "." }
 
+[package.optional-dependencies]
+dev = [
+    { name = "jsonschema" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "respx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "respx", marker = "extra == 'dev'", specifier = ">=0.22" },
+]
+provides-extras = ["dev"]
+
 [[package]]
 name = "et-xmlfile"
 version = "2.0.0"
