@@ -9,7 +9,6 @@ import logging
 import asyncio
 import os
 import httpx
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from reality_rag_contracts import EventType, IndexStatus, IntakeJobState, OutboxEvent, PublishStatus, StageName
@@ -209,8 +208,21 @@ def _deliver_stage_completed(event: OutboxEvent) -> bool:
 
 
 def _deliver_publish_event(event: OutboxEvent) -> bool:
-    """Consume publish lifecycle events or forward publish requests."""
+    """Consume publish lifecycle events or forward publish requests.
+
+    Order: 1) indexing, 2) advance state + record idempotency (same tx).
+    If indexing fails the job state is NOT advanced and the event will be
+    retried by the next poller cycle.
+    """
     if event.event_type == EventType.PUBLISH_COMPLETED.value:
+        # Step 1: submit to indexing first.
+        try:
+            _submit_indexing_after_publish(event.payload_json)
+        except Exception:
+            logger.exception("outbox: indexing failed for publish event %s", event.event_id)
+            return False
+
+        # Step 2: advance state and record idempotency atomically.
         session = get_session()
         try:
             idem_repo = ConsumerIdempotencyRepository(session)
@@ -226,26 +238,7 @@ def _deliver_publish_event(event: OutboxEvent) -> bool:
                 row.final_doc_id = event.payload_json.get("final_doc_id")
 
             orch.advance_state(intake_job_id, IntakeJobState.PUBLISHED)
-            session.commit()
-        except Exception:
-            session.rollback()
-            logger.exception("outbox: failed to process publish event")
-            return False
-        finally:
-            session.close()
-
-        try:
-            _submit_indexing_after_publish(event.payload_json)
-        except Exception as exc:
-            final_doc_id = str(event.payload_json.get("final_doc_id") or "").strip()
-            if final_doc_id:
-                _mark_document_index_failed(final_doc_id)
-            logger.exception("outbox: failed to submit published document to indexing")
-            return False
-
-        session = get_session()
-        try:
-            ConsumerIdempotencyRepository(session).record_processed(
+            idem_repo.record_processed(
                 _PUBLISH_EVENT_CONSUMER_ID,
                 event.event_id,
                 event.idempotency_key,
@@ -254,15 +247,17 @@ def _deliver_publish_event(event: OutboxEvent) -> bool:
             return True
         except Exception:
             session.rollback()
-            logger.exception("outbox: failed to record publish event idempotency")
+            logger.exception("outbox: failed to process publish event")
             return False
         finally:
             session.close()
+
     logger.warning("outbox: unexpected publish event type %s", event.event_type)
     return True
 
 
 def _submit_indexing_after_publish(payload: dict[str, Any]) -> None:
+    """Submit published document to indexing via async HTTP call."""
     from .indexing_service import get_indexing_service
 
     intake_job_id = str(payload.get("intake_job_id") or "").strip()
@@ -279,18 +274,7 @@ def _submit_indexing_after_publish(payload: dict[str, Any]) -> None:
             options={"activate_index_version": True},
         )
 
-    _run_coroutine_blocking(_run)
-
-
-def _run_coroutine_blocking(coro_factory):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro_factory())
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(lambda: asyncio.run(coro_factory()))
-        return future.result()
+    asyncio.run(_run())
 
 
 def _mark_document_index_failed(final_doc_id: str) -> None:

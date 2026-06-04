@@ -275,4 +275,8 @@ def _compute_content_hash(source_file_path: str) -> str:
     path = Path(source_file_path)
     if not path.exists():
         return ""
-    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(8192):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"

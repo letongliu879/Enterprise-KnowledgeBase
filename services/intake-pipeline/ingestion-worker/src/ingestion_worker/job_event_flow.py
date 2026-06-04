@@ -239,15 +239,27 @@ def _normalize_agent_review(value: Any, doc_id: str) -> AgentReview | None:
         except Exception:
             return AgentReview(
                 doc_id=doc_id,
-                reasons=value.get("reasons", []),
-                risk_tags=value.get("risk_tags", []),
+                reasons=value.get("reasons", []) or [],
+                risk_tags=value.get("risk_tags", []) or [],
+                suggested_actions=value.get("suggested_actions", []) or [],
                 publish_recommendation=value.get("publish_recommendation"),
                 decision=value.get("decision"),
+                confidence=value.get("confidence", 0.0),
+                anchored_findings=value.get("anchored_findings", []) or [],
+                detected_pii=value.get("detected_pii", []) or [],
+                document_type=value.get("document_type", ""),
+                diff_summary=value.get("diff_summary", ""),
             )
     return AgentReview(
         doc_id=doc_id,
         reasons=getattr(value, "reasons", []) or [],
         risk_tags=getattr(value, "risk_tags", []) or [],
+        suggested_actions=getattr(value, "suggested_actions", []) or [],
         publish_recommendation=getattr(value, "publish_recommendation", None),
         decision=getattr(value, "decision", None),
+        confidence=getattr(value, "confidence", 0.0),
+        anchored_findings=getattr(value, "anchored_findings", []) or [],
+        detected_pii=getattr(value, "detected_pii", []) or [],
+        document_type=getattr(value, "document_type", ""),
+        diff_summary=getattr(value, "diff_summary", ""),
     )
