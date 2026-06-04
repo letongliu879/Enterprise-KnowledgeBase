@@ -199,10 +199,11 @@ def test_workbench_task_view_uploading_state(client: TestClient, upload_session:
     upload_id = upload_session["upload_id"]
     task = _get(client, f"/workbench/tasks/{upload_id}", uploader_headers)
     assert task["upload_id"] == upload_id
-    # Source file registered in intake is READY, intake job is CREATED
-    assert task["status"] in ("uploading", "parsing")
-    assert task["source_file_state"] == "READY"
-    assert task["intake_job_state"] == "CREATED"
+    # create_upload now only creates a local workbench upload session.
+    # Real source-file registration happens on content upload via document-service.
+    assert task["status"] == "uploading"
+    assert task["source_file_state"] is None
+    assert task["intake_job_state"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -296,15 +297,11 @@ def test_indexing_index_version_active(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 def test_workbench_task_view_upload_still_parsing(client: TestClient, upload_session: dict, uploader_headers: dict) -> None:
-    """Workbench upload session is separate from intake pipeline document flow.
-    The task view derives status from the intake source file state, which
-    remains CREATED because the workbench-registered source file was never
-    processed through enter_document.
-    """
+    """Workbench upload session is separate from the legacy compat publish flow."""
     upload_id = upload_session["upload_id"]
     task = _get(client, f"/workbench/tasks/{upload_id}", uploader_headers)
     assert task["upload_id"] == upload_id
-    assert task["status"] in ("uploading", "parsing")
+    assert task["status"] == "uploading"
 
 
 # ---------------------------------------------------------------------------

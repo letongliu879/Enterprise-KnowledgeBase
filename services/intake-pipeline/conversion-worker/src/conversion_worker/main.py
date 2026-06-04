@@ -15,7 +15,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from reality_rag_contracts import HealthResponse
@@ -30,25 +30,11 @@ from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage
 from reality_rag_contracts import StageName
 
 logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Conversion Worker",
-    description="File conversion, dedup, versioning, and quality assessment for Reality-RAG",
-    version="0.1.0",
-)
+router = APIRouter()
 
 # Service-local converter instance
 _converter = RAGFlowConverter()
 _outbox_dispatcher_task: asyncio.Task[None] | None = None
-
-
-@app.get("/health", response_model=HealthResponse)
-async def health() -> HealthResponse:
-    return HealthResponse(
-        status="ok",
-        service="conversion-worker",
-        version="0.1.0",
-    )
 
 
 class ConversionRunRequest(BaseModel):
@@ -60,37 +46,6 @@ class ConversionRunRequest(BaseModel):
     index_version: str = "v1"
     existing_published_doc_id_by_source_hash: str | None = None
     latest_version_by_logical_id: int | None = None
-
-
-@app.post("/internal/conversion/run")
-async def run_conversion(request: ConversionRunRequest) -> dict:
-    try:
-        inp = ConversionStageInput(
-            schema_version="v1",
-            intake_job_id=request.intake_job_id,
-            collection_id=request.collection_id,
-            source_file_path=request.source_file_path,
-            tenant_id=request.tenant_id,
-            collection_authority_level=request.collection_authority_level,
-            index_version=request.index_version,
-            existing_published_doc_id_by_source_hash=request.existing_published_doc_id_by_source_hash,
-            latest_version_by_logical_id=request.latest_version_by_logical_id,
-        )
-        out = run_conversion_stage(inp, [_converter])
-        return {
-            "schema_version": out.schema_version,
-            "input_hash": out.input_hash,
-            "result_hash": out.result_hash,
-            "conversion_status": out.conversion_result.conversion_status.value if out.conversion_result else None,
-            "preliminary_doc_id": out.preliminary_doc_id,
-            "logical_document_id": out.logical_document_id,
-            "version": out.version,
-            "dedup_skipped": out.dedup_skipped,
-            "skip_reason": out.skip_reason,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
 
 class _ConversionPipeline:
     def __init__(self) -> None:
@@ -123,19 +78,77 @@ async def _outbox_poll_loop() -> None:
         await asyncio.sleep(interval)
 
 
-@asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    global _outbox_dispatcher_task
-    _outbox_dispatcher_task = asyncio.create_task(_outbox_poll_loop())
+def _build_lifespan(*, start_background_poller: bool):
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        global _outbox_dispatcher_task
+        if not start_background_poller:
+            yield
+            return
+
+        _outbox_dispatcher_task = asyncio.create_task(_outbox_poll_loop())
+        try:
+            yield
+        finally:
+            if _outbox_dispatcher_task is not None:
+                _outbox_dispatcher_task.cancel()
+                try:
+                    await _outbox_dispatcher_task
+                except asyncio.CancelledError:
+                    pass
+                _outbox_dispatcher_task = None
+
+    return _lifespan
+
+
+def create_app(*, start_background_poller: bool = True) -> FastAPI:
+    app = FastAPI(
+        title="Conversion Worker",
+        description="File conversion, dedup, versioning, and quality assessment for Reality-RAG",
+        version="0.1.0",
+        lifespan=_build_lifespan(start_background_poller=start_background_poller),
+    )
+    app.include_router(router)
+    return app
+
+
+app = create_app()
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        service="conversion-worker",
+        version="0.1.0",
+    )
+
+
+@router.post("/internal/conversion/run")
+async def run_conversion(request: ConversionRunRequest) -> dict:
     try:
-        yield
-    finally:
-        if _outbox_dispatcher_task is not None:
-            _outbox_dispatcher_task.cancel()
-            try:
-                await _outbox_dispatcher_task
-            except asyncio.CancelledError:
-                pass
-
-
-app.router.lifespan_context = _lifespan
+        inp = ConversionStageInput(
+            schema_version="v1",
+            intake_job_id=request.intake_job_id,
+            collection_id=request.collection_id,
+            source_file_path=request.source_file_path,
+            tenant_id=request.tenant_id,
+            collection_authority_level=request.collection_authority_level,
+            index_version=request.index_version,
+            existing_published_doc_id_by_source_hash=request.existing_published_doc_id_by_source_hash,
+            latest_version_by_logical_id=request.latest_version_by_logical_id,
+        )
+        out = run_conversion_stage(inp, [_converter])
+        return {
+            "schema_version": out.schema_version,
+            "input_hash": out.input_hash,
+            "result_hash": out.result_hash,
+            "conversion_status": out.conversion_result.conversion_status.value if out.conversion_result else None,
+            "preliminary_doc_id": out.preliminary_doc_id,
+            "logical_document_id": out.logical_document_id,
+            "version": out.version,
+            "dedup_skipped": out.dedup_skipped,
+            "skip_reason": out.skip_reason,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client():
-    from indexing_service.main import app
+    from intake_pipeline_indexing_service.main import app
 
     with TestClient(app) as test_client:
         yield test_client

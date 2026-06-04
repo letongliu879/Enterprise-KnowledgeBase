@@ -27,6 +27,8 @@ sys.path.insert(0, str(ROOT / "services" / "admin" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "workbench-api" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "indexing" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "src"))
+sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "document-service" / "src"))
+sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "ingestion-worker" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "approval-service" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "intake-pipeline" / "publishing-worker" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "contracts" / "src"))
@@ -54,6 +56,12 @@ os.environ["RETRIEVAL_BASE_URL"] = "http://testserver/retrieval"
 os.environ["PUBLISHING_WORKER_BASE_URL"] = "http://testserver/publishing"
 os.environ["REALITY_RAG_INDEXING_BASE_URL"] = "http://testserver/indexing"
 os.environ["REALITY_RAG_INTAKE_RUNTIME_DIR"] = str(ROOT / ".verify" / "runtime" / "intake-smoke")
+os.environ["REALITY_RAG_ENABLE_COMPAT_WRITES"] = "true"
+os.environ["ALLOW_LOCAL_FALLBACK_FOR_TESTS"] = "true"
+os.environ["DOCUMENT_SERVICE_BASE_URL"] = "http://testserver/documents"
+os.environ["DOCUMENT_SERVICE_URL"] = "http://testserver/documents"
+os.environ["APPROVAL_SERVICE_URL"] = "http://testserver/approval"
+os.environ["INDEXING_SERVICE_URL"] = "http://testserver/indexing"
 
 # Disable live model calls
 for key in (
@@ -147,6 +155,7 @@ httpx.AsyncClient.__init__ = _patched_async_init  # type: ignore[assignment]
 
 # Patch intake_pipeline's sync httpx.Client usage only (runs in thread pool)
 import intake_pipeline.main as _intake_main  # noqa: E402
+import ingestion_worker.document_service_client as _document_service_client_mod  # noqa: E402
 
 class _HttpxModuleProxy:
     """Proxy that replaces httpx.Client locally for intake_pipeline without mutating the global httpx module."""
@@ -158,7 +167,23 @@ class _HttpxModuleProxy:
     def Client(self):
         return _AsyncClientWrapper
 
+
+class _SyncHttpxModuleProxy(_HttpxModuleProxy):
+    def _call(self, method: str, *args: Any, **kwargs: Any):
+        wrapper = _AsyncClientWrapper(timeout=kwargs.pop("timeout", 30.0))
+        try:
+            return getattr(wrapper, method)(*args, **kwargs)
+        finally:
+            wrapper._run(wrapper._client.aclose())
+
+    def post(self, *args: Any, **kwargs: Any):
+        return self._call("post", *args, **kwargs)
+
+    def get(self, *args: Any, **kwargs: Any):
+        return self._call("get", *args, **kwargs)
+
 _intake_main.httpx = _HttpxModuleProxy(httpx)  # type: ignore[misc]
+_document_service_client_mod.httpx = _SyncHttpxModuleProxy(httpx)  # type: ignore[misc]
 
 # ---------------------------------------------------------------------------
 # Import and mount service apps
@@ -167,6 +192,7 @@ from admin_service.main import app as admin_app
 from workbench_api.main import app as workbench_app
 from indexing_service.main import app as indexing_app
 from intake_pipeline.main import app as intake_app
+from document_service.main import app as document_app
 from approval_service.main import app as approval_app
 from publishing_worker.main import app as publishing_app
 
@@ -192,6 +218,7 @@ class _PrefixApp:
 combined_app.mount("/workbench", _PrefixApp(workbench_app, "/workbench"))
 combined_app.mount("/indexing", indexing_app)
 combined_app.mount("/intake", intake_app)
+combined_app.mount("/documents", document_app)
 combined_app.mount("/approval", approval_app)
 combined_app.mount("/publishing", publishing_app)
 # admin routes embed /admin, and it has /health — mount at / so no stripping occurs.
@@ -215,7 +242,7 @@ def _reset_smoke_db():
 # ---------------------------------------------------------------------------
 # JWT helper
 # ---------------------------------------------------------------------------
-import jwt
+from jose import jwt
 
 
 def _make_token(
@@ -257,7 +284,8 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
-    return TestClient(combined_app)
+    with TestClient(combined_app) as test_client:
+        yield test_client
 
 
 # ---------------------------------------------------------------------------
@@ -271,3 +299,201 @@ def admin_headers(admin_token: str) -> dict[str, str]:
 @pytest.fixture(scope="module")
 def uploader_headers(uploader_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {uploader_token}"}
+
+
+class _FakeSmokeReviewerConfig:
+    model = "smoke-reviewer"
+    prompt_version = "smoke"
+    artifact_schema_version = "v2"
+
+
+class _FakeSmokeReviewer:
+    def __init__(self) -> None:
+        self._config = _FakeSmokeReviewerConfig()
+
+    def review(self, *, doc_id: str, canonical_content: str, quality_report, event_hook=None):
+        from reality_rag_contracts import AgentReview, PublishStatus, ReviewDecision
+
+        if event_hook is not None:
+            event_hook(
+                event_type="review.started",
+                payload={
+                    "model": self._config.model,
+                    "prompt_excerpt": "smoke fake reviewer",
+                    "canonical_excerpt": canonical_content[:200],
+                },
+            )
+        review = AgentReview(
+            doc_id=doc_id,
+            decision=ReviewDecision.APPROVE,
+            confidence=0.99,
+            reasons=["smoke auto-approve"],
+            risk_tags=[],
+            suggested_actions=[],
+            publish_recommendation=PublishStatus.PUBLISHED,
+            sections_requiring_review=[],
+            document_type="policy",
+            suggested_authority_level=5,
+            detected_pii=[],
+            diff_summary="smoke fake review",
+            anchored_findings=[],
+        )
+        if event_hook is not None:
+            event_hook(
+                event_type="review.completed",
+                payload=review.model_dump(mode="json"),
+            )
+        review._llm_call_records = []  # type: ignore[attr-defined]
+        return review
+
+
+def _build_real_chain_pipeline():
+    from ingestion_worker.pipeline import IngestionPipeline
+    from intake_runtime.agent_review_cache import get_agent_review_cache
+    from intake_runtime.converters.ragflow_converter import RAGFlowConverter
+
+    return IngestionPipeline(
+        converters=[RAGFlowConverter()],
+        agent_reviewer=_FakeSmokeReviewer(),
+        agent_review_cache=get_agent_review_cache(),
+        telemetry_store=None,
+    )
+
+
+def _source_file_jobs_are_terminal(source_file_ids: list[str]) -> bool:
+    from reality_rag_contracts import IntakeJobState
+    from reality_rag_persistence.database import get_session
+    from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+
+    session = get_session()
+    try:
+        repo = IntakeJobRepository(session)
+        for source_file_id in source_file_ids:
+            job = repo.get_by_source_file_id(source_file_id)
+            if job is None or job.state not in {
+                IntakeJobState.PUBLISHED.value,
+                IntakeJobState.REJECTED.value,
+                IntakeJobState.FAILED.value,
+                IntakeJobState.CANCELLED.value,
+                IntakeJobState.EXPIRED.value,
+                IntakeJobState.AWAITING_APPROVAL.value,
+            }:
+                return False
+        return True
+    finally:
+        session.close()
+
+
+def drain_real_chain_for_source_files(source_file_ids: list[str], *, max_rounds: int = 40) -> None:
+    """Drive the split-owner intake chain to a terminal state in-process.
+
+    This is the in-process real-chain smoke harness for document-service ->
+    FileReady -> orchestrator -> stage workers. It intentionally avoids the
+    compat root `/v1/documents` path.
+    """
+
+    from reality_rag_contracts import StageName
+    from reality_rag_persistence.database import get_session
+    from reality_rag_persistence.outbox import OutboxDispatcher
+
+    from ingestion_worker.domains.publishing_domain import persist_document_and_policy
+    from ingestion_worker.outbox_deliver import make_deliver_callback
+    from intake_runtime.stage_runtime import (
+        execute_conversion_task,
+        execute_publishing_task,
+        execute_review_task,
+    )
+    from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+
+    pipeline = _build_real_chain_pipeline()
+    orchestrator_dispatcher = OutboxDispatcher(
+        session_factory=get_session,
+        deliver=make_deliver_callback(),
+        should_process=lambda event: event.event_type != "StageTaskRequested",
+        batch_size=100,
+    )
+    conversion_dispatcher = OutboxDispatcher(
+        session_factory=get_session,
+        deliver=make_stage_task_deliver(
+            stage_name=StageName.CONVERSION,
+            consumer_id="conversion-worker:stage-task:smoke",
+            worker_id="worker-conversion-smoke",
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_conversion_task(
+                session,
+                stage_task_id,
+                intake_job_id,
+                pipeline,
+                worker_id,
+            ),
+        ),
+        should_process=make_stage_task_filter(StageName.CONVERSION),
+        batch_size=100,
+    )
+    review_dispatcher = OutboxDispatcher(
+        session_factory=get_session,
+        deliver=make_stage_task_deliver(
+            stage_name=StageName.AGENT_REVIEW,
+            consumer_id="agent-review-worker:stage-task:smoke",
+            worker_id="worker-agent-review-smoke",
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_review_task(
+                session,
+                stage_task_id,
+                intake_job_id,
+                pipeline,
+                worker_id,
+            ),
+        ),
+        should_process=make_stage_task_filter(StageName.AGENT_REVIEW),
+        batch_size=100,
+    )
+    publishing_dispatcher = OutboxDispatcher(
+        session_factory=get_session,
+        deliver=make_stage_task_deliver(
+            stage_name=StageName.PUBLISHING,
+            consumer_id="publishing-worker:stage-task:smoke",
+            worker_id="worker-publishing-smoke",
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: execute_publishing_task(
+                session,
+                stage_task_id,
+                intake_job_id,
+                worker_id,
+                persist_fn=persist_document_and_policy,
+            ),
+        ),
+        should_process=make_stage_task_filter(StageName.PUBLISHING),
+        batch_size=100,
+    )
+
+    for _ in range(max_rounds):
+        orchestrator_dispatcher.poll_and_dispatch()
+        conversion_dispatcher.poll_and_dispatch()
+        review_dispatcher.poll_and_dispatch()
+        publishing_dispatcher.poll_and_dispatch()
+        orchestrator_dispatcher.poll_and_dispatch()
+        if _source_file_jobs_are_terminal(source_file_ids):
+            return
+
+    raise AssertionError(f"Real-chain smoke did not reach terminal state for source files: {source_file_ids}")
+
+
+def reconcile_workbench_tasks(*, limit: int = 100) -> dict[str, Any]:
+    import asyncio
+
+    from reality_rag_persistence.database import get_session
+
+    from workbench_api.downstream_clients import ApprovalClient, IndexingClient, IntakeClient
+    from workbench_api.projections.reconciler import ProjectionReconciler
+
+    session = next(get_session())
+    try:
+        reconciler = ProjectionReconciler(
+            session=session,
+            intake_client=IntakeClient(),
+            approval_client=ApprovalClient(),
+            indexing_client=IndexingClient(),
+        )
+        result = asyncio.run(reconciler.reconcile_tasks(limit=limit))
+        session.commit()
+        return result
+    finally:
+        session.close()

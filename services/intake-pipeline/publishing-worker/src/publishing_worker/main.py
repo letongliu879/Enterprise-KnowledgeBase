@@ -15,7 +15,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from reality_rag_contracts import CanonicalMetadata, HealthResponse, StageName
@@ -27,13 +27,45 @@ from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage
 from .publishing_domain import PublishingService, persist_document_and_policy, update_published_document_state
 
 logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Publishing Worker",
-    description="Document and policy persistence for Reality-RAG",
-    version="0.1.0",
-)
 _outbox_dispatcher_task: asyncio.Task[None] | None = None
+router = APIRouter()
+
+
+def _build_lifespan(*, start_background_poller: bool):
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        global _outbox_dispatcher_task
+        if not start_background_poller:
+            yield
+            return
+
+        _outbox_dispatcher_task = asyncio.create_task(_outbox_poll_loop())
+        try:
+            yield
+        finally:
+            if _outbox_dispatcher_task is not None:
+                _outbox_dispatcher_task.cancel()
+                try:
+                    await _outbox_dispatcher_task
+                except asyncio.CancelledError:
+                    pass
+                _outbox_dispatcher_task = None
+
+    return _lifespan
+
+
+def create_app(*, start_background_poller: bool = True) -> FastAPI:
+    app = FastAPI(
+        title="Publishing Worker",
+        description="Document and policy persistence for Reality-RAG",
+        version="0.1.0",
+        lifespan=_build_lifespan(start_background_poller=start_background_poller),
+    )
+    app.include_router(router)
+    return app
+
+
+app = create_app()
 
 
 def _sync_lifecycle_to_retrieval(
@@ -80,7 +112,7 @@ def _sync_lifecycle_to_retrieval(
         logger.warning("retrieval lifecycle sync failed with exception", exc_info=True)
 
 
-@app.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
@@ -122,7 +154,7 @@ def _get_published_document_info(final_doc_id: str) -> dict[str, str] | None:
         session.close()
 
 
-@app.post("/internal/published-documents/{final_doc_id}/archive")
+@router.post("/internal/published-documents/{final_doc_id}/archive")
 async def archive_published_document(final_doc_id: str, request: LifecycleRequest) -> LifecycleResponse:
     try:
         from reality_rag_contracts import PublishedDocumentState
@@ -152,7 +184,7 @@ async def archive_published_document(final_doc_id: str, request: LifecycleReques
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/internal/published-documents/{final_doc_id}/retract")
+@router.post("/internal/published-documents/{final_doc_id}/retract")
 async def retract_published_document(final_doc_id: str, request: LifecycleRequest) -> LifecycleResponse:
     try:
         from reality_rag_contracts import PublishedDocumentState
@@ -189,7 +221,7 @@ class PersistRequest(BaseModel):
     collection_authority_level: int = 0
 
 
-@app.post("/internal/publishing/persist")
+@router.post("/internal/publishing/persist")
 async def persist(request: PersistRequest) -> dict:
     try:
         metadata = CanonicalMetadata.model_validate(request.canonical_metadata)
@@ -230,21 +262,3 @@ async def _outbox_poll_loop() -> None:
         except Exception:
             logger.exception("publishing outbox poll failed")
         await asyncio.sleep(interval)
-
-
-@asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    global _outbox_dispatcher_task
-    _outbox_dispatcher_task = asyncio.create_task(_outbox_poll_loop())
-    try:
-        yield
-    finally:
-        if _outbox_dispatcher_task is not None:
-            _outbox_dispatcher_task.cancel()
-            try:
-                await _outbox_dispatcher_task
-            except asyncio.CancelledError:
-                pass
-
-
-app.router.lifespan_context = _lifespan

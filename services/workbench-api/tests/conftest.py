@@ -34,7 +34,8 @@ def _setup_db():
 @pytest.fixture
 def client():
     from workbench_api.main import app
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def _make_token(user_id: str, email: str, roles: list[str], tenant_id: str = "tenant_acme", allowed_collections: list[str] | None = None) -> str:

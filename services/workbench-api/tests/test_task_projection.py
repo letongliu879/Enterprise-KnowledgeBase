@@ -48,23 +48,16 @@ class TestTaskProjection:
         assert "progress_pct" in data
 
     def test_task_status_derived(self, client: TestClient, uploader_token: str):
-        import respx
-        from httpx import Response
-        with respx.mock:
-            # Mock intake so upload creation succeeds
-            respx.post("http://localhost:8003/internal/source-files").mock(
-                return_value=Response(200, json={"source_file_id": "sf_001"})
-            )
-            create_resp = client.post(
-                "/workbench/uploads",
-                headers={"Authorization": f"Bearer {uploader_token}"},
-                json={
-                    "collection_id": "col_default",
-                    "filename": "test.pdf",
-                    "mime_type": "application/pdf",
-                    "size_bytes": 1024,
-                },
-            )
+        create_resp = client.post(
+            "/workbench/uploads",
+            headers={"Authorization": f"Bearer {uploader_token}"},
+            json={
+                "collection_id": "col_default",
+                "filename": "test.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1024,
+            },
+        )
         upload_id = create_resp.json()["upload_id"]
         resp = client.get(f"/workbench/tasks/{upload_id}", headers={"Authorization": f"Bearer {uploader_token}"})
         data = resp.json()
@@ -78,22 +71,16 @@ class TestTaskProjectionSQL:
 
     def test_projection_created_on_upload(self, client: TestClient, uploader_token: str, db_session: Session):
         """Upload should automatically create a projection row."""
-        import respx
-        from httpx import Response
-        with respx.mock:
-            respx.post("http://localhost:8003/internal/source-files").mock(
-                return_value=Response(200, json={"source_file_id": "sf_001"})
-            )
-            create_resp = client.post(
-                "/workbench/uploads",
-                headers={"Authorization": f"Bearer {uploader_token}"},
-                json={
-                    "collection_id": "col_default",
-                    "filename": "test.pdf",
-                    "mime_type": "application/pdf",
-                    "size_bytes": 1024,
-                },
-            )
+        create_resp = client.post(
+            "/workbench/uploads",
+            headers={"Authorization": f"Bearer {uploader_token}"},
+            json={
+                "collection_id": "col_default",
+                "filename": "test.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1024,
+            },
+        )
         upload_id = create_resp.json()["upload_id"]
 
         repo = TaskProjectionRepository(db_session)
@@ -105,22 +92,16 @@ class TestTaskProjectionSQL:
 
     def test_list_reads_from_projection_not_downstream(self, client: TestClient, uploader_token: str, db_session: Session):
         """list_tasks should return projection rows even if downstream is unreachable."""
-        import respx
-        from httpx import Response
-        with respx.mock:
-            respx.post("http://localhost:8003/internal/source-files").mock(
-                return_value=Response(200, json={"source_file_id": "sf_001"})
-            )
-            client.post(
-                "/workbench/uploads",
-                headers={"Authorization": f"Bearer {uploader_token}"},
-                json={
-                    "collection_id": "col_default",
-                    "filename": "downstream-off.pdf",
-                    "mime_type": "application/pdf",
-                    "size_bytes": 1024,
-                },
-            )
+        client.post(
+            "/workbench/uploads",
+            headers={"Authorization": f"Bearer {uploader_token}"},
+            json={
+                "collection_id": "col_default",
+                "filename": "downstream-off.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1024,
+            },
+        )
         # No downstream mocks needed — list should read SQL only
         resp = client.get("/workbench/tasks", headers={"Authorization": f"Bearer {uploader_token}"})
         assert resp.status_code == 200
@@ -135,9 +116,6 @@ class TestTaskProjectionSQL:
         import respx
         from httpx import Response
         with respx.mock:
-            respx.post("http://localhost:8003/internal/source-files").mock(
-                return_value=Response(200, json={"source_file_id": "sf_001"})
-            )
             respx.post("http://localhost:8006/upload").mock(
                 return_value=Response(200, json={"status": "uploaded", "source_file_id": "sf_001"})
             )

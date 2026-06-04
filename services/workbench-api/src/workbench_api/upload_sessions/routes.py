@@ -3,9 +3,10 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_auth, require_role, CurrentUser
-from ..downstream_clients import IntakeClient, DocumentServiceClient
+from ..downstream_clients import DocumentServiceClient
 from ..errors import not_found, forbidden
 from .models import UploadCreateRequest, UploadListResponse
 from .repository import UploadSessionRepository
@@ -17,7 +18,6 @@ router = APIRouter(prefix="/workbench/uploads")
 def _get_service(session: Session = Depends(get_db), user: CurrentUser = Depends(require_auth)) -> UploadSessionService:
     return UploadSessionService(
         UploadSessionRepository(session),
-        IntakeClient(),
         DocumentServiceClient(),
         actor_id=user.user_id,
         db_session=session,

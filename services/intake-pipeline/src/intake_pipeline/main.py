@@ -24,6 +24,10 @@ from intake_pipeline.publishing_facade import ApprovalDecision, PublishRequest, 
 from intake_pipeline.state_models import ApprovalTicketState, IntakeJobState, PublishState, SourceFileState
 
 
+class CompatConfigurationError(RuntimeError):
+    """Compatibility-only root service is missing required explicit configuration."""
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -72,6 +76,44 @@ def _payload_hash(*parts: object) -> str:
         digest.update(str(part).encode("utf-8"))
         digest.update(b"\n")
     return f"sha256:{digest.hexdigest()}"
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _compat_writes_enabled() -> bool:
+    return _env_flag("REALITY_RAG_ENABLE_COMPAT_WRITES")
+
+
+def _allow_local_fallback_for_tests() -> bool:
+    return _env_flag("ALLOW_LOCAL_FALLBACK_FOR_TESTS")
+
+
+def _require_compat_service_url(env_name: str, *, default_url: str, purpose: str) -> str:
+    explicit = os.environ.get(env_name, "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    if _allow_local_fallback_for_tests():
+        return default_url.rstrip("/")
+    raise CompatConfigurationError(
+        f"{env_name} is required for compatibility-root {purpose}; "
+        "local fallback is disabled. Set the URL explicitly, or set "
+        "ALLOW_LOCAL_FALLBACK_FOR_TESTS=true only for targeted smoke/tests."
+    )
+
+
+def _require_compat_writes_enabled() -> None:
+    if _compat_writes_enabled():
+        return
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "compatibility-root write endpoints are disabled by default; "
+            "use the split-owner services, or set REALITY_RAG_ENABLE_COMPAT_WRITES=true "
+            "for explicit legacy/smoke usage"
+        ),
+    )
 
 
 class EnterDocumentRequest(BaseModel):
@@ -203,7 +245,11 @@ class IntakeService:
         if request.source_binary_ref and request.source_binary_ref.startswith("s3://"):
             import urllib.request as _ur
             import urllib.parse as _up
-            s3_ep = os.environ.get("S3_ENDPOINT", "http://127.0.0.1:9000").rstrip("/")
+            s3_ep = _require_compat_service_url(
+                "S3_ENDPOINT",
+                default_url="http://127.0.0.1:9000",
+                purpose="S3 source download",
+            )
             _rest = request.source_binary_ref[5:]
             _bucket, _key = _rest.split("/", 1)
             _quoted_key = _up.quote(_key, safe="")
@@ -305,7 +351,11 @@ class IntakeService:
                 },
                 "trace_id": trace_id,
             }
-            indexing_base_url = os.environ.get("REALITY_RAG_INDEXING_BASE_URL", "http://127.0.0.1:18080")
+            indexing_base_url = _require_compat_service_url(
+                "REALITY_RAG_INDEXING_BASE_URL",
+                default_url="http://127.0.0.1:18080",
+                purpose="parse preview",
+            )
             with httpx.Client(timeout=10.0) as client:
                 preview_response = client.post(
                     f"{indexing_base_url}/internal/parse-previews",
@@ -632,7 +682,11 @@ class IntakeService:
             f"build_request_id={command.build_request_id};final_doc_id={final_doc_id}",
         )
 
-        indexing_base_url = os.environ.get("REALITY_RAG_INDEXING_BASE_URL", "http://127.0.0.1:18080")
+        indexing_base_url = _require_compat_service_url(
+            "REALITY_RAG_INDEXING_BASE_URL",
+            default_url="http://127.0.0.1:18080",
+            purpose="index build",
+        )
         with httpx.Client(timeout=60.0) as client:
             indexing_started_at = datetime.now(timezone.utc)
             response = client.post(
@@ -797,7 +851,11 @@ def health() -> dict[str, str]:
 
 @app.post("/v1/documents")
 def enter_document(request: EnterDocumentRequest) -> dict[str, object]:
-    record = service.enter_document(request)
+    _require_compat_writes_enabled()
+    try:
+        record = service.enter_document(request)
+    except CompatConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     return record.model_dump(mode="json")
 
 
@@ -828,6 +886,7 @@ def get_lineage_by_trace(trace_id: str) -> dict[str, object]:
 
 @app.post("/v1/documents/{source_file_id}/approval-tickets")
 def submit_for_approval(source_file_id: str, request: SubmitApprovalRequest) -> dict[str, object]:
+    _require_compat_writes_enabled()
     try:
         ticket = service.submit_for_approval(source_file_id, request)
     except KeyError as error:
@@ -848,10 +907,13 @@ def get_approval_ticket(ticket_id: str) -> dict[str, object]:
 
 @app.post("/v1/approval-tickets/{ticket_id}/approve")
 def approve_ticket(ticket_id: str, request: ApproveTicketRequest) -> dict[str, object]:
+    _require_compat_writes_enabled()
     try:
         return service.approve_ticket(ticket_id, request)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except CompatConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except httpx.HTTPError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     except ValueError as error:
@@ -860,10 +922,13 @@ def approve_ticket(ticket_id: str, request: ApproveTicketRequest) -> dict[str, o
 
 @app.post("/v1/documents/{source_file_id}/approve-and-publish")
 def approve_and_publish(source_file_id: str, request: ApproveAndPublishRequest) -> dict[str, object]:
+    _require_compat_writes_enabled()
     try:
         return service.approve_and_publish(source_file_id, request)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except CompatConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except httpx.HTTPError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     except ValueError as error:

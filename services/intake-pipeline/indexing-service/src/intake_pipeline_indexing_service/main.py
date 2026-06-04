@@ -1,14 +1,11 @@
-"""FastAPI application for the Indexing Service.
+"""FastAPI application for the intake-pipeline indexing facade.
 
 This service owns:
-  - chunking / embedding
-  - vector index upsert
-  - index activate / rollback
-  - outbox: IndexReady
+  - forwarding index run/activate/rollback requests
+  - bootstrapping the modern indexing runtime owner
 
-API contract is identical to the former ingestion-worker indexing endpoints
-so that ingestion-worker can forward requests here when INDEXING_SERVICE_URL
-is set.
+Its package name is intentionally distinct from ``services/indexing`` to avoid
+cross-workspace import collisions.
 """
 
 from __future__ import annotations
