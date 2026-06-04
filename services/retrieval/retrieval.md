@@ -395,7 +395,7 @@ rerank 模式：
     - Access query returns same doc_id/chunk through live retrieval path
   - JWT auth 使用 smoke-test-secret（test double）；production JWT 配置（issuer/audience）已实现，见 admin 测试
   - **Redis cache**: PROVEN — 32/32 PASS strict smoke (2026-05-28): cache miss → hit → purge → miss；log: `Redis cache purge: pattern=reality-rag:retrieval:*, deleted=3`。Normal mode uses noop provider.
-  - **Strict mode 完整选项**: `py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends`
+  - **Strict mode 完整选项**: `uv run python scripts/run_real_runtime_smoke.py --require-live-backends`
     - 禁止所有静默 fallback：recall stub、rerank heuristic、embedding empty/stub 均抛出 `IllegalStateException`
     - OpenSearch/Qdrant/SiliconFlow 任一不可达 → FAIL
 

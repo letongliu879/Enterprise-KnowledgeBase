@@ -56,7 +56,7 @@ Run these commands locally before considering a contract change complete:
 ```bash
 # Python contracts: schema validation + roundtrip + drift guard
 cd packages/contracts
-py -3.14 -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Access service: wire tests + integration tests
 cd services/access

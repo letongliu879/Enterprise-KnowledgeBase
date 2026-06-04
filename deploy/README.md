@@ -16,14 +16,14 @@ cp deploy/.env.example deploy/.env
 # Edit deploy/.env — set Redis password, SiliconFlow API key, DB password
 
 # Run normal smoke
-py -3.14 scripts/run_real_runtime_smoke.py
+uv run python scripts/run_real_runtime_smoke.py
 
 # Run strict live dependency proof
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
+uv run python scripts/run_real_runtime_smoke.py --require-live-backends
 
 # Run strict Redis cache proof
 REDIS_PASSWORD=<password> \
-  py -3.14 scripts/run_real_runtime_smoke.py \
+  uv run python scripts/run_real_runtime_smoke.py \
   --require-live-backends \
   --require-redis-cache
 ```
@@ -76,7 +76,7 @@ docker build -t ekb-retrieval -f deploy/Dockerfile.java \
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-**Known limitation**: Python Dockerfile copies ALL service source directories into each image because services cross-import via PYTHONPATH. Refactoring into proper installable packages is a future optimization.
+**Note**: Python Dockerfile uses `uv sync` to install workspace members and third-party dependencies. All services are installed into the same image because workspace members cross-import each other. This is the intended uv workspace behavior.
 
 ## Environment Configuration
 

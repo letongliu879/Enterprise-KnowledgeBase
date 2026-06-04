@@ -3,12 +3,12 @@
 EKB Service Manager — 生产级本地开发服务守护进程。
 
 Usage:
-    py -3.14 scripts/ekb-svc.py start [--all] [--java] [--python] [--build] [--watch]
-    py -3.14 scripts/ekb-svc.py stop
-    py -3.14 scripts/ekb-svc.py status
-    py -3.14 scripts/ekb-svc.py logs <service> [--follow]
-    py -3.14 scripts/ekb-svc.py restart <service>
-    py -3.14 scripts/ekb-svc.py build [--java]
+    uv run python scripts/ekb-svc.py start [--all] [--java] [--python] [--build] [--watch]
+    uv run python scripts/ekb-svc.py stop
+    uv run python scripts/ekb-svc.py status
+    uv run python scripts/ekb-svc.py logs <service> [--follow]
+    uv run python scripts/ekb-svc.py restart <service>
+    uv run python scripts/ekb-svc.py build [--java]
 """
 
 from __future__ import annotations

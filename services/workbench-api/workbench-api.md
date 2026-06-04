@@ -485,7 +485,7 @@ workbench-ui   ->  workbench-api ->  在已有规则下处理内容
 
 ```text
 cd packages/contracts
-py -3.14 -m pytest tests/ -v
+uv run pytest tests/ -v
 
 cd services/access
 mvn test

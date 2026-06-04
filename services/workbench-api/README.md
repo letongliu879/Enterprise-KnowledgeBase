@@ -8,21 +8,24 @@ Workbench is a **Human Workflow BFF + Projection Store**. It does not own docume
 
 ## Setup
 
+项目使用 uv workspace，根目录执行 `uv sync` 即可自动安装所有依赖。
+
+如需单独安装：
+
 ```bash
-cd services/workbench-api
-py -3.14 -m pip install -e ".[dev]"
+uv pip install -e services/workbench-api
 ```
 
 ## Run
 
 ```bash
-py -3.14 -m uvicorn workbench_api.main:app --reload --port 8005
+uv run python -m uvicorn workbench_api.main:app --reload --port 8005
 ```
 
 ## Test
 
 ```bash
-py -3.14 -m pytest tests/ -v
+cd services/workbench-api && uv run pytest tests/ -v
 ```
 
 ## Architecture

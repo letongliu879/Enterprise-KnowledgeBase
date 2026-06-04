@@ -34,23 +34,25 @@ services/admin/src/admin_service/
 
 ### Install dependencies
 
+项目使用 uv workspace，根目录执行 `uv sync` 即可自动安装所有依赖（包括 workspace 内本地包）。
+
+如需单独安装：
+
 ```bash
-cd packages/contracts && pip install -e .
-cd packages/persistence && pip install -e .
-cd services/admin && pip install -e ".[dev]"
+uv pip install -e packages/contracts -e packages/persistence -e services/admin
 ```
 
 ### Run tests
 
 ```bash
-cd services/admin && py -3.14 -m pytest tests/ -v
+cd services/admin && uv run pytest tests/ -v
 ```
 
 ### Run the service
 
 ```bash
 cd services/admin
-ADMIN_JWT_SECRET=your-secret-here py -3.14 -m uvicorn admin_service.main:app --reload --port 18084
+ADMIN_JWT_SECRET=your-secret-here uv run python -m uvicorn admin_service.main:app --reload --port 18084
 ```
 
 ## Environment Variables

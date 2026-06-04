@@ -13,11 +13,17 @@ There are **two** smoke test modes:
 
 All Python FastAPI services are mounted under a single combined ASGI app (`combined_app` in `conftest.py`). Cross-service HTTP calls route in-process via `httpx.ASGITransport`.
 
+Important:
+
+- This smoke still contains a **legacy compat intake segment** for `enter_document` and `approve-and-publish`.
+- `conftest.py` now sets `REALITY_RAG_ENABLE_COMPAT_WRITES=true` and `ALLOW_LOCAL_FALLBACK_FOR_TESTS=true` explicitly so this legacy usage is not silent.
+- It should not be treated as proof that the default intake validation path has fully migrated off `/v1/documents`.
+
 ```
 TestClient(combined_app)
   ├── /workbench  → workbench_api.main:app  (prefix re-added after mount strip)
   ├── /indexing   → indexing_service.main:app
-  ├── /intake     → intake_pipeline.main:app
+  ├── /intake     → intake_pipeline.main:app  (legacy compat segment still used by this smoke)
   ├── /approval   → approval_service.main:app
   ├── /publishing → publishing_worker.main:app
   └── /           → admin_service.main:app      (admin routes embed /admin)
@@ -27,7 +33,7 @@ TestClient(combined_app)
 
 ```bash
 cd services/smoke_tests
-py -3.14 -m pytest test_mvp_python_chain.py -v
+uv run pytest test_mvp_python_chain.py -v
 ```
 
 ### Key Design Decisions
@@ -72,22 +78,22 @@ py -3.14 -m pytest test_mvp_python_chain.py -v
 
 ```bash
 # Normal mode — stub fallback allowed, no Redis, smoke JWT secret (28/28, PROVEN)
-py -3.14 scripts/run_real_runtime_smoke.py
+uv run python scripts/run_real_runtime_smoke.py
 
 # Strict live backends — require OpenSearch/Qdrant/SiliconFlow (28/28, PROVEN)
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
+uv run python scripts/run_real_runtime_smoke.py --require-live-backends
 
 # Strict live + Redis — also require Redis cache miss/hit/purge proof (PROVEN, 32/32)
-REDIS_PASSWORD=<password> py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
+REDIS_PASSWORD=<password> uv run python scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
 
 # Full production — live + Redis + production JWT config (NOT RUN)
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache --require-production-jwt-config
+uv run python scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache --require-production-jwt-config
 
 # Connect to already-running services
-py -3.14 scripts/run_real_runtime_smoke.py --use-existing-services
+uv run python scripts/run_real_runtime_smoke.py --use-existing-services
 
 # Keep services running after smoke
-py -3.14 scripts/run_real_runtime_smoke.py --keep-running
+uv run python scripts/run_real_runtime_smoke.py --keep-running
 ```
 
 ### Port Map

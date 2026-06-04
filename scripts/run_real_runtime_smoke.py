@@ -7,13 +7,13 @@ This is NOT an in-process ASGI smoke - each service runs in its own process.
 
 Usage:
     # Auto-start all services, run smoke, stop services
-    py -3.14 scripts/run_real_runtime_smoke.py
+    uv run python scripts/run_real_runtime_smoke.py
 
     # Connect to already-running services
-    py -3.14 scripts/run_real_runtime_smoke.py --use-existing-services
+    uv run python scripts/run_real_runtime_smoke.py --use-existing-services
 
     # Keep services running after smoke (for manual exploration)
-    py -3.14 scripts/run_real_runtime_smoke.py --keep-running
+    uv run python scripts/run_real_runtime_smoke.py --keep-running
 
 Exit codes:
     0  All smoke steps passed

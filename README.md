@@ -11,7 +11,7 @@
 | 层级 | 技术 |
 |---|---|
 | 前端工作台 | Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui |
-| 摄入与治理服务 | Python 3.14 + FastAPI + SQLAlchemy + Celery |
+| 摄入与治理服务 | Python 3.12+ + FastAPI + SQLAlchemy + Celery |
 | 在线接入与检索 | Java 21 + Spring Boot + JDBC |
 | 向量与文本检索 | OpenSearch (BM25) + Qdrant (Dense Vector) |
 | 嵌入与精排 | SiliconFlow API (BAAI/bge-m3) |
@@ -99,7 +99,8 @@
 
 | 依赖 | 版本 | 说明 |
 |---|---|---|
-| Python | 3.14 | Python 服务运行时 |
+| Python | 3.12+ | Python 服务运行时 |
+| uv | latest | Python 包管理与 workspace |
 | Node.js | 20+ | 前端构建 |
 | Java | 21 | Java 服务运行时 |
 | Maven | 3.9+ | Java 构建 |
@@ -107,8 +108,6 @@
 | OpenSearch | 2.x | 文本检索 |
 | Qdrant | latest | 向量检索 |
 | Redis / Valkey | 7+ | 检索缓存 |
-
-> **Windows 用户**：使用 `py -3.14` 替代 `python3.14`。
 
 ---
 
@@ -137,14 +136,14 @@ docker compose up -d postgres opensearch qdrant redis
 
 ### 步骤 2：安装 Python 依赖
 
-所有 Python 服务共用项目根目录的 `.venv`（已存在，Python 3.14）。一次性安装所有第三方依赖：
+项目使用 [uv](https://docs.astral.sh/uv/) 管理 Python workspace。根目录 `pyproject.toml` 定义了 workspace members，依赖锁定在 `uv.lock`。
 
 ```bash
-# 在项目根目录（.venv 已激活）
-pip install -r requirements.txt
+# 在项目根目录
+uv sync
 ```
 
-本地包（`packages/*`、`services/*`）通过 `PYTHONPATH` 暴露，无需 editable install。
+uv 会自动创建/管理虚拟环境，workspace 内的本地包（`packages/*`、`services/*`）通过 `tool.uv.workspace` 自动链接，无需手动 PYTHONPATH。
 
 ---
 
@@ -223,17 +222,17 @@ SPRING_PROFILES_ACTIVE=smoke
 **推荐：EKB Service Manager（一键启动，自动处理依赖、编译、健康检查）**
 
 ```bash
-# 在项目根目录执行（.venv 已激活）
-py -3.14 scripts/ekb-svc.py start
+# 在项目根目录执行
+uv run python scripts/ekb-svc.py start
 
 # 只启动 Java 服务
-py -3.14 scripts/ekb-svc.py start --java
+uv run python scripts/ekb-svc.py start --java
 
 # 只启动 Python 服务
-py -3.14 scripts/ekb-svc.py start --python
+uv run python scripts/ekb-svc.py start --python
 
 # 跳过基础设施检查
-py -3.14 scripts/ekb-svc.py start --no-infra-check
+uv run python scripts/ekb-svc.py start --no-infra-check
 ```
 
 功能：
@@ -249,17 +248,17 @@ py -3.14 scripts/ekb-svc.py start --no-infra-check
 
 **诊断命令**：
 ```bash
-py -3.14 scripts/ekb-svc.py status              # 查看所有服务状态
-py -3.14 scripts/ekb-svc.py logs retrieval      # 查看 retrieval 日志
-py -3.14 scripts/ekb-svc.py logs retrieval -f   # 实时跟踪日志
-py -3.14 scripts/ekb-svc.py restart retrieval   # 重启单个服务
-py -3.14 scripts/ekb-svc.py stop                # 停止所有服务
-py -3.14 scripts/ekb-svc.py build               # 手动编译 Java 服务
+uv run python scripts/ekb-svc.py status              # 查看所有服务状态
+uv run python scripts/ekb-svc.py logs retrieval      # 查看 retrieval 日志
+uv run python scripts/ekb-svc.py logs retrieval -f   # 实时跟踪日志
+uv run python scripts/ekb-svc.py restart retrieval   # 重启单个服务
+uv run python scripts/ekb-svc.py stop                # 停止所有服务
+uv run python scripts/ekb-svc.py build               # 手动编译 Java 服务
 ```
 
 **手动启动（备选，每个服务一个终端）**
 
-如果你需要单独调试某个服务，可以手动启动。所有 Python 服务共用项目根目录的 `.venv`。
+如果你需要单独调试某个服务，可以手动启动。uv workspace 自动处理包路径。
 
 **依赖顺序（默认真实链路）**：
 
@@ -279,67 +278,25 @@ PostgreSQL / OpenSearch / Qdrant / Redis (Docker)
   → access (18181)
 ```
 
-**Windows PowerShell**（每个服务一个终端）：
-
-```powershell
-$env:PYTHONPATH = "$PWD\packages\contracts\src;$PWD\packages\persistence\src;$PWD\packages\documents\src;$PWD\packages\ragflow_runtime\src;$PWD\services\admin\src;$PWD\services\workbench-api\src;$PWD\services\indexing\src;$PWD\services\intake-pipeline\src;$PWD\services\intake-pipeline\publishing-worker\src;$PWD\services\intake-pipeline\document-service\src"
-$env:DOCUMENT_SERVICE_URL = "http://127.0.0.1:8006"
-$env:APPROVAL_SERVICE_URL = "http://127.0.0.1:18087"
-$env:PUBLISHING_WORKER_URL = "http://127.0.0.1:18086"
-$env:INDEXING_SERVICE_URL = "http://127.0.0.1:18080"
-$env:ALLOW_LOCAL_FALLBACK_FOR_TESTS = "false"
-
-# Terminal 1 — admin
-python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
-
-# Terminal 2 — indexing
-python -m uvicorn indexing_service.main:app --host 0.0.0.0 --port 18080
-
-# Terminal 3 — document-service
-python -m uvicorn document_service.main:app --host 0.0.0.0 --port 8006
-
-# Terminal 4 — approval-service
-python -m uvicorn approval_service.main:app --host 0.0.0.0 --port 18087
-
-# Terminal 5 — conversion-worker
-python -m uvicorn conversion_worker.main:app --host 0.0.0.0 --port 18089
-
-# Terminal 6 — agent-review-worker
-python -m uvicorn agent_review_worker.main:app --host 0.0.0.0 --port 18090
-
-# Terminal 7 — publishing-worker
-python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
-
-# Terminal 8 — ingestion-worker
-python -m uvicorn ingestion_worker.main:app --host 0.0.0.0 --port 18088
-
-# Terminal 9 — intake-pipeline (compat/smoke only)
-python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085
-
-# Terminal 10 — workbench-api
-python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
-```
-
-**Linux / macOS**（每个服务一个终端）：
-
 ```bash
-export PYTHONPATH="$PWD/packages/contracts/src:$PWD/packages/persistence/src:$PWD/packages/documents/src:$PWD/packages/ragflow_runtime/src:$PWD/services/admin/src:$PWD/services/workbench-api/src:$PWD/services/indexing/src:$PWD/services/intake-pipeline/src:$PWD/services/intake-pipeline/publishing-worker/src:$PWD/services/intake-pipeline/document-service/src"
+# 环境变量（各服务共用）
 export DOCUMENT_SERVICE_URL="http://127.0.0.1:8006"
 export APPROVAL_SERVICE_URL="http://127.0.0.1:18087"
 export PUBLISHING_WORKER_URL="http://127.0.0.1:18086"
 export INDEXING_SERVICE_URL="http://127.0.0.1:18080"
 export ALLOW_LOCAL_FALLBACK_FOR_TESTS="false"
 
-python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
-python -m uvicorn indexing_service.main:app --host 0.0.0.0 --port 18080
-python -m uvicorn document_service.main:app --host 0.0.0.0 --port 8006
-python -m uvicorn approval_service.main:app --host 0.0.0.0 --port 18087
-python -m uvicorn conversion_worker.main:app --host 0.0.0.0 --port 18089
-python -m uvicorn agent_review_worker.main:app --host 0.0.0.0 --port 18090
-python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
-python -m uvicorn ingestion_worker.main:app --host 0.0.0.0 --port 18088
-python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085  # compat/smoke only
-python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
+# 各服务（每个一个终端）
+uv run python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
+uv run python -m uvicorn indexing_service.main:app --host 0.0.0.0 --port 18080
+uv run python -m uvicorn document_service.main:app --host 0.0.0.0 --port 8006
+uv run python -m uvicorn approval_service.main:app --host 0.0.0.0 --port 18087
+uv run python -m uvicorn conversion_worker.main:app --host 0.0.0.0 --port 18089
+uv run python -m uvicorn agent_review_worker.main:app --host 0.0.0.0 --port 18090
+uv run python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
+uv run python -m uvicorn ingestion_worker.main:app --host 0.0.0.0 --port 18088
+uv run python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085  # compat/smoke only
+uv run python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
 ```
 
 **Java 服务**（每个一个终端）：
@@ -403,7 +360,7 @@ curl http://localhost:18182/health        # retrieval
 curl http://localhost:18181/health        # access
 
 # 2. 运行时冒烟测试（默认验证 split intake chain，不依赖 /v1/documents）
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
+uv run python scripts/run_real_runtime_smoke.py --require-live-backends
 ```
 
 ---
@@ -414,12 +371,12 @@ py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
 
 ```bash
 # Python 契约包
-cd packages/contracts && py -3.14 -m pytest tests/ -v
+cd packages/contracts && uv run pytest tests/ -v
 
 # Python 服务
-cd services/admin         && py -3.14 -m pytest tests/ -v
-cd services/workbench-api && py -3.14 -m pytest tests/ -v
-cd services/indexing      && py -3.14 -m pytest tests/ -v
+cd services/admin         && uv run pytest tests/ -v
+cd services/workbench-api && uv run pytest tests/ -v
+cd services/indexing      && uv run pytest tests/ -v
 
 # Java 服务
 cd services/access    && mvn test
@@ -438,13 +395,13 @@ npx playwright test
 
 ```bash
 # 基础模式（默认验证 document-service -> ingestion-worker -> conversion/agent-review -> approval -> publishing -> indexing）
-py -3.14 scripts/run_real_runtime_smoke.py
+uv run python scripts/run_real_runtime_smoke.py
 
 # 严格模式（要求所有真实后端在线）
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends
+uv run python scripts/run_real_runtime_smoke.py --require-live-backends
 
 # 严格模式 + Redis 缓存验证
-py -3.14 scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
+uv run python scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
 ```
 
 ---
@@ -461,12 +418,12 @@ Enterprise KnowledgeBase/
 │   └── openapi/                # REST API 契约
 ├── docs/
 │   ├── architecture.md         # 总体架构设计
-│   ├── MVP_HANDOFF.md          # MVP 交付清单与验证报告
-│   └── ...
+│   └── frontend-workbench.md   # 前端工作台文档
 ├── packages/
 │   ├── contracts/              # Python 运行时契约包
 │   ├── persistence/            # ORM 模型与仓储
-│   └── documents/              # 共享文档域逻辑
+│   ├── documents/              # 共享文档域逻辑
+│   └── ragflow_runtime/        # RAGFlow 运行时封装
 ├── scripts/
 │   ├── run_real_runtime_smoke.py   # 真实运行时冒烟测试
 │   └── ekb-svc.py                  # 生产级服务管理器（start/stop/status/logs/restart/build）
@@ -476,6 +433,7 @@ Enterprise KnowledgeBase/
 │   ├── indexing/               # Python：解析、分块、索引构建
 │   ├── intake-pipeline/        # Python：摄入治理与审批流
 │   ├── retrieval/              # Java：混合检索核心
+│   ├── smoke_tests/            # 运行时冒烟测试
 │   └── workbench-api/          # Python：工作台受控 API
 ├── deploy/
 │   └── docker-compose.yml      # 基础设施编排
@@ -497,11 +455,13 @@ Enterprise KnowledgeBase/
 ## 文档阅读顺序
 
 1. [总体架构](docs/architecture.md)
-2. [MVP 交付清单](docs/MVP_HANDOFF.md)
-3. [前端工作台文档](docs/frontend-workbench.md)
-4. services/intake-pipeline/intake-pipeline.md
+2. [前端工作台文档](docs/frontend-workbench.md)
+3. services/intake-pipeline/intake-pipeline.md
+4. services/indexing/indexing.md
 5. services/access/access.md
 6. services/retrieval/retrieval.md
+7. services/admin/admin.md
+8. services/workbench-api/workbench-api.md
 
 ---
 
