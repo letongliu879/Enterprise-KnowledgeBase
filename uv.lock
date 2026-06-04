@@ -404,7 +404,7 @@ wheels = [
 [[package]]
 name = "enterprise-kb-indexing"
 version = "0.1.0"
-source = { virtual = "services/indexing" }
+source = { editable = "services/indexing" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "chardet" },
@@ -445,6 +445,16 @@ provides-extras = ["dev"]
 name = "enterprise-knowledgebase"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "enterprise-kb-indexing" },
+    { name = "ragflow-runtime" },
+    { name = "reality-rag-admin" },
+    { name = "reality-rag-contracts" },
+    { name = "reality-rag-documents" },
+    { name = "reality-rag-intake-pipeline" },
+    { name = "reality-rag-persistence" },
+    { name = "reality-rag-workbench" },
+]
 
 [package.optional-dependencies]
 dev = [
@@ -457,10 +467,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "enterprise-kb-indexing", editable = "services/indexing" },
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "ragflow-runtime", editable = "packages/ragflow_runtime" },
+    { name = "reality-rag-admin", editable = "services/admin" },
+    { name = "reality-rag-contracts", editable = "packages/contracts" },
+    { name = "reality-rag-documents", editable = "packages/documents" },
+    { name = "reality-rag-intake-pipeline", editable = "services/intake-pipeline" },
+    { name = "reality-rag-persistence", editable = "packages/persistence" },
+    { name = "reality-rag-workbench", editable = "services/workbench-api" },
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.22" },
 ]
 provides-extras = ["dev"]
@@ -1177,7 +1195,7 @@ provides-extras = ["dev"]
 [[package]]
 name = "reality-rag-admin"
 version = "0.1.0"
-source = { virtual = "services/admin" }
+source = { editable = "services/admin" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -1239,7 +1257,7 @@ provides-extras = ["dev"]
 [[package]]
 name = "reality-rag-documents"
 version = "0.1.0"
-source = { virtual = "packages/documents" }
+source = { editable = "packages/documents" }
 dependencies = [
     { name = "reality-rag-contracts" },
     { name = "reality-rag-persistence" },
@@ -1261,7 +1279,7 @@ provides-extras = ["dev"]
 [[package]]
 name = "reality-rag-intake-pipeline"
 version = "0.1.0"
-source = { virtual = "services/intake-pipeline" }
+source = { editable = "services/intake-pipeline" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -1319,7 +1337,7 @@ provides-extras = ["dev"]
 [[package]]
 name = "reality-rag-workbench"
 version = "0.1.0"
-source = { virtual = "services/workbench-api" }
+source = { editable = "services/workbench-api" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },

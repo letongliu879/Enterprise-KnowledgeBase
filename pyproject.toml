@@ -2,6 +2,16 @@
 name = "enterprise-knowledgebase"
 version = "0.1.0"
 requires-python = ">=3.12"
+dependencies = [
+    "reality-rag-admin",
+    "enterprise-kb-indexing",
+    "reality-rag-intake-pipeline",
+    "reality-rag-workbench",
+    "reality-rag-contracts",
+    "reality-rag-persistence",
+    "reality-rag-documents",
+    "ragflow-runtime",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -23,6 +33,16 @@ members = [
     "packages/documents",
     "packages/ragflow_runtime",
 ]
+
+[tool.uv.sources]
+reality-rag-admin = { workspace = true }
+enterprise-kb-indexing = { workspace = true }
+reality-rag-intake-pipeline = { workspace = true }
+reality-rag-workbench = { workspace = true }
+reality-rag-contracts = { workspace = true }
+reality-rag-persistence = { workspace = true }
+reality-rag-documents = { workspace = true }
+ragflow-runtime = { workspace = true }
 
 [tool.uv]
 package = false

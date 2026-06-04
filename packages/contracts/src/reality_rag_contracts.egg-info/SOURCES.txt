@@ -1,7 +1,9 @@
 pyproject.toml
 src/reality_rag_contracts/__init__.py
+src/reality_rag_contracts/config.py
 src/reality_rag_contracts/enums.py
 src/reality_rag_contracts/index_naming.py
+src/reality_rag_contracts/indexing_models.py
 src/reality_rag_contracts/models.py
 src/reality_rag_contracts/state_machine.py
 src/reality_rag_contracts.egg-info/PKG-INFO
