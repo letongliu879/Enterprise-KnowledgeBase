@@ -188,7 +188,7 @@ Enterprise KnowledgeBase/
 │   └── workbench-api/           # Python：工作台 BFF
 ├── deploy/                      # Docker Compose 基础设施编排
 ├── scripts/                     # 服务管理器、冒烟测试
-└── upstream/ragflow/            # RAGFlow 源码分叉
+└── 源码/                         # 上游源码参考（RAGFlow 分叉等），不在 git 跟踪中
 ```
 
 ## 11. 阅读顺序

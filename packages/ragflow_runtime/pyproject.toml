@@ -7,14 +7,18 @@ dependencies = [
     "beautifulsoup4>=4.13,<5",
     "chardet>=7.0,<8",
     "filelock>=3.18,<4",
+    "jinja2>=3.1,<4",
+    "json-repair>=0.39,<1",
     "openpyxl>=3.1,<4",
     "pandas>=2.3,<3",
+    "Pillow>=11.3,<12",
     "pydantic>=2.0",
     "pypdf>=6.0,<7",
     "python-docx>=1.2,<2",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ragflow_runtime = ["resources/**/*"]

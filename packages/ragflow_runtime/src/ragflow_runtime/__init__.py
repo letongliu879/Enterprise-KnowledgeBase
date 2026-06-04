@@ -25,9 +25,12 @@ def _alias_module(alias: str, target: str) -> None:
 
 
 def _install_compat_aliases() -> None:
+    # 注意：不再在导入时硬编码设置 RAG_PROJECT_BASE。
+    # 运行时资源（JSON 配置等）默认通过 importlib.resources 从
+    # ragflow_runtime.resources 读取；模型文件（deepdoc/ ONNX）
+    # 较大不打包，需通过外部 RAG_PROJECT_BASE 环境变量或 HuggingFace
+    # snapshot_download 提供。
     workspace_root = Path(__file__).resolve().parents[4]
-    upstream_root = workspace_root / "upstream" / "ragflow"
-    os.environ.setdefault("RAG_PROJECT_BASE", str(upstream_root))
     indexing_src = workspace_root / "services" / "indexing" / "src"
     if indexing_src.exists():
         indexing_src_str = str(indexing_src)

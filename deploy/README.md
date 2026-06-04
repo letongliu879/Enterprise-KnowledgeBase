@@ -32,7 +32,7 @@ REDIS_PASSWORD=<password> \
 
 **Status: VERIFIED — project deploy is primary infra owner (2026-05-28).**
 
-Strict smoke 32/32 PASS against project deploy containers. `upstream/ragflow/docker` is legacy/reference only.
+Strict smoke 32/32 PASS against project deploy containers. RAGFlow runtime resources are now packaged in `packages/ragflow_runtime/resources/`; original upstream source is kept in `源码/` for reference only.
 
 | Infra | Container | Image | Port | Verification |
 |---|---|---|---|
