@@ -3,10 +3,17 @@
 import os
 
 
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if value is None:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
 class WorkbenchConfig:
     """Configuration loaded from environment variables."""
 
-    jwt_secret: str = os.environ.get("JWT_SECRET", "dev-secret-change-me")
+    jwt_secret: str = _require_env("JWT_SECRET")
     jwt_algorithm: str = os.environ.get("JWT_ALGORITHM", "HS256")
     jwt_issuer: str = os.environ.get("JWT_ISSUER", "")
     jwt_audience: str = os.environ.get("JWT_AUDIENCE", "")

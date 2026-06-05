@@ -18,6 +18,50 @@ from reality_rag_persistence.models import (
 )
 
 
+# Whitelist of safe columns for ORDER BY to prevent attribute access attacks
+_TASK_ORDER_COLS = frozenset({
+    "projection_id", "tenant_id", "user_id", "collection_id", "upload_id",
+    "filename", "mime_type", "size_bytes", "source_file_id", "intake_job_id",
+    "parse_snapshot_id", "ticket_id", "published_doc_id", "doc_id",
+    "source_file_state", "intake_job_state", "parse_snapshot_state",
+    "ticket_state", "agent_review_state", "published_document_state",
+    "index_build_state", "active_index_version", "overall_status",
+    "progress_pct", "blocking_reason", "error_code", "error_message",
+    "last_event_at", "projection_updated_at", "created_at", "updated_at",
+    "is_stale", "degraded_reason", "version",
+})
+
+_TICKET_ORDER_COLS = frozenset({
+    "ticket_id", "tenant_id", "collection_id", "upload_id", "source_file_id",
+    "parse_snapshot_id", "doc_id", "title", "filename", "state", "priority",
+    "routing_recommendation", "assignee_user_id", "agent_decision",
+    "agent_risk_level", "agent_finding_count", "agent_blocking_finding_count",
+    "updated_at", "last_event_at", "projection_updated_at", "is_stale",
+    "degraded_reason", "version",
+})
+
+_DOCUMENT_ORDER_COLS = frozenset({
+    "doc_id", "tenant_id", "collection_id", "source_file_id",
+    "parse_snapshot_id", "published_doc_id", "upload_id", "filename",
+    "mime_type", "document_state", "publish_state", "active_index_version",
+    "chunk_count", "page_count", "parser_profile_id", "parser_profile_name",
+    "updated_at", "projection_updated_at", "is_stale", "degraded_reason",
+    "version",
+})
+
+_QUERY_RUN_ORDER_COLS = frozenset({
+    "query_run_id", "tenant_id", "user_id", "collection_id", "query",
+    "token_budget", "latency_ms", "cache_hit", "status", "error_code",
+    "error_message", "created_at",
+})
+
+
+def _resolve_order_col(model, allowed_cols: frozenset[str], order_by: str, default):
+    if order_by not in allowed_cols:
+        return default
+    return getattr(model, order_by, default)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -96,7 +140,10 @@ class TaskProjectionRepository:
             query = query.filter_by(is_stale=is_stale)
 
         total = query.count()
-        order_col = getattr(WorkbenchTaskProjectionModel, order_by, WorkbenchTaskProjectionModel.projection_updated_at)
+        order_col = _resolve_order_col(
+            WorkbenchTaskProjectionModel, _TASK_ORDER_COLS, order_by,
+            WorkbenchTaskProjectionModel.projection_updated_at,
+        )
         order = desc(order_col) if order_dir == "desc" else asc(order_col)
         items = query.order_by(order).offset(offset).limit(limit).all()
         return items, total
@@ -157,7 +204,10 @@ class TicketProjectionRepository:
         if state:
             query = query.filter_by(state=state)
         total = query.count()
-        order_col = getattr(WorkbenchTicketProjectionModel, order_by, WorkbenchTicketProjectionModel.projection_updated_at)
+        order_col = _resolve_order_col(
+            WorkbenchTicketProjectionModel, _TICKET_ORDER_COLS, order_by,
+            WorkbenchTicketProjectionModel.projection_updated_at,
+        )
         order = desc(order_col) if order_dir == "desc" else asc(order_col)
         items = query.order_by(order).offset(offset).limit(limit).all()
         return items, total
@@ -211,7 +261,10 @@ class DocumentProjectionRepository:
         if document_state:
             query = query.filter_by(document_state=document_state)
         total = query.count()
-        order_col = getattr(WorkbenchDocumentProjectionModel, order_by, WorkbenchDocumentProjectionModel.projection_updated_at)
+        order_col = _resolve_order_col(
+            WorkbenchDocumentProjectionModel, _DOCUMENT_ORDER_COLS, order_by,
+            WorkbenchDocumentProjectionModel.projection_updated_at,
+        )
         order = desc(order_col) if order_dir == "desc" else asc(order_col)
         items = query.order_by(order).offset(offset).limit(limit).all()
         return items, total

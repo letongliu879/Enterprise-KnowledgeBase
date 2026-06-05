@@ -7,13 +7,24 @@ from .errors import DownstreamError
 
 
 class BaseHttpClient:
-    """Base HTTP client with unified error handling."""
+    """Base HTTP client with unified error handling and connection pooling."""
 
     def __init__(self, base_url: str, timeout: float, service_name: str, *, api_key: str = ""):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._service_name = service_name
         self._api_key = api_key
+        self._client: httpx.AsyncClient | None = None
+
+    @property
+    def _http_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self._timeout)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
 
     async def _request(self, method: str, path_or_url: str, **kwargs) -> dict | list:
         """Make HTTP request with unified error handling."""
@@ -28,8 +39,7 @@ class BaseHttpClient:
             headers["X-Agent-Instance-Id"] = "workbench-internal"
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await getattr(client, method)(url, headers=headers, **kwargs)
+            response = await getattr(self._http_client, method)(url, headers=headers, **kwargs)
         except httpx.ConnectError as e:
             raise DownstreamError.unavailable(f"{self._service_name} service unreachable: {e}")
         except httpx.TimeoutException as e:

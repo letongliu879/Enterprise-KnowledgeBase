@@ -26,12 +26,12 @@ async def get_source_file_content(
     """Proxy source file content from intake/document-service."""
     # Validate scope via document projection
     doc_repo = DocumentProjectionRepository(session)
-    docs = doc_repo.list(
+    docs, _ = doc_repo.list(
         tenant_id=user.tenant_id,
         collection_ids=user.allowed_collections,
         offset=0,
-        limit=1,
-    )[0]
+        limit=100,
+    )
     # Filter to source_file_id match
     matching_doc = next((d for d in docs if d.source_file_id == source_file_id), None)
     if matching_doc is None:

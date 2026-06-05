@@ -65,22 +65,22 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
-        # Use raw SQL with FOR UPDATE SKIP LOCKED for safe multi-instance concurrency
-        # SQLite does not support FOR UPDATE SKIP LOCKED
+        # Build SQL safely — only string literals are concatenated, never user input
         dialect = self._session.bind.dialect.name if self._session.bind else ""
-        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
-        sql = text("""
-            SELECT projection_id, tenant_id, collection_id, upload_id, version
-            FROM workbench_task_projection
-            WHERE is_stale = true
-            {tenant_filter}
-            ORDER BY stale_after ASC NULLS LAST, projection_updated_at ASC
-            LIMIT :limit
-            {for_update}
-        """.format(
-            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
-            for_update=for_update,
-        ))
+        parts = [
+            "SELECT projection_id, tenant_id, collection_id, upload_id, version",
+            "FROM workbench_task_projection",
+            "WHERE is_stale = true",
+        ]
+        if tenant_id:
+            parts.append("AND tenant_id = :tenant_id")
+        parts.extend([
+            "ORDER BY stale_after ASC NULLS LAST, projection_updated_at ASC",
+            "LIMIT :limit",
+        ])
+        if dialect != "sqlite":
+            parts.append("FOR UPDATE SKIP LOCKED")
+        sql = text(" ".join(parts))
 
         params = {"limit": limit}
         if tenant_id:
@@ -153,19 +153,20 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
-        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
-        sql = text("""
-            SELECT ticket_id, tenant_id, collection_id, version
-            FROM workbench_ticket_projection
-            WHERE is_stale = true
-            {tenant_filter}
-            ORDER BY projection_updated_at ASC
-            LIMIT :limit
-            {for_update}
-        """.format(
-            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
-            for_update=for_update,
-        ))
+        parts = [
+            "SELECT ticket_id, tenant_id, collection_id, version",
+            "FROM workbench_ticket_projection",
+            "WHERE is_stale = true",
+        ]
+        if tenant_id:
+            parts.append("AND tenant_id = :tenant_id")
+        parts.extend([
+            "ORDER BY projection_updated_at ASC",
+            "LIMIT :limit",
+        ])
+        if dialect != "sqlite":
+            parts.append("FOR UPDATE SKIP LOCKED")
+        sql = text(" ".join(parts))
 
         params = {"limit": limit}
         if tenant_id:
@@ -232,19 +233,20 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
-        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
-        sql = text("""
-            SELECT doc_id, tenant_id, collection_id, version
-            FROM workbench_document_projection
-            WHERE is_stale = true
-            {tenant_filter}
-            ORDER BY projection_updated_at ASC
-            LIMIT :limit
-            {for_update}
-        """.format(
-            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
-            for_update=for_update,
-        ))
+        parts = [
+            "SELECT doc_id, tenant_id, collection_id, version",
+            "FROM workbench_document_projection",
+            "WHERE is_stale = true",
+        ]
+        if tenant_id:
+            parts.append("AND tenant_id = :tenant_id")
+        parts.extend([
+            "ORDER BY projection_updated_at ASC",
+            "LIMIT :limit",
+        ])
+        if dialect != "sqlite":
+            parts.append("FOR UPDATE SKIP LOCKED")
+        sql = text(" ".join(parts))
 
         params = {"limit": limit}
         if tenant_id:
@@ -275,19 +277,20 @@ class ProjectionReconciler:
             "trace_id": run_id,
         })
 
-        for_update = "FOR UPDATE SKIP LOCKED" if dialect != "sqlite" else ""
-        sql = text("""
-            SELECT evidence_id, tenant_id, collection_id, version
-            FROM workbench_chunk_projection
-            WHERE is_stale = true
-            {tenant_filter}
-            ORDER BY projection_updated_at ASC
-            LIMIT :limit
-            {for_update}
-        """.format(
-            tenant_filter="AND tenant_id = :tenant_id" if tenant_id else "",
-            for_update=for_update,
-        ))
+        parts = [
+            "SELECT evidence_id, tenant_id, collection_id, version",
+            "FROM workbench_chunk_projection",
+            "WHERE is_stale = true",
+        ]
+        if tenant_id:
+            parts.append("AND tenant_id = :tenant_id")
+        parts.extend([
+            "ORDER BY projection_updated_at ASC",
+            "LIMIT :limit",
+        ])
+        if dialect != "sqlite":
+            parts.append("FOR UPDATE SKIP LOCKED")
+        sql = text(" ".join(parts))
 
         params = {"limit": limit}
         if tenant_id:
@@ -329,17 +332,21 @@ class ProjectionReconciler:
                 if not tenant_id or finding.tenant_id == tenant_id
             ]
         else:
-            sql = text("""
-                SELECT finding_id, tenant_id, version
-                FROM workbench_agent_review_projection
-                WHERE evidence_id IS NULL
-                  AND parse_snapshot_id IS NOT NULL
-                  AND source_quote IS NOT NULL
-                  {tenant_filter}
-                ORDER BY projection_updated_at ASC
-                LIMIT :limit
-                FOR UPDATE SKIP LOCKED
-            """.format(tenant_filter="AND tenant_id = :tenant_id" if tenant_id else ""))
+            parts = [
+                "SELECT finding_id, tenant_id, version",
+                "FROM workbench_agent_review_projection",
+                "WHERE evidence_id IS NULL",
+                "AND parse_snapshot_id IS NOT NULL",
+                "AND source_quote IS NOT NULL",
+            ]
+            if tenant_id:
+                parts.append("AND tenant_id = :tenant_id")
+            parts.extend([
+                "ORDER BY projection_updated_at ASC",
+                "LIMIT :limit",
+                "FOR UPDATE SKIP LOCKED",
+            ])
+            sql = text(" ".join(parts))
             params = {"limit": limit}
             if tenant_id:
                 params["tenant_id"] = tenant_id

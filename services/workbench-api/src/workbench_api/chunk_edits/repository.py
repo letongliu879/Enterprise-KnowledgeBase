@@ -20,6 +20,20 @@ class ChunkEditRepository:
     def save(self, model: WorkbenchChunkEditModel) -> None:
         self._session.merge(model)
 
+    def submit(self, chunk_edit_id: str, downstream_revision_id: str) -> bool:
+        """Atomically mark chunk edit as submitted (optimistic locking)."""
+        from sqlalchemy import func as sa_func
+        updated = (
+            self._session.query(WorkbenchChunkEditModel)
+            .filter_by(chunk_edit_id=chunk_edit_id, status="draft")
+            .update({
+                "status": "submitted",
+                "downstream_revision_id": downstream_revision_id,
+                "updated_at": sa_func.now(),
+            })
+        )
+        return updated > 0
+
     def delete(self, chunk_edit_id: str) -> bool:
         model = self.get(chunk_edit_id)
         if model:

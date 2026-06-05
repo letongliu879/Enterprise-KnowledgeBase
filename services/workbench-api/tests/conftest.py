@@ -1,7 +1,11 @@
 """Test fixtures for workbench-api."""
 
+import os
 import sys
 from pathlib import Path
+
+# Ensure required env vars are set before config is imported
+os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use-in-production")
 
 import pytest
 from fastapi.testclient import TestClient

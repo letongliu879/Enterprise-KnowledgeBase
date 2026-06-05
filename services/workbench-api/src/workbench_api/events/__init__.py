@@ -42,9 +42,9 @@ from .adapters import get_adapter
 # -- Authentication --
 
 SERVICE_KEYS: dict[str, str] = {
-    "intake": os.environ.get("WORKBENCH_EVENT_KEY_INTAKE", ""),
-    "approval": os.environ.get("WORKBENCH_EVENT_KEY_APPROVAL", ""),
-    "indexing": os.environ.get("WORKBENCH_EVENT_KEY_INDEXING", ""),
+    "intake": os.environ.get("WORKBENCH_EVENT_KEY_INTAKE") or "",
+    "approval": os.environ.get("WORKBENCH_EVENT_KEY_APPROVAL") or "",
+    "indexing": os.environ.get("WORKBENCH_EVENT_KEY_INDEXING") or "",
 }
 
 

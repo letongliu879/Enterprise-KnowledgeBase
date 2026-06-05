@@ -104,9 +104,9 @@ class ProjectionProjector:
         now = _utcnow()
         return {
             "projection_id": payload.get("projection_id", payload.get("upload_id", "")),
-            "tenant_id": payload["tenant_id"],
+            "tenant_id": payload.get("tenant_id", ""),
             "user_id": payload.get("user_id", ""),
-            "collection_id": payload["collection_id"],
+            "collection_id": payload.get("collection_id", ""),
             "upload_id": payload.get("upload_id", ""),
             "filename": payload.get("filename", ""),
             "mime_type": payload.get("mime_type", ""),
@@ -141,9 +141,9 @@ class ProjectionProjector:
     def _build_ticket_row(payload: dict, version: int) -> dict:
         now = _utcnow()
         return {
-            "ticket_id": payload["ticket_id"],
-            "tenant_id": payload["tenant_id"],
-            "collection_id": payload["collection_id"],
+            "ticket_id": payload.get("ticket_id", ""),
+            "tenant_id": payload.get("tenant_id", ""),
+            "collection_id": payload.get("collection_id", ""),
             "upload_id": payload.get("upload_id"),
             "source_file_id": payload.get("source_file_id"),
             "parse_snapshot_id": payload.get("parse_snapshot_id"),
@@ -170,9 +170,9 @@ class ProjectionProjector:
     def _build_document_row(payload: dict, version: int) -> dict:
         now = _utcnow()
         return {
-            "doc_id": payload["doc_id"],
-            "tenant_id": payload["tenant_id"],
-            "collection_id": payload["collection_id"],
+            "doc_id": payload.get("doc_id", ""),
+            "tenant_id": payload.get("tenant_id", ""),
+            "collection_id": payload.get("collection_id", ""),
             "source_file_id": payload.get("source_file_id"),
             "parse_snapshot_id": payload.get("parse_snapshot_id"),
             "published_doc_id": payload.get("published_doc_id"),
@@ -197,10 +197,10 @@ class ProjectionProjector:
     def _build_agent_review_row(payload: dict, version: int) -> dict:
         now = _utcnow()
         return {
-            "finding_id": payload["finding_id"],
-            "tenant_id": payload["tenant_id"],
-            "collection_id": payload["collection_id"],
-            "ticket_id": payload["ticket_id"],
+            "finding_id": payload.get("finding_id", ""),
+            "tenant_id": payload.get("tenant_id", ""),
+            "collection_id": payload.get("collection_id", ""),
+            "ticket_id": payload.get("ticket_id", ""),
             "doc_id": payload.get("doc_id"),
             "source_file_id": payload.get("source_file_id"),
             "parse_snapshot_id": payload.get("parse_snapshot_id"),
@@ -227,10 +227,10 @@ class ProjectionProjector:
     def _build_chunk_row(payload: dict, version: int) -> dict:
         now = _utcnow()
         return {
-            "evidence_id": payload["evidence_id"],
-            "tenant_id": payload["tenant_id"],
-            "collection_id": payload["collection_id"],
-            "doc_id": payload["doc_id"],
+            "evidence_id": payload.get("evidence_id", ""),
+            "tenant_id": payload.get("tenant_id", ""),
+            "collection_id": payload.get("collection_id", ""),
+            "doc_id": payload.get("doc_id", ""),
             "source_file_id": payload.get("source_file_id"),
             "parse_snapshot_id": payload.get("parse_snapshot_id"),
             "chunk_ordinal": payload.get("chunk_ordinal", 0),
