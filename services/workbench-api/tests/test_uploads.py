@@ -175,7 +175,7 @@ class TestUploads:
             }
 
         with patch(
-            "workbench_api.downstream_clients.document_service_client.DocumentServiceClient.upload_file",
+            "workbench_api.downstream_clients.DocumentServiceClient.upload_file",
             new=_fake_upload_file,
         ):
             resp = client.post(
@@ -218,7 +218,7 @@ class TestUploads:
             }
 
         with patch(
-            "workbench_api.downstream_clients.document_service_client.DocumentServiceClient.upload_file",
+            "workbench_api.downstream_clients.DocumentServiceClient.upload_file",
             new=_fake_upload_file,
         ):
             resp = client.post(
