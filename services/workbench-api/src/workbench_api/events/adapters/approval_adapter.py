@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .base import EventAdapter
-from ..models import ProjectionEvent
+from .. import ProjectionEvent
 
 
 class ApprovalEventAdapter(EventAdapter):
@@ -19,7 +19,7 @@ class ApprovalEventAdapter(EventAdapter):
     def service_name(self) -> str:
         return "approval"
 
-    def adapt(self, native_event: dict[str, Any]) -> list[ProjectionEvent]:
+    def adapt(self, native_event: dict[str, Any]) -> list["ProjectionEvent"]:
         event_type = str(native_event.get("event_type") or "")
         payload = self._payload(native_event)
         tenant_id = str(native_event.get("tenant_id") or payload.get("tenant_id") or "")
@@ -28,7 +28,7 @@ class ApprovalEventAdapter(EventAdapter):
         trace_id = native_event.get("trace_id")
         version = self._version(native_event, payload)
 
-        events: list[ProjectionEvent] = []
+        events: list["ProjectionEvent"] = []
 
         if event_type in {"TicketCreated", "TicketUpdated", "ApprovalPending", "ApprovalDecided"}:
             ticket_event = self._ticket_projection_event(
@@ -188,13 +188,13 @@ class ApprovalEventAdapter(EventAdapter):
         occurred_at: Any,
         trace_id: str | None,
         version: int,
-    ) -> list[ProjectionEvent]:
+    ) -> list["ProjectionEvent"]:
         ticket_id = payload.get("ticket_id")
         findings = payload.get("findings", [])
         if not ticket_id or not isinstance(findings, list):
             return []
 
-        events: list[ProjectionEvent] = []
+        events: list["ProjectionEvent"] = []
         for finding in findings:
             if not isinstance(finding, dict):
                 continue

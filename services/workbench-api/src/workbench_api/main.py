@@ -16,7 +16,7 @@ from .task_projection.routes import router as task_router
 from .workspace.routes import router as workspace_router
 from .source_files.routes import router as source_file_router
 from .commands.retrieval import router as retrieval_router
-from .events.routes import router as event_router
+from .events import router as event_router
 from .projections.routes import router as projection_router
 
 

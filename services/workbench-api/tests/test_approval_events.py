@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from workbench_api.events import auth as event_auth
+from workbench_api.events import SERVICE_KEYS
 from workbench_api.projections.repository import AgentReviewProjectionRepository, TicketProjectionRepository
 
 
 class TestApprovalEventIngestion:
     def test_approval_pending_ingests_ticket_and_findings(self, client, db_session, monkeypatch):
-        monkeypatch.setitem(event_auth.SERVICE_KEYS, "approval", "approval-test-key")
+        monkeypatch.setitem(SERVICE_KEYS, "approval", "approval-test-key")
         response = client.post(
             "/internal/events/approval",
             headers={"X-Service-Key": "approval-test-key"},

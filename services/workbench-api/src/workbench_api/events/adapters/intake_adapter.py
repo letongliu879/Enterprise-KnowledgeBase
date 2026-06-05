@@ -7,7 +7,7 @@ Intake is the owner of document lifecycle fields.
 from typing import Any
 
 from .base import EventAdapter
-from ..models import ProjectionEvent
+from .. import ProjectionEvent
 
 
 class IntakeEventAdapter(EventAdapter):
@@ -17,7 +17,7 @@ class IntakeEventAdapter(EventAdapter):
     def service_name(self) -> str:
         return "intake"
 
-    def adapt(self, native_event: dict[str, Any]) -> list[ProjectionEvent]:
+    def adapt(self, native_event: dict[str, Any]) -> list["ProjectionEvent"]:
         event_type = native_event.get("event_type")
         tenant_id = native_event.get("tenant_id", "")
         collection_id = native_event.get("collection_id")
@@ -26,7 +26,7 @@ class IntakeEventAdapter(EventAdapter):
         payload = native_event.get("payload", {})
         version = native_event.get("aggregate_version", 1)
 
-        events: list[ProjectionEvent] = []
+        events: list["ProjectionEvent"] = []
 
         if event_type in {"SourceFileRegistered", "FileReady"}:
             # Update task projection with source file info
