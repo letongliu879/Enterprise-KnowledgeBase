@@ -21,9 +21,7 @@ import com.realityrag.retrieval.contracts.CollectionRetrievalPlan;
 import com.realityrag.retrieval.contracts.RetrievalScope;
 import com.realityrag.retrieval.fusion.HybridFusionService;
 import com.realityrag.retrieval.permission.PermissionPrefilter;
-import com.realityrag.retrieval.recall.backends.BackendRecallHit;
-import com.realityrag.retrieval.recall.backends.OpenSearchRecaller;
-import com.realityrag.retrieval.recall.backends.QdrantRecaller;
+import com.realityrag.retrieval.recall.BackendRecallHit;
 import com.realityrag.retrieval.store.IndexedChunk;
 import com.realityrag.retrieval.store.KnowledgeStore;
 import java.util.List;
@@ -35,8 +33,7 @@ class RecallOrchestratorCacheTest {
 
     private KnowledgeStore knowledgeStore;
     private PermissionPrefilter permissionPrefilter;
-    private OpenSearchRecaller openSearchRecaller;
-    private QdrantRecaller qdrantRecaller;
+    private HybridRecaller hybridRecaller;
     private HybridFusionService hybridFusionService;
     private RetrievalCache cache;
     private RetrievalCacheKeyBuilder keyBuilder;
@@ -47,14 +44,13 @@ class RecallOrchestratorCacheTest {
     void setUp() {
         knowledgeStore = mock(KnowledgeStore.class);
         permissionPrefilter = mock(PermissionPrefilter.class);
-        openSearchRecaller = mock(OpenSearchRecaller.class);
-        qdrantRecaller = mock(QdrantRecaller.class);
+        hybridRecaller = mock(HybridRecaller.class);
         hybridFusionService = new HybridFusionService();
         cache = mock(RetrievalCache.class);
         keyBuilder = mock(RetrievalCacheKeyBuilder.class);
         cacheProperties = new RetrievalCacheProperties();
         orchestrator = new RecallOrchestrator(
-            knowledgeStore, permissionPrefilter, openSearchRecaller, qdrantRecaller,
+            knowledgeStore, permissionPrefilter, hybridRecaller,
             hybridFusionService, cache, keyBuilder, cacheProperties
         );
     }
@@ -76,8 +72,8 @@ class RecallOrchestratorCacheTest {
 
         assertEquals(1, result.size());
         assertEquals("chk_1", result.get(0).chunk().chunkId());
-        verify(openSearchRecaller, never()).recall(any(), any(), anyString());
-        verify(qdrantRecaller, never()).recall(any(), any(), anyString());
+        verify(hybridRecaller, never()).recallLexical(any(), any(), anyString());
+        verify(hybridRecaller, never()).recallVector(any(), any(), anyString());
     }
 
     @Test
@@ -92,9 +88,9 @@ class RecallOrchestratorCacheTest {
         IndexedChunk permittedChunk = chunk("chk_1");
         when(knowledgeStore.listChunks("col_a", "idxv_1")).thenReturn(List.of(permittedChunk));
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of(permittedChunk));
-        when(openSearchRecaller.recall(any(), anyList(), anyString()))
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString()))
             .thenReturn(List.of(new BackendRecallHit(permittedChunk, 0.8, "opensearch", "match")));
-        when(qdrantRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString())).thenReturn(List.of());
 
         RetrievalScope scope = buildScope();
         List<CollectionRetrievalPlan> plans = buildPlans();
@@ -112,9 +108,9 @@ class RecallOrchestratorCacheTest {
         IndexedChunk permittedChunk = chunk("chk_1");
         when(knowledgeStore.listChunks("col_a", "idxv_1")).thenReturn(List.of(permittedChunk));
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of(permittedChunk));
-        when(openSearchRecaller.recall(any(), anyList(), anyString()))
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString()))
             .thenReturn(List.of(new BackendRecallHit(permittedChunk, 0.8, "opensearch", "match")));
-        when(qdrantRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString())).thenReturn(List.of());
 
         RetrievalScope scope = buildScope();
         List<CollectionRetrievalPlan> plans = buildPlans();
@@ -133,9 +129,9 @@ class RecallOrchestratorCacheTest {
         IndexedChunk permittedChunk = chunk("chk_1");
         when(knowledgeStore.listChunks("col_a", "idxv_1")).thenReturn(List.of(permittedChunk));
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of(permittedChunk));
-        when(openSearchRecaller.recall(any(), anyList(), anyString()))
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString()))
             .thenReturn(List.of(new BackendRecallHit(permittedChunk, 0.8, "opensearch", "match")));
-        when(qdrantRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString())).thenReturn(List.of());
 
         RetrievalScope scope = buildScope();
         List<CollectionRetrievalPlan> plans = buildPlans();
@@ -157,12 +153,12 @@ class RecallOrchestratorCacheTest {
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of(permittedChunk));
 
         // Backend returns both chunks, but only chk_1 is in permitted list
-        when(openSearchRecaller.recall(any(), anyList(), anyString()))
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString()))
             .thenReturn(List.of(
                 new BackendRecallHit(permittedChunk, 0.8, "opensearch", "match"),
                 new BackendRecallHit(unauthorizedChunk, 0.7, "opensearch", "match")
             ));
-        when(qdrantRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString())).thenReturn(List.of());
 
         RetrievalScope scope = buildScope();
         List<CollectionRetrievalPlan> plans = buildPlans();
@@ -178,8 +174,8 @@ class RecallOrchestratorCacheTest {
 
         when(knowledgeStore.listChunks("col_a", "idxv_1")).thenReturn(List.of());
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of());
-        when(openSearchRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
-        when(qdrantRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString())).thenReturn(List.of());
 
         RetrievalScope scope = buildScope();
         List<CollectionRetrievalPlan> plans = buildPlans();
@@ -198,8 +194,8 @@ class RecallOrchestratorCacheTest {
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of(permittedChunk));
 
         // Qdrant returns a chunk that was never in the permitted list
-        when(openSearchRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
-        when(qdrantRecaller.recall(any(), anyList(), anyString()))
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString()))
             .thenReturn(List.of(
                 new BackendRecallHit(backendOnlyChunk, 0.95, "qdrant", "match")
             ));
@@ -222,9 +218,9 @@ class RecallOrchestratorCacheTest {
         IndexedChunk chunk = chunk("chk_1");
         when(knowledgeStore.listChunks(anyString(), anyString())).thenReturn(List.of(chunk));
         when(permissionPrefilter.filter(any(), anyList())).thenReturn(List.of(chunk));
-        when(openSearchRecaller.recall(any(), anyList(), anyString()))
+        when(hybridRecaller.recallLexical(any(), anyList(), anyString()))
             .thenReturn(List.of(new BackendRecallHit(chunk, 0.8, "opensearch", "match")));
-        when(qdrantRecaller.recall(any(), anyList(), anyString())).thenReturn(List.of());
+        when(hybridRecaller.recallVector(any(), anyList(), anyString())).thenReturn(List.of());
 
         RetrievalScope scope = buildScope();
         List<CollectionRetrievalPlan> plans1 = List.of(buildPlan("col_a", "idxv_1"));

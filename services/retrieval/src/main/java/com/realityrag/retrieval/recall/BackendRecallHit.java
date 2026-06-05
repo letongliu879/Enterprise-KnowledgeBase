@@ -1,4 +1,4 @@
-package com.realityrag.retrieval.recall.backends;
+package com.realityrag.retrieval.recall;
 
 import com.realityrag.retrieval.store.IndexedChunk;
 

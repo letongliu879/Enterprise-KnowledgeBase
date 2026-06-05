@@ -7,9 +7,7 @@ import com.realityrag.retrieval.contracts.CollectionRetrievalPlan;
 import com.realityrag.retrieval.contracts.RetrievalScope;
 import com.realityrag.retrieval.fusion.HybridFusionService;
 import com.realityrag.retrieval.permission.PermissionPrefilter;
-import com.realityrag.retrieval.recall.backends.BackendRecallHit;
-import com.realityrag.retrieval.recall.backends.OpenSearchRecaller;
-import com.realityrag.retrieval.recall.backends.QdrantRecaller;
+import com.realityrag.retrieval.recall.HybridRecaller;
 import com.realityrag.retrieval.store.IndexedChunk;
 import com.realityrag.retrieval.store.KnowledgeStore;
 import java.util.ArrayList;
@@ -31,8 +29,7 @@ public class RecallOrchestrator {
 
     private final KnowledgeStore knowledgeStore;
     private final PermissionPrefilter permissionPrefilter;
-    private final OpenSearchRecaller openSearchRecaller;
-    private final QdrantRecaller qdrantRecaller;
+    private final HybridRecaller hybridRecaller;
     private final HybridFusionService hybridFusionService;
     private final RetrievalCache cache;
     private final RetrievalCacheKeyBuilder keyBuilder;
@@ -41,8 +38,7 @@ public class RecallOrchestrator {
     public RecallOrchestrator(
         KnowledgeStore knowledgeStore,
         PermissionPrefilter permissionPrefilter,
-        OpenSearchRecaller openSearchRecaller,
-        QdrantRecaller qdrantRecaller,
+        HybridRecaller hybridRecaller,
         HybridFusionService hybridFusionService,
         RetrievalCache cache,
         RetrievalCacheKeyBuilder keyBuilder,
@@ -50,8 +46,7 @@ public class RecallOrchestrator {
     ) {
         this.knowledgeStore = knowledgeStore;
         this.permissionPrefilter = permissionPrefilter;
-        this.openSearchRecaller = openSearchRecaller;
-        this.qdrantRecaller = qdrantRecaller;
+        this.hybridRecaller = hybridRecaller;
         this.hybridFusionService = hybridFusionService;
         this.cache = cache;
         this.keyBuilder = keyBuilder;
@@ -91,8 +86,8 @@ public class RecallOrchestrator {
                 knowledgeStore.listChunks(plan.collectionId(), plan.activeIndexVersionId())
             );
             List<BackendRecallHit> backendHits = new ArrayList<>();
-            backendHits.addAll(openSearchRecaller.recall(plan, filteredChunks, queryText));
-            backendHits.addAll(qdrantRecaller.recall(plan, filteredChunks, queryText));
+            backendHits.addAll(hybridRecaller.recallLexical(plan, filteredChunks, queryText));
+            backendHits.addAll(hybridRecaller.recallVector(plan, filteredChunks, queryText));
 
             List<BackendRecallHit> permittedHits = intersectWithPermitted(backendHits, filteredChunks);
 

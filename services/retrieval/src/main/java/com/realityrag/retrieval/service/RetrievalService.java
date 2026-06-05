@@ -5,15 +5,13 @@ import com.realityrag.retrieval.contracts.KnowledgeContext;
 import com.realityrag.retrieval.contracts.RetrievalScope;
 import com.realityrag.retrieval.contracts.RetrieveRequest;
 import com.realityrag.retrieval.cutoff.SmartTopKCutoffService;
-import com.realityrag.retrieval.expansion.BreadcrumbChunkExpander;
-import com.realityrag.retrieval.expansion.NeighborChunkExpander;
+import com.realityrag.retrieval.expansion.ChunkExpander;
 import com.realityrag.retrieval.packing.KnowledgeContextPacker;
 import com.realityrag.retrieval.preprocess.QueryPreparationService;
 import com.realityrag.retrieval.preprocess.QueryPreparationService.PreparedQuery;
 import com.realityrag.retrieval.recall.RecallOrchestrator;
 import com.realityrag.retrieval.recall.RetrievedChunk;
-import com.realityrag.retrieval.ragflow.RagflowChildrenAggregationService;
-import com.realityrag.retrieval.ragflow.RagflowTocAggregationService;
+import com.realityrag.retrieval.ragflow.ChunkAggregationService;
 import com.realityrag.retrieval.rerank.RerankService;
 import com.realityrag.retrieval.scope.CollectionRetrievalPlanBuilder;
 import com.realityrag.retrieval.trace.RetrievalTraceRecorder;
@@ -31,10 +29,8 @@ public class RetrievalService {
     private final RecallOrchestrator recallOrchestrator;
     private final RerankService rerankService;
     private final SmartTopKCutoffService smartTopKCutoffService;
-    private final NeighborChunkExpander neighborChunkExpander;
-    private final BreadcrumbChunkExpander breadcrumbChunkExpander;
-    private final RagflowTocAggregationService ragflowTocAggregationService;
-    private final RagflowChildrenAggregationService ragflowChildrenAggregationService;
+    private final ChunkExpander chunkExpander;
+    private final ChunkAggregationService chunkAggregationService;
     private final KnowledgeContextPacker knowledgeContextPacker;
     private final RetrievalTraceRecorder retrievalTraceRecorder;
 
@@ -44,10 +40,8 @@ public class RetrievalService {
         RecallOrchestrator recallOrchestrator,
         RerankService rerankService,
         SmartTopKCutoffService smartTopKCutoffService,
-        NeighborChunkExpander neighborChunkExpander,
-        BreadcrumbChunkExpander breadcrumbChunkExpander,
-        RagflowTocAggregationService ragflowTocAggregationService,
-        RagflowChildrenAggregationService ragflowChildrenAggregationService,
+        ChunkExpander chunkExpander,
+        ChunkAggregationService chunkAggregationService,
         KnowledgeContextPacker knowledgeContextPacker,
         RetrievalTraceRecorder retrievalTraceRecorder
     ) {
@@ -56,10 +50,8 @@ public class RetrievalService {
         this.recallOrchestrator = recallOrchestrator;
         this.rerankService = rerankService;
         this.smartTopKCutoffService = smartTopKCutoffService;
-        this.neighborChunkExpander = neighborChunkExpander;
-        this.breadcrumbChunkExpander = breadcrumbChunkExpander;
-        this.ragflowTocAggregationService = ragflowTocAggregationService;
-        this.ragflowChildrenAggregationService = ragflowChildrenAggregationService;
+        this.chunkExpander = chunkExpander;
+        this.chunkAggregationService = chunkAggregationService;
         this.knowledgeContextPacker = knowledgeContextPacker;
         this.retrievalTraceRecorder = retrievalTraceRecorder;
     }
@@ -73,12 +65,12 @@ public class RetrievalService {
             List<RetrievedChunk> fusedCandidates = recallOrchestrator.recall(scope, plans, preparedQuery.queryText());
             List<RetrievedChunk> rerankedCandidates = rerankService.rerank(preparedQuery.queryText(), plans, fusedCandidates);
             List<RetrievedChunk> seeds = smartTopKCutoffService.selectSeeds(rerankedCandidates);
-            List<RetrievedChunk> expanded = new ArrayList<>(neighborChunkExpander.expand(seeds));
-            expanded.addAll(breadcrumbChunkExpander.expand(seeds));
+            List<RetrievedChunk> expanded = new ArrayList<>(chunkExpander.expandNeighbors(seeds));
+            expanded.addAll(chunkExpander.expandBreadcrumbs(seeds));
             List<RetrievedChunk> finalChunks = new ArrayList<>(seeds);
             finalChunks.addAll(expanded);
-            finalChunks = new ArrayList<>(ragflowTocAggregationService.aggregate(preparedQuery.queryText(), finalChunks));
-            finalChunks = new ArrayList<>(ragflowChildrenAggregationService.aggregate(finalChunks));
+            finalChunks = new ArrayList<>(chunkAggregationService.aggregateByToc(preparedQuery.queryText(), finalChunks));
+            finalChunks = new ArrayList<>(chunkAggregationService.aggregateByChildren(finalChunks));
             String debugRef = retrievalTraceRecorder.record(request, plans, finalChunks);
             return knowledgeContextPacker.pack(request, scope, plans, finalChunks, debugRef);
         }

@@ -18,9 +18,9 @@ public class FileProjectionIndexRegistrySource implements IndexRegistrySource {
     @Override
     public Optional<IndexRegistryRecord> findActiveIndex(String collectionId) {
         return JsonProjectionReader.readJsonLines(indexRegistryPath, objectMapper).stream()
-            .filter(item -> collectionId.equals(stringValue(item, "collection_id")))
+            .filter(item -> collectionId.equals(JsonProjectionReader.stringValue(item, "collection_id")))
             .filter(item -> {
-                String status = stringValue(item, "status");
+                String status = JsonProjectionReader.stringValue(item, "status");
                 return status.isEmpty() || "ACTIVE".equalsIgnoreCase(status) || "INDEXED".equalsIgnoreCase(status);
             })
             .findFirst()
@@ -29,23 +29,13 @@ public class FileProjectionIndexRegistrySource implements IndexRegistrySource {
 
     private IndexRegistryRecord toRecord(Map<String, Object> item) {
         return new IndexRegistryRecord(
-            stringValue(item, "tenant_id"),
-            stringValue(item, "collection_id"),
-            coalesce(item, "index_version_id", "index_version"),
-            stringValue(item, "opensearch_index"),
-            stringValue(item, "qdrant_collection"),
-            stringValue(item, "embedding_model"),
-            stringValue(item, "chunk_profile_id")
+            JsonProjectionReader.stringValue(item, "tenant_id"),
+            JsonProjectionReader.stringValue(item, "collection_id"),
+            JsonProjectionReader.coalesce(item, "index_version_id", "index_version"),
+            JsonProjectionReader.stringValue(item, "opensearch_index"),
+            JsonProjectionReader.stringValue(item, "qdrant_collection"),
+            JsonProjectionReader.stringValue(item, "embedding_model"),
+            JsonProjectionReader.stringValue(item, "chunk_profile_id")
         );
-    }
-
-    private String stringValue(Map<String, Object> payload, String key) {
-        Object value = payload.get(key);
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private String coalesce(Map<String, Object> payload, String primary, String fallback) {
-        String primaryValue = stringValue(payload, primary);
-        return primaryValue.isBlank() ? stringValue(payload, fallback) : primaryValue;
     }
 }

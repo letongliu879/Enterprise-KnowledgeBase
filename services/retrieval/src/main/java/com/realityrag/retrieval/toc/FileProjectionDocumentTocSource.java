@@ -27,12 +27,12 @@ public class FileProjectionDocumentTocSource implements DocumentTocSource {
     @SuppressWarnings("unchecked")
     private DocumentTocNode toNode(Map<String, Object> payload) {
         return new DocumentTocNode(
-            stringValue(payload, "collection_id"),
-            stringValue(payload, "final_doc_id"),
-            stringValue(payload, "toc_node_id"),
-            stringValue(payload, "parent_toc_node_id"),
-            stringValue(payload, "level"),
-            stringValue(payload, "title"),
+            JsonProjectionReader.stringValue(payload, "collection_id"),
+            JsonProjectionReader.stringValue(payload, "final_doc_id"),
+            JsonProjectionReader.stringValue(payload, "toc_node_id"),
+            JsonProjectionReader.stringValue(payload, "parent_toc_node_id"),
+            JsonProjectionReader.stringValue(payload, "level"),
+            JsonProjectionReader.stringValue(payload, "title"),
             payload.get("toc_path") instanceof List<?> tocPathValue
                 ? tocPathValue.stream().map(String::valueOf).toList()
                 : List.of(),
@@ -40,10 +40,5 @@ public class FileProjectionDocumentTocSource implements DocumentTocSource {
                 ? linkedChunkIds.stream().map(String::valueOf).toList()
                 : List.of()
         );
-    }
-
-    private String stringValue(Map<String, Object> payload, String key) {
-        Object value = payload.get(key);
-        return value == null ? "" : String.valueOf(value);
     }
 }

@@ -1,6 +1,6 @@
 package com.realityrag.retrieval.fusion;
 
-import com.realityrag.retrieval.recall.backends.BackendRecallHit;
+import com.realityrag.retrieval.recall.BackendRecallHit;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
