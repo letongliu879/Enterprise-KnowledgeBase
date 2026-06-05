@@ -11,9 +11,6 @@ import com.realityrag.access.security.AccessRequestContext;
 import com.realityrag.access.support.AccessException;
 import com.realityrag.access.trace.LoggingAccessTraceRecorder;
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
@@ -38,31 +35,18 @@ public class AccessGatewayService {
         this.traceRecorder = traceRecorder;
     }
 
-    private void dbg(String msg) {
-        String path = System.getProperty("java.io.tmpdir") + "/access-svc-dbg.log";
-        try (FileWriter fw = new FileWriter(path, true)) {
-            fw.write(Instant.now() + " " + msg + "\n");
-        } catch (IOException ignored) {}
-    }
-
     public KnowledgeContext retrieve(ExternalRetrieveRequest request, HttpServletRequest httpRequest) {
-        dbg("[SVC] retrieve() called");
         var accessContext = accessAuthenticator.authenticate(httpRequest);
-        dbg("[SVC] authenticate() succeeded api_key_id=" + accessContext.apiKeyId());
         return retrieveWithContext(request, accessContext);
     }
 
     public KnowledgeContext retrieveWithContext(ExternalRetrieveRequest request, AccessRequestContext accessContext) {
         String queryId = "qry_" + UUID.randomUUID();
         String traceId = "trc_" + UUID.randomUUID();
-        dbg("[SVC] retrieveWithContext() query_id=" + queryId);
         try {
             traceRecorder.recordRequestAccepted(queryId, traceId, accessContext);
-            dbg("[SVC] recordRequestAccepted() done");
             String debugLevel = resolveDebugLevel(request.debug(), accessContext);
-            dbg("[SVC] debugLevel=" + debugLevel);
             String retrievalProfileId = selectRetrievalProfile(request);
-            dbg("[SVC] retrievalProfileId=" + retrievalProfileId);
             var internalRequest = buildInternalRequest(
                 request,
                 accessContext,
@@ -71,16 +55,15 @@ public class AccessGatewayService {
                 queryId,
                 traceId
             );
-            dbg("[SVC] internalRequest built profile=" + internalRequest.retrievalProfileId());
             traceRecorder.recordRetrievalCall(internalRequest);
-            dbg("[SVC] recordRetrievalCall() done");
             KnowledgeContext response = retrievalClient.retrieve(internalRequest);
-            dbg("[SVC] retrievalClient.retrieve() returned evidence=" + (response == null ? "null" : response.resultChunks().size()));
+            if (response == null) {
+                throw new AccessException.RetrievalUnavailable("Retrieval service returned empty response", null);
+            }
             traceRecorder.recordResponse(queryId, traceId, response);
             return response;
         }
         catch (RuntimeException error) {
-            dbg("[SVC] EXCEPTION: " + error.getClass().getName() + " " + error.getMessage());
             traceRecorder.recordFailure(queryId, traceId, accessContext, error);
             throw error;
         }

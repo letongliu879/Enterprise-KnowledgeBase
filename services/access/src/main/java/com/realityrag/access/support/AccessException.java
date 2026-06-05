@@ -46,11 +46,11 @@ public abstract class AccessException extends RuntimeException {
 
     public static final class RegistryUnavailable extends AccessException {
         public RegistryUnavailable(String message) {
-            super("ACC_API_KEY_REGISTRY_UNAVAILABLE", HttpStatus.INTERNAL_SERVER_ERROR, message);
+            super("ACC_API_KEY_REGISTRY_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE, message);
         }
 
         public RegistryUnavailable(String message, Throwable cause) {
-            super("ACC_API_KEY_REGISTRY_UNAVAILABLE", HttpStatus.INTERNAL_SERVER_ERROR, message, cause);
+            super("ACC_API_KEY_REGISTRY_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE, message, cause);
         }
     }
 

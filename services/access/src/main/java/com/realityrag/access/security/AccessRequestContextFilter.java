@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -20,6 +21,7 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class AccessRequestContextFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(AccessRequestContextFilter.class);
+    private static final Set<String> ALLOWED_INTERNAL_ADDRESSES = Set.of("127.0.0.1", "0:0:0:0:0:0:0:1", "localhost");
     private final AccessAuthenticator accessAuthenticator;
     private final McpSessionBindingStore sessionBindingStore;
     private final ObjectMapper objectMapper;
@@ -40,9 +42,8 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
         if (path == null) {
             return false;
         }
-        return path.equals("/health")
-            || path.startsWith("/actuator")
-            || path.startsWith("/internal");
+        // Internal endpoints are routed through doFilterInternal for IP whitelist check
+        return path.equals("/health") || path.startsWith("/actuator");
     }
 
     @Override
@@ -62,6 +63,15 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
         FilterChain filterChain
     ) throws ServletException, IOException {
         String path = request.getRequestURI();
+        if (path != null && path.startsWith("/internal")) {
+            if (!isAllowedInternalAddress(request.getRemoteAddr())) {
+                log.warn("Blocked internal endpoint access from {}", request.getRemoteAddr());
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return;
+            }
+            filterChain.doFilter(request, response);
+            return;
+        }
         ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
         try {
             AccessRequestContext context = accessAuthenticator.authenticate(request);
@@ -103,6 +113,10 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
             AccessRequestContextHolder.clear();
             wrappedResponse.copyBodyToResponse();
         }
+    }
+
+    private boolean isAllowedInternalAddress(String remoteAddr) {
+        return ALLOWED_INTERNAL_ADDRESSES.contains(remoteAddr);
     }
 
     private void writeError(HttpServletResponse response, AccessException error) throws IOException {

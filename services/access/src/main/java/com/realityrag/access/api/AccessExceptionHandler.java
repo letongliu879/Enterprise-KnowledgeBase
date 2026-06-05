@@ -2,6 +2,8 @@ package com.realityrag.access.api;
 
 import com.realityrag.access.contracts.AccessErrorResponse;
 import com.realityrag.access.support.AccessException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class AccessExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(AccessExceptionHandler.class);
     @ExceptionHandler(AccessException.class)
     public ResponseEntity<AccessErrorResponse> handleAccessException(AccessException error) {
         return ResponseEntity.status(error.getStatus())
@@ -35,6 +38,7 @@ public class AccessExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<AccessErrorResponse> handleUnexpected(Exception error) {
+        log.error("Unhandled exception", error);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(new AccessErrorResponse("ACC_INTERNAL_ERROR", "Unexpected access service error"));
     }
