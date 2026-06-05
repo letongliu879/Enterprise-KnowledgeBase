@@ -1,10 +1,12 @@
 package com.realityrag.access.mcp;
 
+import com.realityrag.access.contracts.ExternalRetrieveRequest;
 import com.realityrag.access.contracts.KnowledgeContext;
 import com.realityrag.access.security.AccessRequestContext;
 import com.realityrag.access.security.AccessRequestContextHolder;
 import com.realityrag.access.service.AccessGatewayService;
 import com.realityrag.access.support.AccessException;
+import java.util.List;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.tool.annotation.Tool;
@@ -13,14 +15,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class McpAccessTools {
     private final AccessGatewayService accessGatewayService;
-    private final McpKnowledgeScopeMapper knowledgeScopeMapper;
 
-    public McpAccessTools(
-        AccessGatewayService accessGatewayService,
-        McpKnowledgeScopeMapper knowledgeScopeMapper
-    ) {
+    public McpAccessTools(AccessGatewayService accessGatewayService) {
         this.accessGatewayService = accessGatewayService;
-        this.knowledgeScopeMapper = knowledgeScopeMapper;
     }
 
     @Tool(
@@ -37,7 +34,7 @@ public class McpAccessTools {
     ) {
         AccessRequestContext context = resolveContext(toolContext);
         return accessGatewayService.retrieveWithContext(
-            knowledgeScopeMapper.map(query, knowledge_scope, retrieval_profile_id, token_budget, debug, context),
+            buildRequest(query, knowledge_scope, retrieval_profile_id, token_budget, debug, context),
             context
         );
     }
@@ -48,5 +45,32 @@ public class McpAccessTools {
             throw new AccessException.Unauthenticated("Missing MCP access context");
         }
         return context;
+    }
+
+    private ExternalRetrieveRequest buildRequest(
+        String query,
+        String knowledgeScope,
+        String retrievalProfileId,
+        Integer tokenBudget,
+        String debug,
+        AccessRequestContext context
+    ) {
+        String scope = knowledgeScope.trim();
+        if (!context.knowledgeScopes().contains(scope)) {
+            throw new AccessException.Forbidden("Knowledge scope is not allowed for this agent integration");
+        }
+        return new ExternalRetrieveRequest(
+            query,
+            List.of(scope),
+            java.util.Map.of(),
+            null,
+            List.of(),
+            false,
+            java.util.Map.of(),
+            retrievalProfileId,
+            null,
+            tokenBudget,
+            debug
+        );
     }
 }

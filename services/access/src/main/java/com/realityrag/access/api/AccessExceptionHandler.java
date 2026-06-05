@@ -18,20 +18,19 @@ public class AccessExceptionHandler {
             .body(new AccessErrorResponse(error.getErrorCode(), error.getMessage()));
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<AccessErrorResponse> handleValidation(MethodArgumentNotValidException error) {
-        String message = error.getBindingResult().getFieldErrors().stream()
-            .findFirst()
-            .map(FieldError::getDefaultMessage)
-            .orElse("Request validation failed");
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<AccessErrorResponse> handleInvalidRequest(Exception error) {
+        String message;
+        if (error instanceof MethodArgumentNotValidException m) {
+            message = m.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(FieldError::getDefaultMessage)
+                .orElse("Request validation failed");
+        } else {
+            message = "Malformed request body";
+        }
         return ResponseEntity.badRequest()
             .body(new AccessErrorResponse("ACC_INVALID_REQUEST", message));
-    }
-
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<AccessErrorResponse> handleUnreadableBody(HttpMessageNotReadableException error) {
-        return ResponseEntity.badRequest()
-            .body(new AccessErrorResponse("ACC_INVALID_REQUEST", "Malformed request body"));
     }
 
     @ExceptionHandler(Exception.class)
