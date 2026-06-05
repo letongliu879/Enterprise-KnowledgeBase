@@ -1,21 +1,21 @@
 """Intake-pipeline downstream client."""
 
-import httpx
-
 from ..config import config
-from .errors import DownstreamError
+from .base import BaseHttpClient
 
 
-class IntakeClient:
+class IntakeClient(BaseHttpClient):
     def __init__(self, base_url: str | None = None):
-        self._ingestion_worker_url = (base_url or config.ingestion_worker_url).rstrip("/")
         self._document_service_url = config.document_service_base_url.rstrip("/")
+        self._ingestion_worker_url = (base_url or config.ingestion_worker_url).rstrip("/")
         self._publishing_url = config.publishing_base_url.rstrip("/")
-        self._timeout = config.default_http_timeout
+        super().__init__(
+            base_url=self._document_service_url,
+            timeout=config.default_http_timeout,
+            service_name="Intake",
+        )
 
     async def create_source_file(self, command: dict) -> dict:
-        url = f"{self._document_service_url}/internal/source-files"
-        # Unwrap command envelope to flat RegisterSourceFileRequest format
         payload = command.get("payload", {})
         flat_request = {
             "command_id": command.get("command_id", ""),
@@ -30,47 +30,13 @@ class IntakeClient:
             "selected_parser_profile_id": payload.get("selected_parser_profile_id"),
             "parser_override_json": payload.get("parser_override_json"),
         }
-        return await self._post(url, flat_request)
+        return await self._request("post", "/internal/source-files", json=flat_request)
 
     async def get_source_file(self, source_file_id: str) -> dict:
-        url = f"{self._document_service_url}/internal/source-files/{source_file_id}"
-        return await self._get(url)
+        return await self._request("get", f"/internal/source-files/{source_file_id}")
 
     async def get_intake_job(self, intake_job_id: str) -> dict:
-        url = f"{self._ingestion_worker_url}/internal/intake-jobs/{intake_job_id}"
-        return await self._get(url)
+        return await self._request("get", f"{self._ingestion_worker_url}/internal/intake-jobs/{intake_job_id}")
 
     async def get_published_document(self, published_document_id: str) -> dict:
-        url = f"{self._publishing_url}/internal/published-documents/{published_document_id}"
-        return await self._get(url)
-
-    async def _get(self, url: str) -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(url)
-        except httpx.ConnectError as e:
-            raise DownstreamError.unavailable(f"Intake service unreachable: {e}")
-        except httpx.TimeoutException as e:
-            raise DownstreamError.unavailable(f"Intake service timeout: {e}")
-        return self._handle_response(response, url)
-
-    async def _post(self, url: str, json: dict) -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(url, json=json)
-        except httpx.ConnectError as e:
-            raise DownstreamError.unavailable(f"Intake service unreachable: {e}")
-        except httpx.TimeoutException as e:
-            raise DownstreamError.unavailable(f"Intake service timeout: {e}")
-        return self._handle_response(response, url)
-
-    def _handle_response(self, response: httpx.Response, url: str) -> dict:
-        if response.status_code == 404:
-            raise DownstreamError.not_implemented(f"Intake endpoint not implemented: {url}")
-        if response.status_code == 501:
-            raise DownstreamError.not_implemented(f"Intake endpoint not implemented: {url}")
-        if response.status_code == 409:
-            raise DownstreamError.conflict(f"Intake conflict: {response.text}")
-        if response.status_code >= 400:
-            raise DownstreamError("DOWNSTREAM_ERROR", f"Intake service returned {response.status_code}: {response.text}", response.status_code)
-        return response.json()
+        return await self._request("get", f"{self._publishing_url}/internal/published-documents/{published_document_id}")

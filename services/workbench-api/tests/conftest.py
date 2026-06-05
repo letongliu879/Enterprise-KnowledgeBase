@@ -17,7 +17,6 @@ def _setup_db():
     override_url_for_testing("sqlite:///:memory:")
     # Monkeypatch downstream URLs to match test mocks
     config.indexing_base_url = "http://localhost:8002"
-    config.intake_base_url = "http://localhost:8003"
     config.approval_base_url = "http://localhost:8004"
     config.admin_base_url = "http://localhost:8005"
     config.access_base_url = "http://localhost:8007"

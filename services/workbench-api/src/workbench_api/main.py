@@ -60,23 +60,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
-app.include_router(auth_router)
-app.include_router(upload_router)
-app.include_router(parser_router)
-app.include_router(preview_router)
-app.include_router(snapshot_router)
-app.include_router(chunk_router)
-app.include_router(ticket_router)
-app.include_router(chunk_edit_router)
-app.include_router(task_router)
-app.include_router(workspace_router)
-app.include_router(source_file_router)
-app.include_router(retrieval_router)
-app.include_router(event_router)
-app.include_router(projection_router)
-
-
-@app.get("/workbench/health")
-def health() -> dict[str, str]:
-    return {"service": "workbench", "status": "ok"}
