@@ -112,10 +112,16 @@ const MAX_CONCURRENT_UPLOADS = 3;
 export default function UploadPage() {
   const { currentCollectionId, accessScope } = useAppStore();
   const [files, setFiles] = useState<FileItem[]>([]);
+  const filesRef = useRef<FileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadQueueRef = useRef<string[]>([]);
   const activeUploadsRef = useRef(0);
+
+  // Keep ref in sync with state to avoid closure staleness in queue processing
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
 
   const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
@@ -225,12 +231,14 @@ export default function UploadPage() {
     const queuedIds = uploadQueueRef.current.splice(0, slots);
 
     queuedIds.forEach((id) => {
-      const item = files.find((f) => f.id === id);
+      const item = filesRef.current.find((f) => f.id === id);
       if (item) startUpload(item);
     });
   };
 
   const enqueueUploads = (items: FileItem[]) => {
+    // Update ref immediately so processUploadQueue sees the new items
+    filesRef.current = [...filesRef.current, ...items];
     setFiles((prev) => [...prev, ...items]);
     items.forEach((item) => uploadQueueRef.current.push(item.id));
     processUploadQueue();
@@ -280,6 +288,7 @@ export default function UploadPage() {
   };
 
   const removeFile = (id: string) => {
+    filesRef.current = filesRef.current.filter((f) => f.id !== id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
