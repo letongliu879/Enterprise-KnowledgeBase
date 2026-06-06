@@ -21,7 +21,8 @@ const REQUEST_TIMEOUT_MS = 15000;
 function getToken(): string | undefined {
   if (typeof window === "undefined") return undefined;
   const storeToken = useAppStore.getState().demoToken;
-  if (storeToken) return storeToken;
+  // Reject non-JWT values (e.g. legacy "123456") and fall back to env
+  if (storeToken && storeToken.split(".").length === 3) return storeToken;
   return process.env.NEXT_PUBLIC_DEMO_TOKEN || undefined;
 }
 

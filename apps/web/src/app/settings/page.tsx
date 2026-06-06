@@ -108,7 +108,7 @@ export default function SettingsPage() {
                   type="password"
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder="123456"
+                  placeholder="eyJhbG... 格式的 JWT 令牌"
                 />
                 <p className="text-xs text-muted-foreground">
                   用于工作台和管理 API 调用。

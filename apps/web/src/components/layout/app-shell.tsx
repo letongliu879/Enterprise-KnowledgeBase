@@ -64,6 +64,7 @@ function BackendHealth() {
     { name: "Workbench", status: healthAll.data?.workbench?.status },
     { name: "Access", status: healthAll.data?.services?.access?.status },
     { name: "Retrieval", status: healthAll.data?.services?.retrieval?.status },
+    { name: "Ingestion", status: healthAll.data?.services?.ingestion?.status },
   ];
 
   const allHealthy = healthAll.data?.all_healthy ?? false;

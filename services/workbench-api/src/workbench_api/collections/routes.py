@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends
 
 from ..deps import require_auth, require_role, CurrentUser
 from ..downstream_clients import AdminClient
-from ..errors import downstream_not_implemented
+from ..downstream_clients.errors import DownstreamError
+from ..errors import downstream_not_implemented, downstream_unavailable, conflict
 
 router = APIRouter(prefix="/workbench/collections")
 
@@ -20,8 +21,13 @@ async def list_collections(
             tenant_id,
             headers={"Authorization": f"Bearer {user.token}"},
         )
-    except Exception as e:
-        raise downstream_not_implemented(f"Admin collections API unavailable: {e}")
+    except DownstreamError as e:
+        if e.code == "DOWNSTREAM_NOT_IMPLEMENTED":
+            raise downstream_not_implemented(f"Admin collections API unavailable: {e.message}")
+        elif e.code == "CONFLICT":
+            raise conflict(e.message)
+        else:
+            raise downstream_unavailable(f"Admin collections API error: {e.message}")
     return result
 
 
@@ -36,6 +42,11 @@ async def create_collection(
             req,
             headers={"Authorization": f"Bearer {user.token}"},
         )
-    except Exception as e:
-        raise downstream_not_implemented(f"Admin collections API unavailable: {e}")
+    except DownstreamError as e:
+        if e.code == "DOWNSTREAM_NOT_IMPLEMENTED":
+            raise downstream_not_implemented(f"Admin collections API unavailable: {e.message}")
+        elif e.code == "CONFLICT":
+            raise conflict(e.message)
+        else:
+            raise downstream_unavailable(f"Admin collections API error: {e.message}")
     return result

@@ -23,10 +23,14 @@ export async function proxyRequest(
 
   const { pathname, searchParams } = new URL(req.url);
   let relativePath = pathname.replace(new RegExp(`^/api/${service}`), "");
-  
-  // Note: workbench routes already include /workbench prefix in their paths.
-  // Do NOT add prefix again to avoid double prefix (/workbench/workbench/health).
-  
+
+  // Workbench routes use /workbench prefix (e.g. /workbench/tasks).
+  // The frontend calls /api/workbench/tasks, so we map it to /workbench/tasks.
+  const prefix = SERVICE_PATH_PREFIX[service];
+  if (prefix && !relativePath.startsWith(prefix)) {
+    relativePath = prefix + relativePath;
+  }
+
   const targetUrl = new URL(relativePath || "/", baseUrl);
   searchParams.forEach((value, key) => {
     targetUrl.searchParams.set(key, value);
@@ -49,6 +53,8 @@ export async function proxyRequest(
       method,
       headers,
       body: body as BodyInit | undefined,
+      // @ts-expect-error — required by Node.js fetch when proxying a stream body
+      duplex: "half",
     });
 
     const responseHeaders = new Headers();

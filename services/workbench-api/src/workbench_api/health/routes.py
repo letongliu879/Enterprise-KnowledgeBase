@@ -29,6 +29,7 @@ async def health_all() -> dict:
         _check_service("access", f"{config.access_base_url}/health"),
         _check_service("retrieval", f"{config.retrieval_base_url}/health"),
         _check_service("indexing", f"{config.indexing_base_url}/health"),
+        _check_service("ingestion", f"{config.ingestion_worker_url}/health"),
     )
     all_healthy = all(r["status"] in ("ok", "healthy", "UP") for r in results)
     return {
