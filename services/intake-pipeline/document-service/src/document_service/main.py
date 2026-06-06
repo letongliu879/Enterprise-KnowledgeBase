@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -24,6 +25,7 @@ from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+from reality_rag_persistence.repositories.outbox_events import OutboxEventRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 
 app = FastAPI(
@@ -215,6 +217,25 @@ async def upload_file(
             raise RuntimeError(
                 f"failed to complete scan for source file {source_file.source_file_id}"
             )
+
+        # Write FILE_READY outbox event to trigger downstream intake pipeline
+        outbox_repo = OutboxEventRepository(session)
+        outbox_repo.create(
+            event_id=f"evt_{uuid.uuid4().hex[:20]}",
+            event_type="FILE_READY",
+            aggregate_type="source_file",
+            aggregate_id=completed.source_file_id,
+            payload_json={
+                "source_file_id": completed.source_file_id,
+                "upload_id": upload_id,
+                "collection_id": completed.collection_id,
+                "content_hash": completed.content_hash,
+                "size_bytes": completed.size_bytes,
+                "visibility": completed.visibility,
+            },
+            trace_id=upload_id,
+        )
+
         session.commit()
         return {
             "duplicate": False,
