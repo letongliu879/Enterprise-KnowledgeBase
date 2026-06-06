@@ -15,6 +15,9 @@ dependencies = [
     "pydantic>=2.0",
     "pypdf>=6.0,<7",
     "python-docx>=1.2,<2",
+    "requests>=2.34,<3",
+    "olefile>=0.47,<1",
+    "python-pptx>=1.0,<2",
 ]
 
 [tool.setuptools.packages.find]

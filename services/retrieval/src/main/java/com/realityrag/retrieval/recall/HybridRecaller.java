@@ -281,11 +281,14 @@ public class HybridRecaller {
     private List<Map<String, Object>> buildFilters(CollectionRetrievalPlan plan) {
         List<Map<String, Object>> filters = new ArrayList<>();
         if (!plan.allowedDocIds().isEmpty()) {
-            filters.add(Map.of("terms", Map.of("final_doc_id", plan.allowedDocIds())));
+            filters.add(Map.of("terms", Map.of("final_doc_id.keyword", plan.allowedDocIds())));
         }
         Object visibility = plan.metadataFilters().get("visibility");
         if (visibility != null) {
-            filters.add(Map.of("term", Map.of("visibility", visibility)));
+            filters.add(Map.of("terms", Map.of("visibility.keyword", List.of(
+                String.valueOf(visibility).toUpperCase(),
+                String.valueOf(visibility).toLowerCase()
+            ))));
         }
         return filters;
     }

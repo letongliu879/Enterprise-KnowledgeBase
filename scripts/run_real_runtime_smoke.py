@@ -324,6 +324,52 @@ def _start_service(name: str, cfg: dict[str, Any]) -> subprocess.Popen | None:
         pythonpath_parts.append(existing_pp)
     env["PYTHONPATH"] = os.pathsep.join(p for p in pythonpath_parts if p)
 
+    # Pre-clean: on Windows kill any process already listening on the target port
+    # to avoid stale processes from previous runs.
+    if IS_WINDOWS:
+        port = cfg.get("port")
+        if port:
+            try:
+                result = subprocess.run(
+                    ["cmd", "/c", f"for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{port}') do taskkill /F /PID %a"],
+                    capture_output=True,
+                    timeout=10.0,
+                )
+                if result.returncode == 0:
+                    _log("CLEAN", f"killed stale process on port {port}")
+            except Exception:
+                pass
+            # Also wait a moment for the port to be released
+            import time
+            for _ in range(10):
+                try:
+                    import socket
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.2)
+                    s.connect(("127.0.0.1", port))
+                    s.close()
+                    time.sleep(0.3)
+                except Exception:
+                    break
+
+    # Pre-compile Java services so code changes are actually reflected.
+    if name in JAVA_SERVICES:
+        try:
+            _log("BUILD", f"{name}: mvn clean compile -q")
+            mvn_cmd = "mvn.cmd" if IS_WINDOWS else "mvn"
+            result = subprocess.run(
+                [mvn_cmd, "clean", "compile", "-q"],
+                cwd=cfg["cwd"],
+                capture_output=True,
+                timeout=120.0,
+            )
+            if result.returncode != 0:
+                _log("BUILD", f"{name}: mvn clean compile failed:\n{result.stderr.decode('utf-8', errors='replace')[:500]}")
+            else:
+                _log("BUILD", f"{name}: mvn clean compile OK")
+        except Exception as e:
+            _log("BUILD", f"{name}: mvn clean compile exception: {e}")
+
     creationflags = 0
     if IS_WINDOWS and not cfg.get("shell", False):
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -476,6 +522,7 @@ class SmokeRunner:
             "ADMIN_JWT_SECRET": "smoke-test-secret",
             "JWT_SECRET": "smoke-test-secret",
             "INDEXING_BASE_URL": "http://127.0.0.1:18080",
+            "INDEXING_SERVICE_URL": "http://127.0.0.1:18080",
             "ADMIN_BASE_URL": "http://127.0.0.1:18084",
             "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
             "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
@@ -486,9 +533,15 @@ class SmokeRunner:
             "PUBLISHING_WORKER_BASE_URL": "http://127.0.0.1:18086",
             "REALITY_RAG_INDEXING_BASE_URL": "http://127.0.0.1:18080",
             "REALITY_RAG_INTAKE_RUNTIME_DIR": str(RUNTIME_DIR / "intake-real-smoke"),
+            "REALITY_RAG_SIDECAR_DIR": str(RUNTIME_DIR / "sidecar-real-smoke"),
             "ALLOW_LOCAL_FALLBACK_FOR_TESTS": "false",
             "OUTBOX_POLL_INTERVAL_SECONDS": "1",
-            # Do NOT override embedding / backend config — let Python services read
+            # Default: use real OpenSearch/Qdrant backends (assumes Docker Compose is up).
+            # Can fall back to noop via --require-live-backends=false if backends are absent.
+            "INDEXING_BACKEND_MODE": "hybrid",
+            "INDEXING_OPENSEARCH_URL": "http://127.0.0.1:19201",
+            "INDEXING_QDRANT_URL": "http://127.0.0.1:6333",
+            # Do NOT override embedding config — let Python services read
             # from their local .env files so real model endpoints are used.
         }
         if self.args.require_live_backends:
@@ -865,7 +918,7 @@ class SmokeRunner:
         index_name = self._opensearch_index_name()
         url = f"http://127.0.0.1:19201/{index_name}/_search"
         payload = {
-            "query": {"term": {"final_doc_id": self.final_doc_id}},
+            "query": {"term": {"final_doc_id.keyword": self.final_doc_id}},
             "size": 1,
         }
 

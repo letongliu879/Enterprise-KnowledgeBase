@@ -9,6 +9,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public class IndexProjectionSyncController {
+    private static final Logger LOG = LoggerFactory.getLogger(IndexProjectionSyncController.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -100,6 +103,11 @@ public class IndexProjectionSyncController {
                 new IndexProjectionSyncResponse(Instant.now().toString(), chunksSynced, chunksRemoved)
             );
         } catch (DataAccessException error) {
+            LOG.error("Index projection sync failed for collection={} indexVersion={} docId={}",
+                request.payload() != null ? request.payload().collectionId() : null,
+                request.payload() != null ? request.payload().indexVersionId() : null,
+                request.payload() != null ? request.payload().docId() : null,
+                error);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new IndexProjectionSyncResponse(null, 0, 0));
         }
@@ -156,7 +164,7 @@ public class IndexProjectionSyncController {
 
         String payloadJson;
         try {
-            payloadJson = objectMapper.writeValueAsString(payload);
+            payloadJson = objectMapper.writeValueAsString(sanitizeForJson(payload));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize chunk payload", e);
         }
@@ -202,6 +210,32 @@ public class IndexProjectionSyncController {
                 }
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object sanitizeForJson(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sanitized = new java.util.LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = String.valueOf(entry.getKey());
+                sanitized.put(key, sanitizeForJson(entry.getValue()));
+            }
+            return sanitized;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> sanitized = new java.util.ArrayList<>();
+            for (Object item : list) {
+                sanitized.add(sanitizeForJson(item));
+            }
+            return sanitized;
+        }
+        if (value instanceof Double d) {
+            return Double.isFinite(d) ? d : null;
+        }
+        if (value instanceof Float f) {
+            return Float.isFinite(f) ? f : null;
+        }
+        return value;
     }
 
     @SuppressWarnings("unchecked")
@@ -391,13 +425,24 @@ public class IndexProjectionSyncController {
         String docId = payload.docId();
         String state = payload.publishedDocumentState() != null ? payload.publishedDocumentState() : "published";
         String publishedDocId = "pd_" + docId;
-        int updated = jdbcTemplate.update("""
-            UPDATE published_documents SET
-                final_doc_id = ?, logical_document_id = ?, tenant_id = ?, collection_id = ?,
-                version = ?, source_content_hash = ?, canonical_hash = ?, state = ?, active_index_version = ?,
+        jdbcTemplate.update("""
+            INSERT INTO published_documents (
+                published_document_id, final_doc_id, logical_document_id, tenant_id, collection_id,
+                version, source_content_hash, canonical_hash, state, active_index_version,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (final_doc_id) DO UPDATE SET
+                logical_document_id = EXCLUDED.logical_document_id,
+                tenant_id = EXCLUDED.tenant_id,
+                collection_id = EXCLUDED.collection_id,
+                version = EXCLUDED.version,
+                source_content_hash = EXCLUDED.source_content_hash,
+                canonical_hash = EXCLUDED.canonical_hash,
+                state = EXCLUDED.state,
+                active_index_version = EXCLUDED.active_index_version,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE published_document_id = ?
             """,
+            publishedDocId,
             docId,
             docId,
             payload.tenantId() != null ? payload.tenantId() : "",
@@ -406,28 +451,7 @@ public class IndexProjectionSyncController {
             "",
             "",
             state,
-            payload.indexVersionId() != null ? payload.indexVersionId() : "",
-            publishedDocId
+            payload.indexVersionId() != null ? payload.indexVersionId() : ""
         );
-        if (updated == 0) {
-            jdbcTemplate.update("""
-                INSERT INTO published_documents (
-                    published_document_id, final_doc_id, logical_document_id, tenant_id, collection_id,
-                    version, source_content_hash, canonical_hash, state, active_index_version,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                publishedDocId,
-                docId,
-                docId,
-                payload.tenantId() != null ? payload.tenantId() : "",
-                payload.collectionId(),
-                1,
-                "",
-                "",
-                state,
-                payload.indexVersionId() != null ? payload.indexVersionId() : ""
-            );
-        }
     }
 }

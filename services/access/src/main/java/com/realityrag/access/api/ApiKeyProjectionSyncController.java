@@ -105,9 +105,9 @@ public class ApiKeyProjectionSyncController {
     private void mergeIdempotency(String idempotencyKey) {
         jdbcTemplate.update(
             """
-                MERGE INTO api_key_projection_idempotency (idempotency_key, processed_at)
-                KEY (idempotency_key)
+                INSERT INTO api_key_projection_idempotency (idempotency_key, processed_at)
                 VALUES (?, ?)
+                ON CONFLICT (idempotency_key) DO UPDATE SET processed_at = EXCLUDED.processed_at
                 """,
             idempotencyKey, ts(Instant.now())
         );
@@ -117,11 +117,24 @@ public class ApiKeyProjectionSyncController {
         var payload = request.payload();
         jdbcTemplate.update(
             """
-                MERGE INTO api_key_projection (
+                INSERT INTO api_key_projection (
                     api_key_id, tenant_id, agent_type_id, knowledge_scopes, roles,
                     debug_permission, token_budget_limit, state, expires_at,
                     projection_version, last_updated_at, synced_at, runtime_synced
-                ) KEY (api_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (api_key_id) DO UPDATE SET
+                    tenant_id = EXCLUDED.tenant_id,
+                    agent_type_id = EXCLUDED.agent_type_id,
+                    knowledge_scopes = EXCLUDED.knowledge_scopes,
+                    roles = EXCLUDED.roles,
+                    debug_permission = EXCLUDED.debug_permission,
+                    token_budget_limit = EXCLUDED.token_budget_limit,
+                    state = EXCLUDED.state,
+                    expires_at = EXCLUDED.expires_at,
+                    projection_version = EXCLUDED.projection_version,
+                    last_updated_at = EXCLUDED.last_updated_at,
+                    synced_at = EXCLUDED.synced_at,
+                    runtime_synced = EXCLUDED.runtime_synced
                 """,
             payload.apiKeyId(),
             payload.tenantId(),

@@ -54,20 +54,6 @@ def _build_lifespan(*, start_background_poller: bool):
     return _lifespan
 
 
-def create_app(*, start_background_poller: bool = True) -> FastAPI:
-    app = FastAPI(
-        title="Publishing Worker",
-        description="Document and policy persistence for Reality-RAG",
-        version="0.1.0",
-        lifespan=_build_lifespan(start_background_poller=start_background_poller),
-    )
-    app.include_router(router)
-    return app
-
-
-app = create_app()
-
-
 def _sync_lifecycle_to_retrieval(
     final_doc_id: str,
     new_state: str,
@@ -87,7 +73,7 @@ def _sync_lifecycle_to_retrieval(
             "collection_id": collection_id,
             "index_version_id": index_version_id,
             "sync_mode": "lifecycle_patch",
-            "final_doc_id": final_doc_id,
+            "doc_id": final_doc_id,
             "lifecycle_state": new_state,
         }
         sync_command = {
@@ -179,8 +165,10 @@ async def archive_published_document(final_doc_id: str, request: LifecycleReques
             new_state="ARCHIVED",
         )
     except ValueError as exc:
+        print(f"DEBUG ARCHIVE ValueError: {exc}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
+        print(f"DEBUG ARCHIVE Exception: {exc}", file=sys.stderr, flush=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -277,3 +265,17 @@ async def _outbox_poll_loop() -> None:
         except Exception:
             logger.exception("publishing outbox poll failed")
         await asyncio.sleep(interval)
+
+
+def create_app(*, start_background_poller: bool = True) -> FastAPI:
+    app = FastAPI(
+        title="Publishing Worker",
+        description="Document and policy persistence for Reality-RAG",
+        version="0.1.0",
+        lifespan=_build_lifespan(start_background_poller=start_background_poller),
+    )
+    app.include_router(router)
+    return app
+
+
+app = create_app()

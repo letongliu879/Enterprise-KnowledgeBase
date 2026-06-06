@@ -302,6 +302,27 @@ def _build_findings_extraction_prompt(
     )
 
 
+def _parse_authority_level(value: Any) -> int:
+    """Coerce suggested_authority_level to int, handling string values like 'low'."""
+    if value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        mapping = {"low": 2, "medium": 5, "high": 8, "critical": 10}
+        if lowered in mapping:
+            return mapping[lowered]
+        try:
+            return int(lowered)
+        except ValueError:
+            return 0
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return 0
+
+
 def _build_review_from_main_result(doc_id: str, result: dict[str, Any]) -> AgentReview:
     detected_pii = _parse_detected_pii(result.get("detected_pii"))
     decision_str = str(result.get("decision", "request_changes") or "request_changes")
@@ -329,7 +350,7 @@ def _build_review_from_main_result(doc_id: str, result: dict[str, Any]) -> Agent
         ),
         sections_requiring_review=_as_string_list(result.get("sections_requiring_review")),
         document_type=str(result.get("document_type", "") or ""),
-        suggested_authority_level=int(result.get("suggested_authority_level", 0) or 0),
+        suggested_authority_level=_parse_authority_level(result.get("suggested_authority_level")),
         detected_pii=detected_pii,
         diff_summary=str(result.get("diff_summary", "") or ""),
         anchored_findings=[],

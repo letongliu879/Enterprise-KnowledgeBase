@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "packages" / "ragflow_runtime" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "contracts" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "persistence" / "src"))
 
-from indexing_service import config as config_mod
+from reality_rag_contracts import config as config_mod
 
 
 @pytest.fixture(autouse=True)

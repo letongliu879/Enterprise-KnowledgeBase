@@ -2,7 +2,7 @@
 name = "conversion-worker"
 version = "0.1.0"
 description = "Standalone conversion worker for Reality-RAG"
-requires-python = "==3.14.*"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.100",
     "uvicorn[standard]",

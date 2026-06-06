@@ -781,16 +781,18 @@ class IndexJobRunner:
                 ),
             )
 
+            sync_payload_json = sync_command.model_dump(mode="json")
             resp = httpx.post(
                 f"{retrieval_url}/internal/index-projections/sync",
-                json=sync_command.model_dump(mode="json"),
+                json=sync_payload_json,
                 timeout=30.0,
             )
             if resp.status_code >= 400:
                 logging.getLogger(__name__).warning(
-                    "retrieval index projection sync failed: %s %s",
+                    "retrieval index projection sync failed: %s %s request=%s",
                     resp.status_code,
                     resp.text,
+                    json.dumps(sync_payload_json, default=str)[:2000],
                 )
             else:
                 result = resp.json()

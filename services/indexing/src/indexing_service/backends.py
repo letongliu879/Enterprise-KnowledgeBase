@@ -101,7 +101,26 @@ class OpenSearchIndexWriter:
             for index_name in sorted(index_names):
                 response = await client.put(
                     f"{self.base_url}/{index_name}",
-                    json={},
+                    json={
+                        "mappings": {
+                            "dynamic_templates": [
+                                {
+                                    "strings_as_keywords": {
+                                        "match_mapping_type": "string",
+                                        "mapping": {
+                                            "type": "text",
+                                            "fields": {
+                                                "keyword": {
+                                                    "type": "keyword",
+                                                    "ignore_above": 256,
+                                                }
+                                            },
+                                        },
+                                    }
+                                }
+                            ]
+                        }
+                    },
                 )
                 if response.status_code not in (200, 201):
                     if response.status_code == 400:

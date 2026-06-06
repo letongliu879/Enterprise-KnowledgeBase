@@ -35,6 +35,9 @@ public class PermissionPrefilter {
 
     private boolean matchesMetadataFilters(Map<String, Object> metadataFilters, IndexedChunk chunk) {
         Object visibilityFilter = metadataFilters.get("visibility");
-        return visibilityFilter == null || visibilityFilter.equals(chunk.visibility());
+        if (visibilityFilter == null) {
+            return true;
+        }
+        return String.valueOf(visibilityFilter).equalsIgnoreCase(chunk.visibility());
     }
 }

@@ -95,8 +95,6 @@ def _forward_event_to_workbench(service: str, event: OutboxEvent, *, aggregate_v
 
 def _deliver_approval_event(event: OutboxEvent) -> bool:
     """Forward approval requests or consume approval outcomes."""
-    from .domains.approval_domain import _get_remote_url
-
     if event.event_type in {EventType.APPROVAL_PENDING.value, EventType.APPROVAL_DECIDED.value}:
         local_success = False
         session = get_session()
@@ -137,7 +135,7 @@ def _deliver_approval_event(event: OutboxEvent) -> bool:
         aggregate_version = int(event.payload_json.get("ticket_event_version") or (1 if event.event_type == EventType.APPROVAL_PENDING.value else 2))
         return _forward_event_to_workbench("approval", event, aggregate_version=aggregate_version)
 
-    remote_url = _get_remote_url()
+    remote_url = os.environ.get("APPROVAL_SERVICE_URL", "").rstrip("/") or os.environ.get("APPROVAL_BASE_URL", "").rstrip("/") or None
     if remote_url is None:
         logger.error("outbox: APPROVAL_SERVICE_URL is required for approval owner delivery")
         return False
@@ -256,6 +254,20 @@ def _deliver_publish_event(event: OutboxEvent) -> bool:
     return True
 
 
+def _run_coroutine_blocking(coro_factory):
+    """Run an async coroutine from a sync context, handling nested event loops."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro_factory())
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: asyncio.run(coro_factory()))
+        return future.result()
+
+
 def _submit_indexing_after_publish(payload: dict[str, Any]) -> None:
     """Submit published document to indexing via async HTTP call."""
     from .indexing_service import get_indexing_service
@@ -274,7 +286,7 @@ def _submit_indexing_after_publish(payload: dict[str, Any]) -> None:
             options={"activate_index_version": True},
         )
 
-    asyncio.run(_run())
+    _run_coroutine_blocking(_run)
 
 
 def _mark_document_index_failed(final_doc_id: str) -> None:

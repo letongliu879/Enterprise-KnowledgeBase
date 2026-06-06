@@ -275,7 +275,7 @@ combined_app.mount("/publishing", publishing_app)
 
 # Direct-mount workbench event routes at /internal/events for cross-service event forwarding
 # Must be before catch-all admin mount
-from workbench_api.events.routes import router as _events_router  # noqa: E402
+from workbench_api.events import router as _events_router  # noqa: E402
 combined_app.include_router(_events_router)
 
 # admin routes embed /admin, and it has /health — mount at / so no stripping occurs.
