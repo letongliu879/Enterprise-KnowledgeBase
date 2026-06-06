@@ -79,11 +79,22 @@ class AdminClient(BaseHttpClient):
             service_name="Admin",
         )
 
-    async def get_collection(self, collection_id: str) -> dict:
-        return await self._request("get", f"/admin/collections/{collection_id}")
+    async def get_collection(self, collection_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("get", f"/admin/collections/{collection_id}", headers=headers)
 
-    async def list_parser_profiles(self) -> list[dict]:
-        return await self._request("get", "/admin/parser-profiles")
+    async def list_collections(self, tenant_id: str | None = None, *, headers: dict | None = None) -> dict:
+        params = {"tenant_id": tenant_id} if tenant_id else {}
+        return await self._request("get", "/admin/collections", params=params, headers=headers)
+
+    async def create_collection(self, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("post", "/admin/collections", json=payload, headers=headers)
+
+    async def list_parser_profiles(self, *, headers: dict | None = None) -> list[dict]:
+        return await self._request("get", "/admin/parser-profiles", headers=headers)
+
+    async def list_retrieval_profiles(self, state: str | None = None, *, headers: dict | None = None) -> dict:
+        params = {"state": state} if state else {}
+        return await self._request("get", "/admin/retrieval-profiles", params=params, headers=headers)
 
 
 class DocumentServiceClient(BaseHttpClient):

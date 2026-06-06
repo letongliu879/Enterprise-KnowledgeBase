@@ -5,7 +5,6 @@ to drive projection updates. Each service authenticates with its
 own X-Service-Key.
 """
 
-import os
 import secrets
 from datetime import datetime
 from typing import Any, Literal
@@ -14,6 +13,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..config import config
 from ..deps import get_db
 from ..projections.projector import ProjectionProjector
 
@@ -42,9 +42,9 @@ from .adapters import get_adapter
 # -- Authentication --
 
 SERVICE_KEYS: dict[str, str] = {
-    "intake": os.environ.get("WORKBENCH_EVENT_KEY_INTAKE") or "",
-    "approval": os.environ.get("WORKBENCH_EVENT_KEY_APPROVAL") or "",
-    "indexing": os.environ.get("WORKBENCH_EVENT_KEY_INDEXING") or "",
+    "intake": config.workbench_event_key_intake,
+    "approval": config.workbench_event_key_approval,
+    "indexing": config.workbench_event_key_indexing,
 }
 
 

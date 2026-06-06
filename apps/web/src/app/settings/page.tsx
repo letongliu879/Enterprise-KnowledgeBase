@@ -108,7 +108,7 @@ export default function SettingsPage() {
                   type="password"
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  placeholder="123456"
                 />
                 <p className="text-xs text-muted-foreground">
                   用于工作台和管理 API 调用。
@@ -121,7 +121,7 @@ export default function SettingsPage() {
                   type="password"
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="demo-api-key-001"
+                  placeholder="123456"
                 />
                 <p className="text-xs text-muted-foreground">
                   用于通过访问服务进行检索（X-API-Key 请求头）。

@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/lib/store";
-import { adminApi, workbenchApi, accessApi, retrievalApi } from "@/lib/api/client";
+import { workbenchApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -52,41 +52,21 @@ function HealthDot({ status }: { status?: string }) {
 }
 
 function BackendHealth() {
-  const adminHealth = useQuery({
-    queryKey: ["health", "admin"],
-    queryFn: () => adminApi.health(),
-    retry: 1,
-    refetchInterval: 30000,
-  });
-  const workbenchHealth = useQuery({
-    queryKey: ["health", "workbench"],
-    queryFn: () => workbenchApi.health(),
-    retry: 1,
-    refetchInterval: 30000,
-  });
-  const accessHealth = useQuery({
-    queryKey: ["health", "access"],
-    queryFn: () => accessApi.health(),
-    retry: 1,
-    refetchInterval: 30000,
-  });
-  const retrievalHealth = useQuery({
-    queryKey: ["health", "retrieval"],
-    queryFn: () => retrievalApi.health(),
+  const healthAll = useQuery({
+    queryKey: ["health", "all"],
+    queryFn: () => workbenchApi.healthAll(),
     retry: 1,
     refetchInterval: 30000,
   });
 
   const services = [
-    { name: "Admin", q: adminHealth },
-    { name: "Workbench", q: workbenchHealth },
-    { name: "Access", q: accessHealth },
-    { name: "Retrieval", q: retrievalHealth },
+    { name: "Admin", status: healthAll.data?.services?.admin?.status },
+    { name: "Workbench", status: healthAll.data?.workbench?.status },
+    { name: "Access", status: healthAll.data?.services?.access?.status },
+    { name: "Retrieval", status: healthAll.data?.services?.retrieval?.status },
   ];
 
-  const allHealthy = services.every(
-    (s) => s.q.data?.status === "ok" || s.q.data?.status === "healthy" || s.q.data?.status === "UP"
-  );
+  const allHealthy = healthAll.data?.all_healthy ?? false;
 
   return (
     <div className="flex items-center gap-3 px-3">
@@ -97,10 +77,10 @@ function BackendHealth() {
       <div className="flex items-center gap-2">
         {services.map((s) => (
           <div key={s.name} className="flex items-center gap-1" title={s.name}>
-            {s.q.isLoading ? (
+            {healthAll.isLoading ? (
               <Skeleton className="h-2 w-2 rounded-full" />
             ) : (
-              <HealthDot status={s.q.data?.status || (s.q.error ? "down" : "ok")} />
+              <HealthDot status={s.status || (healthAll.error ? "down" : "ok")} />
             )}
             <span className="text-[10px] text-muted-foreground hidden lg:inline">
               {s.name}
@@ -120,13 +100,13 @@ function BackendHealth() {
 function CollectionSelector() {
   const { currentCollectionId, setCurrentCollectionId } = useAppStore();
   const { data: me } = useQuery({
-    queryKey: ["admin-me"],
-    queryFn: () => adminApi.me(),
+    queryKey: ["workbench-me"],
+    queryFn: () => workbenchApi.me(),
   });
   const userTenantId = me?.tenant_id ?? "";
   const { data: collectionResponse, isLoading } = useQuery({
-    queryKey: ["collections", userTenantId],
-    queryFn: () => adminApi.listCollections(userTenantId),
+    queryKey: ["workbench-collections", userTenantId],
+    queryFn: () => workbenchApi.listCollections(userTenantId),
     enabled: !!userTenantId,
   });
   const collections = collectionResponse?.items ?? [];

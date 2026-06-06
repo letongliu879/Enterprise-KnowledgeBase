@@ -14,7 +14,7 @@ import {
   Sparkles,
   AlertCircle,
 } from "lucide-react";
-import { workbenchApi, adminApi } from "@/lib/api/client";
+import { workbenchApi } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,8 +43,8 @@ export default function RetrievalPage() {
   const [debug, setDebug] = useState<"none" | "basic" | "full">("none");
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
   const { data: me } = useQuery({
-    queryKey: ["admin-me"],
-    queryFn: () => adminApi.me(),
+    queryKey: ["workbench-me"],
+    queryFn: () => workbenchApi.me(),
   });
   const userTenantId = me?.tenant_id ?? "";
 
@@ -52,8 +52,8 @@ export default function RetrievalPage() {
     data: collectionResponse,
     isLoading: collectionsLoading,
   } = useQuery({
-    queryKey: ["collections", userTenantId],
-    queryFn: () => adminApi.listCollections(userTenantId),
+    queryKey: ["workbench-collections", userTenantId],
+    queryFn: () => workbenchApi.listCollections(userTenantId),
     enabled: !!userTenantId,
   });
   const collections = collectionResponse?.items ?? [];
@@ -62,8 +62,8 @@ export default function RetrievalPage() {
     data: profiles,
     isLoading: profilesLoading,
   } = useQuery({
-    queryKey: ["retrieval-profiles"],
-    queryFn: () => adminApi.listRetrievalProfiles("published"),
+    queryKey: ["workbench-retrieval-profiles"],
+    queryFn: () => workbenchApi.listRetrievalProfiles("published"),
   });
   const retrievalProfiles = profiles?.items ?? [];
 

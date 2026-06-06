@@ -8,7 +8,7 @@ import {
   Plus,
   AlertCircle,
 } from "lucide-react";
-import { adminApi } from "@/lib/api/client";
+import { workbenchApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -34,8 +34,8 @@ export default function CollectionsPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const { data: me, isLoading: meLoading } = useQuery({
-    queryKey: ["admin-me"],
-    queryFn: () => adminApi.me(),
+    queryKey: ["workbench-me"],
+    queryFn: () => workbenchApi.me(),
   });
   const userTenantId = me?.tenant_id ?? "";
 
@@ -62,18 +62,18 @@ export default function CollectionsPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["collections", userTenantId],
-    queryFn: () => adminApi.listCollections(userTenantId),
+    queryKey: ["workbench-collections", userTenantId],
+    queryFn: () => workbenchApi.listCollections(userTenantId),
     enabled: !!userTenantId,
   });
   const collections = collectionResponse?.items ?? [];
 
   const createCollection = useMutation({
-    mutationFn: adminApi.createCollection,
+    mutationFn: workbenchApi.createCollection,
     onSuccess: () => {
       toast.success("集合已创建");
       setCreateOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["collections"] });
+      queryClient.invalidateQueries({ queryKey: ["workbench-collections"] });
       setForm({
         collection_id: "",
         tenant_id: me?.tenant_id ?? "",

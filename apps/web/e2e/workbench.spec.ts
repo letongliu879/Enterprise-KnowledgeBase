@@ -22,17 +22,17 @@ test.describe("Workbench Navigation", () => {
     await expect(page.getByRole("heading", { name: "批量入库" })).toBeVisible();
 
     await page.getByRole("link", { name: "人工复核" }).click();
-    await expect(page).toHaveURL(/.*review/);
+    await page.waitForURL(/.*review/);
     await waitForPageReady(page);
     await expect(page.getByRole("heading", { name: "人工复核队列" })).toBeVisible();
 
     await page.getByRole("link", { name: "检索验证" }).click();
-    await expect(page).toHaveURL(/.*retrieval/);
+    await page.waitForURL(/.*retrieval/);
     await waitForPageReady(page);
     await expect(page.getByRole("heading", { name: "检索验证" })).toBeVisible();
 
     await page.getByRole("link", { name: "知识库集合" }).click();
-    await expect(page).toHaveURL(/.*collections/);
+    await page.waitForURL(/.*collections/);
     await waitForPageReady(page);
     await expect(page.getByRole("heading", { name: "知识库集合" })).toBeVisible();
   });

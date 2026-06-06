@@ -12,22 +12,10 @@ import type {
 import { ApiClientError, BackendGapError } from "./errors";
 import { useAppStore } from "@/lib/store";
 
-const ADMIN_BASE =
-  process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_ADMIN_API_URL ||
-  "/api/admin";
 const WORKBENCH_BASE =
   process.env.NEXT_PUBLIC_WORKBENCH_API_BASE_URL ||
   process.env.NEXT_PUBLIC_WORKBENCH_API_URL ||
   "/api/workbench";
-const ACCESS_BASE =
-  process.env.NEXT_PUBLIC_ACCESS_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_ACCESS_API_URL ||
-  "/api/access";
-const RETRIEVAL_BASE =
-  process.env.NEXT_PUBLIC_RETRIEVAL_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_RETRIEVAL_API_URL ||
-  "/api/retrieval";
 const REQUEST_TIMEOUT_MS = 15000;
 
 function getToken(): string | undefined {
@@ -110,53 +98,6 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
-async function requestAccess<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const url = resolveUrl(ACCESS_BASE, path);
-  const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
-
-  const apiKey = getApiKey();
-  if (apiKey) headers.set("X-API-Key", apiKey);
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const res = await fetch(url.toString(), {
-    ...options,
-    headers,
-    signal: controller.signal,
-  }).catch((error: unknown) => {
-    clearTimeout(timeout);
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiClientError(
-        "REQUEST_TIMEOUT",
-        `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
-        408
-      );
-    }
-    throw error;
-  });
-  clearTimeout(timeout);
-
-  if (!res.ok) {
-    let body: { code?: string; message?: string } = {};
-    try {
-      body = await res.json();
-    } catch {
-      /* ignore */
-    }
-    throw new ApiClientError(
-      body.code || `HTTP_${res.status}`,
-      body.message || `HTTP ${res.status}`,
-      res.status
-    );
-  }
-
-  return res.json() as Promise<T>;
-}
-
 function resolveUrl(base: string, path: string): URL {
   if (/^https?:\/\//i.test(base)) {
     return new URL(path, base);
@@ -174,11 +115,20 @@ function resolveUrl(base: string, path: string): URL {
   return new URL(`${normalizedBase}${adjustedPath}`, origin);
 }
 
-// ── Admin API ──────────────────────────────────────────────────────────
+// ── Workbench API ──────────────────────────────────────────────────────
 
-export const adminApi = {
+export const workbenchApi = {
   health: () =>
-    request<{ service: string; status: string }>(ADMIN_BASE, "/health"),
+    request<{ service: string; status: string }>(
+      WORKBENCH_BASE,
+      "/workbench/health"
+    ),
+  healthAll: () =>
+    request<{
+      workbench: { status: string; service: string };
+      services: Record<string, { status: string; service: string }>;
+      all_healthy: boolean;
+    }>(WORKBENCH_BASE, "/workbench/health/all"),
   me: () =>
     request<{
       user_id: string;
@@ -186,11 +136,10 @@ export const adminApi = {
       display_name?: string;
       roles: string[];
       tenant_id: string;
-      allowed_tenants?: string[];
-      allowed_collections?: string[];
-    }>(ADMIN_BASE, "/admin/auth/me"),
+      allowed_collections: string[];
+    }>(WORKBENCH_BASE, "/workbench/auth/me"),
   listCollections: (tenant_id?: string) =>
-    request<CollectionListResponse>(ADMIN_BASE, "/admin/collections", {
+    request<CollectionListResponse>(WORKBENCH_BASE, "/workbench/collections", {
       query: { tenant_id: tenant_id || "" },
     }),
   createCollection: (payload: {
@@ -202,35 +151,16 @@ export const adminApi = {
     authority_level?: number;
     access_policy?: Record<string, unknown>;
   }) =>
-    request<Record<string, unknown>>(ADMIN_BASE, "/admin/collections", {
+    request<Record<string, unknown>>(WORKBENCH_BASE, "/workbench/collections", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   listRetrievalProfiles: (state?: string) =>
     request<{ items: Array<Record<string, unknown>>; total: number }>(
-      ADMIN_BASE,
-      "/admin/retrieval-profiles",
+      WORKBENCH_BASE,
+      "/workbench/retrieval-profiles",
       { query: { state } }
     ),
-};
-
-// ── Workbench API ──────────────────────────────────────────────────────
-
-export const workbenchApi = {
-  health: () =>
-    request<{ service: string; status: string }>(
-      WORKBENCH_BASE,
-      "/workbench/health"
-    ),
-  me: () =>
-    request<{
-      user_id: string;
-      email: string;
-      display_name?: string;
-      roles: string[];
-      tenant_id: string;
-      allowed_collections: string[];
-    }>(WORKBENCH_BASE, "/workbench/auth/me"),
   createUpload: (payload: {
     collection_id: string;
     filename: string;
@@ -466,37 +396,4 @@ export const workbenchApi = {
     }),
 };
 
-// ── Access API (retrieval) ─────────────────────────────────────────────
-
-export const accessApi = {
-  health: () =>
-    request<{ service: string; status: string; retrieval_status: string }>(
-      ACCESS_BASE,
-      "/health"
-    ),
-  retrieve: (payload: {
-    query: string;
-    collection_scope: string[];
-    retrieval_profile_id: string;
-    token_budget?: number;
-    filters?: Record<string, unknown>;
-    language?: string;
-    cross_languages?: string[];
-    keyword?: boolean;
-    meta_data_filter?: Record<string, unknown>;
-    debug?: "none" | "basic" | "full";
-  }) =>
-    requestAccess<Record<string, unknown>>("/v1/retrieve", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-};
-
-// ── Retrieval internal (for workbench debug only) ──────────────────────
-
-export const retrievalApi = {
-  health: () =>
-    request<{ service: string; status: string }>(RETRIEVAL_BASE, "/health"),
-};
-
-export { ADMIN_BASE, WORKBENCH_BASE, ACCESS_BASE, RETRIEVAL_BASE };
+export { WORKBENCH_BASE };

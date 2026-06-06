@@ -18,6 +18,9 @@ from .source_files.routes import router as source_file_router
 from .commands.retrieval import router as retrieval_router
 from .events import router as event_router
 from .projections.routes import router as projection_router
+from .collections.routes import router as collections_router
+from .retrieval_profiles.routes import router as retrieval_profiles_router
+from .health.routes import router as health_router
 
 
 @asynccontextmanager
@@ -51,6 +54,9 @@ def create_app() -> FastAPI:
     application.include_router(retrieval_router)
     application.include_router(event_router)
     application.include_router(projection_router)
+    application.include_router(collections_router)
+    application.include_router(retrieval_profiles_router)
+    application.include_router(health_router)
 
     @application.get("/workbench/health")
     def health() -> dict[str, str]:

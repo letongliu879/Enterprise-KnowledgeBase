@@ -20,13 +20,22 @@ class WorkbenchConfig:
     auth_mode: str = os.environ.get("AUTH_MODE", "smoke")
 
     indexing_base_url: str = os.environ.get("INDEXING_BASE_URL", "http://127.0.0.1:18080")
-    ingestion_worker_url: str = os.environ.get("INGESTION_WORKER_URL", "http://127.0.0.1:18088")
+    # Support both legacy INGESTION_WORKER_URL and deploy/.env INTAKE_BASE_URL
+    ingestion_worker_url: str = os.environ.get("INGESTION_WORKER_URL") or os.environ.get("INTAKE_BASE_URL", "http://127.0.0.1:18085")
     approval_base_url: str = os.environ.get("APPROVAL_BASE_URL", "http://127.0.0.1:18087")
     admin_base_url: str = os.environ.get("ADMIN_BASE_URL", "http://127.0.0.1:18084")
-    access_base_url: str = os.environ.get("ACCESS_BASE_URL", "http://127.0.0.1:18081")
+    # Port 18181 matches deploy/.env ACCESS_BASE_URL
+    access_base_url: str = os.environ.get("ACCESS_BASE_URL", "http://127.0.0.1:18181")
     document_service_base_url: str = os.environ.get("DOCUMENT_SERVICE_BASE_URL", "http://localhost:8006")
-    publishing_base_url: str = os.environ.get("PUBLISHING_BASE_URL", "http://localhost:8008")
+    # Support both legacy PUBLISHING_BASE_URL and deploy/.env PUBLISHING_WORKER_BASE_URL
+    publishing_base_url: str = os.environ.get("PUBLISHING_BASE_URL") or os.environ.get("PUBLISHING_WORKER_BASE_URL", "http://127.0.0.1:18086")
+    retrieval_base_url: str = os.environ.get("RETRIEVAL_BASE_URL", "http://127.0.0.1:18182")
     access_internal_api_key: str = os.environ.get("ACCESS_INTERNAL_API_KEY", "")
+
+    # Event ingestion service keys (fallback to empty string = disabled)
+    workbench_event_key_intake: str = os.environ.get("WORKBENCH_EVENT_KEY_INTAKE", "")
+    workbench_event_key_approval: str = os.environ.get("WORKBENCH_EVENT_KEY_APPROVAL", "")
+    workbench_event_key_indexing: str = os.environ.get("WORKBENCH_EVENT_KEY_INDEXING", "")
 
     database_url: str = os.environ.get(
         "DATABASE_URL",
