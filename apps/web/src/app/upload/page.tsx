@@ -22,7 +22,7 @@ import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+// Progress component removed — status shown as text only
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/empty-state";
 import { isApiError, getErrorMessage } from "@/lib/api/errors";
@@ -53,7 +53,6 @@ interface FileItem {
   id: string;
   file: File;
   status: FileStatus;
-  progress: number;
   error?: string;
   uploadId?: string;
 }
@@ -64,6 +63,8 @@ function getStatusIcon(status: FileStatus) {
       return <Clock className="h-4 w-4 text-muted-foreground" />;
     case "uploading":
       return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+    case "ready":
+      return <Loader2 className="h-4 w-4 animate-spin text-blue-400" />;
     case "uploaded":
       return <CheckCircle2 className="h-4 w-4 text-blue-500" />;
     case "duplicate":
@@ -90,19 +91,20 @@ function getStatusIcon(status: FileStatus) {
 
 function getStatusLabel(status: FileStatus) {
   const labels: Record<FileStatus, string> = {
-    queued: "待上传",
-    uploading: "上传中",
+    queued: "正在排队",
+    uploading: "正在上传",
+    ready: "正在等待处理",
     uploaded: "已上传",
     duplicate: "重复文件",
-    parsing: "解析中",
-    reviewing: "待复核",
+    parsing: "正在解析",
+    reviewing: "正在等待复核",
     approved: "已批准",
     published: "已发布",
-    indexing: "索引构建中",
+    indexing: "正在构建索引",
     archived: "已归档",
     retracted: "已撤回",
     rejected: "已驳回",
-    failed: "失败",
+    failed: "处理失败",
   };
   return labels[status];
 }
@@ -129,7 +131,7 @@ export default function UploadPage() {
     refetchInterval: 5000,
   });
 
-  // Reconcile local file status and progress with backend task state
+  // Reconcile local file status with backend task state
   useEffect(() => {
     if (!tasks?.items?.length) return;
     const taskMap = new Map(tasks.items.map((t) => [t.upload_id, t]));
@@ -139,9 +141,8 @@ export default function UploadPage() {
         const task = taskMap.get(f.uploadId);
         if (!task) return f;
         const statusChanged = task.status !== f.status;
-        const progressChanged = task.progress_pct !== f.progress;
-        if (!statusChanged && !progressChanged) return f;
-        return { ...f, status: task.status, progress: task.progress_pct };
+        if (!statusChanged) return f;
+        return { ...f, status: task.status };
       })
     );
   }, [tasks]);
@@ -163,7 +164,7 @@ export default function UploadPage() {
       setFiles((prev) =>
         prev.map((f) =>
           f.id === item.id
-            ? { ...f, uploadId, status: S_UPLOADING, progress: 50 }
+            ? { ...f, uploadId, status: S_UPLOADING }
             : f
         )
       );
@@ -194,7 +195,7 @@ export default function UploadPage() {
       setFiles((prev) =>
         prev.map((f) =>
           f.id === item.id
-            ? { ...f, status: S_UPLOADING, progress: 100 }
+            ? { ...f, status: S_UPLOADING }
             : f
         )
       );
@@ -260,7 +261,6 @@ export default function UploadPage() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         file,
         status: "queued",
-        progress: 0,
       }));
       enqueueUploads(newItems);
     },
@@ -281,7 +281,6 @@ export default function UploadPage() {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file,
       status: "queued",
-      progress: 0,
     }));
     enqueueUploads(newItems);
     e.target.value = "";
@@ -296,7 +295,6 @@ export default function UploadPage() {
     const updated = {
       ...item,
       status: "queued" as FileStatus,
-      progress: 0,
       error: undefined,
       uploadId: undefined,
     };
@@ -425,9 +423,6 @@ export default function UploadPage() {
                     {TYPE_LABELS[item.file.type] || item.file.name.split(".").pop()?.toUpperCase()}{" "}
                     · {(item.file.size / 1024).toFixed(1)} KB
                   </p>
-                  {item.status === "uploading" && (
-                    <Progress value={item.progress} className="h-1 mt-2" />
-                  )}
                   {item.error && (
                     <p className="text-xs text-red-500 mt-1">{item.error}</p>
                   )}
@@ -482,14 +477,13 @@ export default function UploadPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{String(task.filename)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {String(task.collection_id)} · {String(task.status)}
+                    {String(task.collection_id)} · {getStatusLabel(task.status as FileStatus)}
                   </p>
                 </div>
-                <Badge variant="outline">{String(task.status)}</Badge>
-                <Progress
-                  value={Number(task.progress_pct || 0)}
-                  className="w-24 h-1.5"
-                />
+                <Badge variant="outline" className="gap-1">
+                  {getStatusIcon(task.status as FileStatus)}
+                  <span className="text-xs">{getStatusLabel(task.status as FileStatus)}</span>
+                </Badge>
               </div>
             ))}
           </div>

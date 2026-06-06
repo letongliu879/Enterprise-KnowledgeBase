@@ -60,6 +60,7 @@ export interface RetrievalProfileItem {
 
 export type UploadStatus =
   | "uploading"
+  | "ready"
   | "uploaded"
   | "duplicate"
   | "parsing"
