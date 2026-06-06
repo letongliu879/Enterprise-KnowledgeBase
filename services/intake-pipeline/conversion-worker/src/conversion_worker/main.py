@@ -15,44 +15,28 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI
 
-from reality_rag_contracts import HealthResponse
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.outbox import OutboxDispatcher
 
-from intake_runtime.stages.schemas import ConversionStageInput, ConversionStageOutput
-from intake_runtime.stages.pure_stages import run_conversion_stage
-from intake_runtime.converters.ragflow_converter import RAGFlowConverter
 from intake_runtime.stage_runtime import execute_conversion_task
 from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
 from reality_rag_contracts import StageName
 
-logger = logging.getLogger(__name__)
-router = APIRouter()
+from conversion_worker.routes import router
 
-# Service-local converter instance
-_converter = RAGFlowConverter()
+logger = logging.getLogger(__name__)
 _outbox_dispatcher_task: asyncio.Task[None] | None = None
 
 
-class ConversionRunRequest(BaseModel):
-    intake_job_id: str = ""
-    collection_id: str = ""
-    source_file_path: str = ""
-    tenant_id: str = "default"
-    collection_authority_level: int = 0
-    index_version: str = "v1"
-    existing_published_doc_id_by_source_hash: str | None = None
-    latest_version_by_logical_id: int | None = None
-
-class _ConversionPipeline:
-    def __init__(self) -> None:
-        self._converters = [_converter]
-
-
 async def _outbox_poll_loop() -> None:
+    from conversion_worker.routes import _converter
+
+    class _ConversionPipeline:
+        def __init__(self) -> None:
+            self._converters = [_converter]
+
     dispatcher = OutboxDispatcher(
         session_factory=get_session,
         deliver=make_stage_task_deliver(
@@ -113,42 +97,3 @@ def create_app(*, start_background_poller: bool = True) -> FastAPI:
 
 
 app = create_app()
-
-
-@router.get("/health", response_model=HealthResponse)
-async def health() -> HealthResponse:
-    return HealthResponse(
-        status="ok",
-        service="conversion-worker",
-        version="0.1.0",
-    )
-
-
-@router.post("/internal/conversion/run")
-async def run_conversion(request: ConversionRunRequest) -> dict:
-    try:
-        inp = ConversionStageInput(
-            schema_version="v1",
-            intake_job_id=request.intake_job_id,
-            collection_id=request.collection_id,
-            source_file_path=request.source_file_path,
-            tenant_id=request.tenant_id,
-            collection_authority_level=request.collection_authority_level,
-            index_version=request.index_version,
-            existing_published_doc_id_by_source_hash=request.existing_published_doc_id_by_source_hash,
-            latest_version_by_logical_id=request.latest_version_by_logical_id,
-        )
-        out = run_conversion_stage(inp, [_converter])
-        return {
-            "schema_version": out.schema_version,
-            "input_hash": out.input_hash,
-            "result_hash": out.result_hash,
-            "conversion_status": out.conversion_result.conversion_status.value if out.conversion_result else None,
-            "preliminary_doc_id": out.preliminary_doc_id,
-            "logical_document_id": out.logical_document_id,
-            "version": out.version,
-            "dedup_skipped": out.dedup_skipped,
-            "skip_reason": out.skip_reason,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc

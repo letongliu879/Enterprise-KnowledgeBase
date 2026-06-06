@@ -498,6 +498,13 @@ def _service_env_overrides(name: str) -> dict[str, str]:
     }
 
 
+try:
+    from scripts.ekb_svc_utils import _convert_to_jdbc_url
+except ModuleNotFoundError:
+    # When running directly (python scripts/ekb-svc.py), fall back to local import
+    from ekb_svc_utils import _convert_to_jdbc_url
+
+
 def _topo_sort(services: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """Return list of layers, each layer can be started in parallel."""
     name_to_svc = {s["name"]: s for s in services}
@@ -666,6 +673,9 @@ def _start_service(svc: dict[str, Any], reload: bool = False, job: _WinJobObject
             for d in svc.get("reload_dirs", []):
                 cmd.extend(["--reload-dir", str(d)])
     else:
+        # Java services need JDBC URL format, not SQLAlchemy format
+        if "DATABASE_URL" in env:
+            env["DATABASE_URL"] = _convert_to_jdbc_url(env["DATABASE_URL"])
         jar = _find_jar(svc["cwd"], svc["jar_pattern"])
         if jar is None:
             print(_color("red", _tag(name)), "No jar found. Run 'build' first.")

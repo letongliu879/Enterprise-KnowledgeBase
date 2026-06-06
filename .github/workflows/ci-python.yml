@@ -1,0 +1,51 @@
+name: Python CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "services/**"
+      - "packages/**"
+      - "pyproject.toml"
+      - ".github/workflows/ci-python.yml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "services/**"
+      - "packages/**"
+      - "pyproject.toml"
+      - ".github/workflows/ci-python.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --all-packages --group dev
+
+      - name: Run tests
+        run: uv run pytest --cov --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        if: github.event_name == 'push'
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
