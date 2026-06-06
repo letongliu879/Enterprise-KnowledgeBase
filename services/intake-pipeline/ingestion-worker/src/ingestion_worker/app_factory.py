@@ -74,7 +74,7 @@ def _build_lifespan(*, start_background_poller: bool):
         from reality_rag_persistence.database import get_session
         from reality_rag_persistence.outbox import OutboxDispatcher
 
-        from .outbox_deliver import make_deliver_callback
+        from .outbox_deliver import make_deliver_callback, recover_stuck_approvals
 
         async def _outbox_poll_loop() -> None:
             dispatcher = OutboxDispatcher(
@@ -90,6 +90,12 @@ def _build_lifespan(*, start_background_poller: bool):
                         logger.debug("outbox: dispatched %d events", dispatched)
                 except Exception:
                     logger.exception("outbox: poll_and_dispatch failed")
+                try:
+                    recovered = recover_stuck_approvals()
+                    if recovered > 0:
+                        logger.info("ingestion recovered %d stuck approvals", recovered)
+                except Exception:
+                    logger.exception("approval recovery failed")
                 await asyncio.sleep(interval)
 
         _outbox_dispatcher_task = asyncio.create_task(_outbox_poll_loop())

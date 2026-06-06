@@ -394,6 +394,56 @@ def _deliver_file_ready(event: OutboxEvent) -> bool:
         session.close()
 
 
+def recover_stuck_approvals() -> int:
+    """Re-emit ApprovalRequested events for intake jobs stuck at awaiting_approval.
+
+    This handles the case where the approval service was unavailable when the
+    original ApprovalRequested event was processed, causing the outbox event
+    to be marked as failed/sent but the intake job never progressing.
+    """
+    session = get_session()
+    try:
+        orch = OrchestratorService(session)
+        from reality_rag_persistence.models import IntakeJobModel
+        from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+        import uuid
+
+        repo = IntakeJobRepository(session)
+        stuck = (
+            session.query(IntakeJobModel)
+            .filter(IntakeJobModel.state == IntakeJobState.AWAITING_APPROVAL.value)
+            .filter(IntakeJobModel.ticket_id.isnot(None))
+            .all()
+        )
+        recovered = 0
+        for row in stuck:
+            try:
+                orch.request_approval(
+                    intake_job_id=row.intake_job_id,
+                    preliminary_doc_id=row.preliminary_doc_id or row.final_doc_id or "",
+                    collection_id=row.collection_id,
+                    publish_status=PublishStatus.PUBLISHED.value,
+                    logical_document_id=row.preliminary_doc_id or "",
+                    version=1,
+                    ticket_id=row.ticket_id,
+                    upload_id=getattr(row, "trace_id", "") or "",
+                    idempotency_key=f"recover-approval-{row.intake_job_id}-{uuid.uuid4().hex[:8]}",
+                )
+                recovered += 1
+                logger.info("recovered stuck approval for job=%s", row.intake_job_id)
+            except Exception:
+                logger.exception("recovery failed for approval job=%s", row.intake_job_id)
+        if recovered > 0:
+            session.commit()
+        return recovered
+    except Exception:
+        session.rollback()
+        logger.exception("approval recovery scan failed")
+        return 0
+    finally:
+        session.close()
+
+
 def make_deliver_callback() -> Any:
     """Factory for the ingestion-worker outbox deliver callback."""
 
