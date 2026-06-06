@@ -293,13 +293,16 @@ export default function UploadPage() {
   };
 
   const retryFile = (item: FileItem) => {
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.id === item.id
-          ? { ...f, status: "queued", progress: 0, error: undefined, uploadId: undefined }
-          : f
-      )
-    );
+    const updated = {
+      ...item,
+      status: "queued" as FileStatus,
+      progress: 0,
+      error: undefined,
+      uploadId: undefined,
+    };
+    // Sync ref before setFiles so processUploadQueue sees the reset status
+    filesRef.current = filesRef.current.map((f) => (f.id === item.id ? updated : f));
+    setFiles((prev) => prev.map((f) => (f.id === item.id ? updated : f)));
     uploadQueueRef.current.push(item.id);
     processUploadQueue();
   };
