@@ -23,7 +23,9 @@ from reality_rag_persistence.database import get_session
 from reality_rag_persistence.outbox import OutboxDispatcher
 
 from intake_runtime.stage_runtime import execute_publishing_task
-from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from intake_runtime.stage_task_worker import (
+    make_stage_task_deliver, make_stage_task_filter, recover_stuck_stage_tasks,
+)
 from .publishing_domain import PublishingService, persist_document_and_policy, update_published_document_state
 
 logger = logging.getLogger(__name__)
@@ -264,6 +266,18 @@ async def _outbox_poll_loop() -> None:
             dispatcher.poll_and_dispatch()
         except Exception:
             logger.exception("publishing outbox poll failed")
+        try:
+            recovered = recover_stuck_stage_tasks(
+                StageName.PUBLISHING, "worker-publishing",
+                lambda session, stage_task_id, intake_job_id, worker_id: execute_publishing_task(
+                    session, stage_task_id, intake_job_id, worker_id,
+                    persist_fn=persist_document_and_policy,
+                ),
+            )
+            if recovered > 0:
+                logger.info("publishing recovered %d stuck tasks", recovered)
+        except Exception:
+            logger.exception("publishing stuck task recovery failed")
         await asyncio.sleep(interval)
 
 

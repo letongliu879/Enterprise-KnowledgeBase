@@ -1,0 +1,18 @@
+{
+  "ticket_id": "atck_cf0acd53dac8ca261b8e5a65",
+  "intake_job_id": "job-01d7d92a",
+  "decision": "approve",
+  "actor_id": "system",
+  "confirmed_tags": [
+    "low_risk"
+  ],
+  "final_doc_id": "doc-大数据统计ai实践作业-37c5d09e-v1",
+  "state": "system_decided",
+  "routing_recommendation": "auto_approve",
+  "decision_reason": "满足自动入库策略",
+  "approval_round": 1,
+  "version_decision": "",
+  "supersedes_final_doc_id": "",
+  "created_at": "2026-06-06T16:00:51.429164+00:00",
+  "decided_at": ""
+}

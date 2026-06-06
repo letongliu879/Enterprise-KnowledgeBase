@@ -35,8 +35,10 @@ class IntakeEventAdapter(EventAdapter):
             if not _upload_id:
                 # Fallback: use source_file_id as aggregate_id for FileReady events
                 _upload_id = payload.get("source_file_id", "")
-            # Use fixed version numbers per event type to ensure they override
-            # workbench local projection updates (version 1-2)
+            # FileReady: v=20  →  sets source_file_state
+            # IntakeJobStateChanged: v=25  →  sets intake_job_id, intake_job_state
+            # StageCompleted: v=30  →  updates intake_job_state (conversion→review→publish)
+            # PublishCompleted: v=40  →  sets published_document_state, overall_status
             _version = 10 if event_type == "SourceFileRegistered" else 20
             events.append(ProjectionEvent(
                 event_id=native_event["event_id"],
@@ -67,6 +69,10 @@ class IntakeEventAdapter(EventAdapter):
                 "intake_job_id": payload.get("intake_job_id"),
                 "intake_job_state": payload.get("state"),
             }
+            if payload.get("source_file_id"):
+                job_payload["source_file_id"] = payload["source_file_id"]
+            if payload.get("source_file_state"):
+                job_payload["source_file_state"] = payload["source_file_state"]
             if payload.get("parse_snapshot_id"):
                 job_payload["parse_snapshot_id"] = payload["parse_snapshot_id"]
             if payload.get("ticket_id"):
@@ -84,7 +90,7 @@ class IntakeEventAdapter(EventAdapter):
                 collection_id=collection_id,
                 aggregate_type="task",
                 aggregate_id=payload.get("upload_id", ""),
-                aggregate_version=30,
+                aggregate_version=25,
                 occurred_at=occurred_at,
                 payload=job_payload,
                 trace_id=trace_id,

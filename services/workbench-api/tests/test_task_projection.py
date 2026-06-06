@@ -260,6 +260,131 @@ class TestProjectionProjector:
         assert proj.version == 2
 
 
+class TestProjectionEventSequence:
+    """Integration test: full event chain as it flows through the system.
+
+    This test catches version-ordering bugs, missing enum values, and
+    status-regression issues that unit tests of individual events miss.
+    """
+
+    def test_full_pipeline_status_progression(self, db_session: Session):
+        """Simulate complete event chain: upload → scanning → intake → review."""
+        upload_id = "upload_chain_001"
+        projector = ProjectionProjector(db_session)
+
+        # 1. Frontend creates upload → TASK_CREATED (v=1)
+        assert projector.record_and_apply(_make_event(
+            "ev_create", "TASK_CREATED", upload_id, 1,
+            {"projection_id": upload_id, "upload_id": upload_id,
+             "filename": "chain.pdf", "overall_status": "uploading"}
+        ))["applied"]
+        _check(db_session, upload_id, "uploading", version=1)
+
+        # 2. Upload content completed → TASK_CONTENT_UPLOADED (v=2)
+        assert projector.record_and_apply(_make_event(
+            "ev_content", "TASK_CONTENT_UPLOADED", upload_id, 2,
+            {"projection_id": upload_id, "upload_id": upload_id,
+             "source_file_id": "src_chain_001", "overall_status": "ready"}
+        ))["applied"]
+        _check(db_session, upload_id, "ready", version=2)
+
+        # 3. FileReady from intake adapter (v=20) → sets source_file_state
+        assert projector.record_and_apply(_make_event(
+            "ev_file_ready", "FileReady", upload_id, 20,
+            {"upload_id": upload_id, "source_file_id": "src_chain_001",
+             "source_file_state": "ready"}
+        ))["applied"]
+        # Status should stay "ready" (source_file_state=ready, no intake_job_state yet)
+        _check(db_session, upload_id, "ready", version=20)
+
+        # 4. IntakeJobStateChanged from _deliver_file_ready (v=25) → intake job created
+        assert projector.record_and_apply(_make_event(
+            "ev_job_created", "IntakeJobStateChanged", upload_id, 25,
+            {"upload_id": upload_id, "intake_job_id": "job_chain_001",
+             "intake_job_state": "conversion_queued"}
+        ))["applied"]
+        _check(db_session, upload_id, "parsing", version=25)
+
+        # 5. StageCompleted (conversion done) from intake adapter (v=30)
+        assert projector.record_and_apply(_make_event(
+            "ev_stage_conv", "StageCompleted", upload_id, 30,
+            {"upload_id": upload_id, "intake_job_state": "processing"}
+        ))["applied"]
+        _check(db_session, upload_id, "parsing", version=30)
+
+        # 6. StageCompleted (agent review done) (v=30 again, should be skipped)
+        # Since v=30 already applied, another v=30 event should be skipped.
+        result = projector.record_and_apply(_make_event(
+            "ev_stage_review", "StageCompleted", upload_id, 30,
+            {"upload_id": upload_id, "intake_job_state": "review_running"}
+        ))
+        assert result["applied"] is False  # skipped by version check
+
+        # 7. StageCompleted at higher version (v=31) should be accepted
+        # (simulating StageCompleted being re-sent with a proper unique version)
+        assert projector.record_and_apply(_make_event(
+            "ev_stage_review_v31", "StageCompleted", upload_id, 31,
+            {"upload_id": upload_id, "intake_job_state": "review_running"}
+        ))["applied"]
+        _check(db_session, upload_id, "reviewing", version=31)
+
+    def test_derived_status_all_states(self, db_session: Session):
+        """_derive_overall_status must recognize all intake_job_state values."""
+        projector = ProjectionProjector(db_session)
+        # Helper: apply event with given intake_job_state and check derived status
+        def check_derived(intake_state: str, expected: str) -> None:
+            uid = f"upload_derive_{intake_state}"
+            projector.record_and_apply(_make_event(
+                f"ev_{intake_state}", "IntakeJobStateChanged", uid, 25,
+                {"upload_id": uid, "intake_job_id": "job_x",
+                 "intake_job_state": intake_state, "source_file_state": "ready"}
+            ))
+            proj = TaskProjectionRepository(db_session).get_by_upload_id(uid)
+            assert proj.overall_status == expected, \
+                f"intake_job_state={intake_state} → expected {expected}, got {proj.overall_status}"
+
+        check_derived("created", "parsing")
+        check_derived("conversion_queued", "parsing")
+        check_derived("conversion_running", "parsing")
+        check_derived("parsing", "parsing")
+        check_derived("processing", "parsing")   # StageCompleted sends this
+        check_derived("failed", "failed")
+        check_derived("review_queued", "reviewing")
+        check_derived("review_running", "reviewing")
+        check_derived("review_succeeded", "reviewing")
+        check_derived("approval_requested", "reviewing")
+        check_derived("awaiting_approval", "reviewing")
+        check_derived("publish_queued", "publishing")
+        check_derived("publish_running", "publishing")
+        check_derived("published", "published")
+
+
+def _make_event(event_id: str, event_type: str, upload_id: str, version: int,
+                payload: dict) -> dict:
+    from datetime import datetime, timezone
+    return {
+        "event_id": event_id,
+        "event_type": event_type,
+        "tenant_id": "tenant_acme",
+        "collection_id": "col_default",
+        "aggregate_type": "task",
+        "aggregate_id": upload_id,
+        "aggregate_version": version,
+        "occurred_at": datetime.now(timezone.utc),
+        "payload": payload,
+        "trace_id": upload_id,
+    }
+
+
+def _check(db_session, upload_id: str, expected_status: str, version: int):
+    proj = TaskProjectionRepository(db_session).get_by_upload_id(upload_id)
+    assert proj is not None
+    assert proj.overall_status == expected_status, \
+        f"v{version}: expected {expected_status}, got {proj.overall_status}"
+    assert proj.version == version, \
+        f"expected version {version}, got {proj.version}"
+
+
 class TestTaskProjectionTenantIsolation:
     def test_list_tasks_filtered_by_tenant(self, client: TestClient, uploader_token: str):
         # Create upload for tenant_acme

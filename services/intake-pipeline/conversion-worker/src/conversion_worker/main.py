@@ -21,7 +21,9 @@ from reality_rag_persistence.database import get_session
 from reality_rag_persistence.outbox import OutboxDispatcher
 
 from intake_runtime.stage_runtime import execute_conversion_task
-from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from intake_runtime.stage_task_worker import (
+    make_stage_task_deliver, make_stage_task_filter, recover_stuck_stage_tasks,
+)
 from reality_rag_contracts import StageName
 
 from conversion_worker.routes import router
@@ -59,6 +61,17 @@ async def _outbox_poll_loop() -> None:
             dispatcher.poll_and_dispatch()
         except Exception:
             logger.exception("conversion outbox poll failed")
+        try:
+            recovered = recover_stuck_stage_tasks(
+                StageName.CONVERSION, "worker-conversion",
+                lambda session, stage_task_id, intake_job_id, worker_id: execute_conversion_task(
+                    session, stage_task_id, intake_job_id, _ConversionPipeline(), worker_id,
+                ),
+            )
+            if recovered > 0:
+                logger.info("conversion recovered %d stuck tasks", recovered)
+        except Exception:
+            logger.exception("conversion stuck task recovery failed")
         await asyncio.sleep(interval)
 
 

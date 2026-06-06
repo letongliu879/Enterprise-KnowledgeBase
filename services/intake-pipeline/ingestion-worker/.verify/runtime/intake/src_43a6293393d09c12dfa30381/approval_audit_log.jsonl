@@ -1,0 +1,1 @@
+{"audit_id": "aaud_6829b4fcdf98bdc1eadf4b90", "ticket_id": "atck_872e44b6cdefb1a6ad10ca52", "intake_job_id": "job-a749b50c", "actor_id": "demo-admin", "action": "approve", "before_state": "pending", "after_state": "approved", "reason": "", "payload_hash": "ddae3d8745a535836124c966dcf2dc1df86c006103b076ac42da2a029ee3e344", "created_at": "2026-06-06T18:50:57.695357+00:00"}

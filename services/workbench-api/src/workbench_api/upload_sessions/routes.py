@@ -47,6 +47,17 @@ def get_upload(upload_id: str, service: UploadSessionService = Depends(_get_serv
     session = service.get_upload(upload_id, user)
     if not session:
         raise not_found("Upload not found")
+
+    # If the upload session is still "uploading" but the task projection
+    # has already advanced (e.g. upload succeeded but session wasn't updated),
+    # sync the session status from the projection.
+    if session.status == "uploading" and session.source_file_id:
+        from ..projections.repository import TaskProjectionRepository
+        task_repo = TaskProjectionRepository(service._db_session)
+        task_proj = task_repo.get_by_upload_id(upload_id)
+        if task_proj is not None and task_proj.overall_status not in ("uploading",):
+            session.status = task_proj.overall_status
+
     return session.model_dump()
 
 

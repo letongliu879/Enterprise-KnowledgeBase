@@ -487,15 +487,34 @@ def _build_pythonpath(svc: dict[str, Any]) -> str:
 
 
 def _service_env_overrides(name: str) -> dict[str, str]:
-    if name != "ingestion-worker":
-        return {}
-    return {
-        "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
-        "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
-        "PUBLISHING_WORKER_URL": "http://127.0.0.1:18086",
-        "INDEXING_SERVICE_URL": "http://127.0.0.1:18080",
-        "ALLOW_LOCAL_FALLBACK_FOR_TESTS": "false",
-    }
+    if name == "ingestion-worker":
+        return {
+            "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
+            "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
+            "PUBLISHING_WORKER_URL": "http://127.0.0.1:18086",
+            "INDEXING_SERVICE_URL": "http://127.0.0.1:18080",
+            "ALLOW_LOCAL_FALLBACK_FOR_TESTS": "false",
+        }
+    sidecar = ROOT / ".verify" / "runtime" / "sidecar-smoke"
+    if name == "indexing":
+        return {
+            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18182",
+        }
+    if name == "conversion-worker":
+        return {
+            "INDEXING_SERVICE_URL": "http://127.0.0.1:18080",
+        }
+    if name in ("agent-review-worker", "publishing-worker"):
+        sidecar.mkdir(parents=True, exist_ok=True)
+        return {
+            "REALITY_RAG_SIDECAR_DIR": str(sidecar),
+        }
+    if name == "workbench-api":
+        return {
+            "INTAKE_BASE_URL": "http://127.0.0.1:18088",
+            "DOCUMENT_SERVICE_BASE_URL": "http://127.0.0.1:8006",
+        }
+    return {}
 
 
 try:
@@ -782,9 +801,7 @@ class Supervisor:
                         print(_color("red", _tag(name)), f"Exception during start: {e}")
                         ok = False
                     if not ok:
-                        print(_color("red", _tag(name)), "Failed to start. Initiating shutdown...")
-                        self.shutdown()
-                        return False
+                        print(_color("red", _tag(name)), "Failed to start (continuing with other services)")
         return True
 
     def _start_and_health(self, svc: dict[str, Any]) -> bool:

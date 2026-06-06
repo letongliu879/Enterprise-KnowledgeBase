@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "enterprise-kb": {
+      "type": "http",
+      "url": "http://localhost:18181/mcp",
+      "headers": {
+        "X-API-Key": "smoke-test-retrieval",
+        "X-Agent-Instance-Id": "claude-code"
+      }
+    }
+  }
+}

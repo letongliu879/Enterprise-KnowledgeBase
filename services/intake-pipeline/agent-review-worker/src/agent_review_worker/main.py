@@ -22,7 +22,9 @@ from reality_rag_persistence.outbox import OutboxDispatcher
 from intake_runtime.agent_reviewer import get_agent_reviewer
 from intake_runtime.agent_review_cache import get_agent_review_cache
 from intake_runtime.stage_runtime import execute_review_task
-from intake_runtime.stage_task_worker import make_stage_task_deliver, make_stage_task_filter
+from intake_runtime.stage_task_worker import (
+    make_stage_task_deliver, make_stage_task_filter, recover_stuck_stage_tasks,
+)
 from reality_rag_contracts import StageName
 
 from agent_review_worker.routes import router
@@ -59,6 +61,17 @@ async def _outbox_poll_loop() -> None:
             dispatcher.poll_and_dispatch()
         except Exception:
             logger.exception("agent review outbox poll failed")
+        try:
+            recovered = recover_stuck_stage_tasks(
+                StageName.AGENT_REVIEW, "worker-agent-review",
+                lambda session, stage_task_id, intake_job_id, worker_id: execute_review_task(
+                    session, stage_task_id, intake_job_id, _ReviewPipeline(), worker_id,
+                ),
+            )
+            if recovered > 0:
+                logger.info("agent review recovered %d stuck tasks", recovered)
+        except Exception:
+            logger.exception("agent review stuck task recovery failed")
         await asyncio.sleep(interval)
 
 

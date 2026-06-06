@@ -111,6 +111,24 @@ class StageTaskRepository:
         self._session.flush()
         return True
 
+    def find_stuck_running(self, stage_name: str) -> list[StageTask]:
+        """Find stage tasks stuck in RUNNING with expired leases.
+
+        These happen when a worker crashes after acquiring the lease but
+        before completing the task.
+        """
+        now = datetime.now(timezone.utc)
+        rows = (
+            self._session.query(StageTaskModel)
+            .filter(StageTaskModel.stage_name == stage_name)
+            .filter(StageTaskModel.state == StageTaskState.RUNNING.value)
+            .filter(StageTaskModel.lock_expires_at < now)
+            .order_by(StageTaskModel.updated_at)
+            .limit(10)
+            .all()
+        )
+        return [self._to_contract(r) for r in rows]
+
     def clear_lock(self, stage_task_id: str) -> bool:
         row = self._session.get(StageTaskModel, stage_task_id)
         if row is None:

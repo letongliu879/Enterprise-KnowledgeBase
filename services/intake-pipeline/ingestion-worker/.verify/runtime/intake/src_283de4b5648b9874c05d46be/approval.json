@@ -1,0 +1,16 @@
+{
+  "ticket_id": "atck_cfea168e300824ced723446a",
+  "intake_job_id": "job-6b8d08a0",
+  "decision": "approve",
+  "actor_id": "system",
+  "confirmed_tags": [],
+  "final_doc_id": "doc-api-test-96f9526d-v1",
+  "state": "system_decided",
+  "routing_recommendation": "auto_approve",
+  "decision_reason": "满足自动入库策略",
+  "approval_round": 1,
+  "version_decision": "",
+  "supersedes_final_doc_id": "",
+  "created_at": "2026-06-06T16:40:44.219898+00:00",
+  "decided_at": ""
+}

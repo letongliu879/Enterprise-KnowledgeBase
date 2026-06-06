@@ -1,0 +1,14 @@
+{
+  "source_file_id": "src_e11f70c9f78789385da1c0ce",
+  "intake_job_id": "job-89e3dcd0",
+  "final_doc_id": "doc-test-upload-f93c41ea-v1",
+  "visibility": "INTERNAL",
+  "confirmed_tags": [],
+  "publish_version": "pub_001",
+  "approval_decision_ref": ".verify\\runtime\\intake\\src_e11f70c9f78789385da1c0ce\\approval.json",
+  "approval_audit_ref": ".verify\\runtime\\intake\\src_e11f70c9f78789385da1c0ce\\approval_audit_log.jsonl",
+  "metadata_ref": ".verify\\runtime\\intake\\src_e11f70c9f78789385da1c0ce\\metadata.json",
+  "canonical_asset_ref": "E:\\AI\\My-Project\\Enterprise KnowledgeBase\\.verify\\runtime\\sidecar-smoke\\test1\\doc-test-upload-f93c41ea-v1\\canonical.md",
+  "parse_snapshot_id": "pss_sha256:cc0d177a5_naive_5093ec61eb75be7f",
+  "generated_at": "2026-06-06T18:51:07.993388+00:00"
+}

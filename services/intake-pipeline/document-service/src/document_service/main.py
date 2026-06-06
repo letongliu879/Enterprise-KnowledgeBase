@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -25,7 +24,6 @@ from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
-from reality_rag_persistence.repositories.outbox_events import OutboxEventRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 
 app = FastAPI(
@@ -179,18 +177,26 @@ async def upload_file(
                     intake_job = IntakeJobRepository(session).get_by_source_file_id(
                         source_file.source_file_id
                     )
+                    # If the previous intake job failed, allow re-upload by
+                    # cleaning up the old source file so the new upload can proceed.
+                    if intake_job is not None and intake_job.state == "failed":
+                        svc.mark_cleanable(source_file.source_file_id, intake_job.intake_job_id)
+                        svc.gc_source_file(source_file.source_file_id)
+                        session.flush()
+                        is_duplicate = False
 
-            svc.complete_upload_session(upload_id, received_size=size_bytes)
-            session.commit()
-            _cleanup_temp_path(temp_path)
-            return _build_duplicate_response(
-                reason=reason,
-                upload_id=upload_id,
-                content_hash=content_hash,
-                source_file=source_file,
-                intake_job=intake_job,
-                existing_doc_id=existing_doc_id,
-            )
+            if is_duplicate:
+                svc.complete_upload_session(upload_id, received_size=size_bytes)
+                session.commit()
+                _cleanup_temp_path(temp_path)
+                return _build_duplicate_response(
+                    reason=reason,
+                    upload_id=upload_id,
+                    content_hash=content_hash,
+                    source_file=source_file,
+                    intake_job=intake_job,
+                    existing_doc_id=existing_doc_id,
+                )
 
         obj = svc.get_or_create_object_blob(
             content_hash=content_hash,
@@ -218,23 +224,8 @@ async def upload_file(
                 f"failed to complete scan for source file {source_file.source_file_id}"
             )
 
-        # Write FILE_READY outbox event to trigger downstream intake pipeline
-        outbox_repo = OutboxEventRepository(session)
-        outbox_repo.create(
-            event_id=f"evt_{uuid.uuid4().hex[:20]}",
-            event_type="FILE_READY",
-            aggregate_type="source_file",
-            aggregate_id=completed.source_file_id,
-            payload_json={
-                "source_file_id": completed.source_file_id,
-                "upload_id": upload_id,
-                "collection_id": completed.collection_id,
-                "content_hash": completed.content_hash,
-                "size_bytes": completed.size_bytes,
-                "visibility": completed.visibility,
-            },
-            trace_id=upload_id,
-        )
+        # FileReady outbox event is emitted inside complete_scan() -> _emit_file_ready()
+        # which includes the full payload (state, tenant_id, etc.).
 
         session.commit()
         return {
@@ -433,10 +424,10 @@ async def get_source_file(source_file_id: str) -> dict:
             "content_hash": sf.content_hash,
             "state": _serialize_state(sf.state),
             "upload_id": sf.upload_id,
-            "claimed_by": sf.claimed_by,
-            "claimed_at": sf.claimed_at.isoformat() if sf.claimed_at else None,
-            "consumed_by": sf.consumed_by,
-            "consumed_at": sf.consumed_at.isoformat() if sf.consumed_at else None,
+            "claimed_by": sf.claimed_by_job_id,
+            "claimed_at": sf.updated_at.isoformat() if sf.updated_at else None,
+            "consumed_by": sf.claimed_by_job_id if sf.state and hasattr(sf.state, "value") and sf.state.value == "consumed" else None,
+            "consumed_at": sf.updated_at.isoformat() if sf.updated_at and sf.state and hasattr(sf.state, "value") and sf.state.value == "consumed" else None,
             "created_at": sf.created_at.isoformat() if sf.created_at else None,
             "updated_at": sf.updated_at.isoformat() if sf.updated_at else None,
         }

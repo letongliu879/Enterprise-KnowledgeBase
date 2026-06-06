@@ -1,0 +1,14 @@
+{
+  "source_file_id": "src_70c197e9e0c7568bd04aabd3",
+  "intake_job_id": "job-5effd0fd",
+  "final_doc_id": "doc-关键字-f464fa05-v1",
+  "visibility": "INTERNAL",
+  "confirmed_tags": [],
+  "publish_version": "pub_001",
+  "approval_decision_ref": ".verify\\runtime\\intake\\src_70c197e9e0c7568bd04aabd3\\approval.json",
+  "approval_audit_ref": ".verify\\runtime\\intake\\src_70c197e9e0c7568bd04aabd3\\approval_audit_log.jsonl",
+  "metadata_ref": ".verify\\runtime\\intake\\src_70c197e9e0c7568bd04aabd3\\metadata.json",
+  "canonical_asset_ref": "E:\\AI\\My-Project\\Enterprise KnowledgeBase\\.verify\\runtime\\sidecar-smoke\\test1\\doc-关键字-f464fa05-v1\\canonical.md",
+  "parse_snapshot_id": "pss_sha256:ff1a18ad6_naive_5093ec61eb75be7f",
+  "generated_at": "2026-06-06T18:50:35.153294+00:00"
+}

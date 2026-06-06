@@ -138,7 +138,10 @@ def _start_existing_stage(
         refreshed = StageTaskRepository(session).get(stage_task_id)
         if refreshed is not None and refreshed.state == StageTaskState.SUCCEEDED.value:
             return refreshed, None, True
-        return None, None, True
+        # Lease held by another worker or task not in a claimable state.
+        # Return should_ack=False so the event is retried (with backoff)
+        # rather than silently dropped.
+        return None, None, False
 
     orch = OrchestratorService(session)
     attempt = orch.start_stage_attempt(

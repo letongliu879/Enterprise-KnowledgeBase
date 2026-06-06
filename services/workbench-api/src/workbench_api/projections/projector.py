@@ -80,7 +80,9 @@ class ProjectionProjector:
         return False
 
     def _apply_task_event(self, event_type: str, payload: dict, version: int) -> bool:
-        row = self._build_task_row(payload, version)
+        projection_id = payload.get("projection_id") or payload.get("upload_id", "")
+        existing = self._task_repo.get(projection_id) if projection_id else None
+        row = self._build_task_row(payload, version, existing)
         return self._task_repo.upsert_with_version_check(row)
 
     def _apply_ticket_event(self, event_type: str, payload: dict, version: int) -> bool:
@@ -100,8 +102,68 @@ class ProjectionProjector:
         return self._chunk_repo.upsert_with_version_check(row)
 
     @staticmethod
-    def _build_task_row(payload: dict, version: int) -> dict:
+    def _derive_overall_status(payload: dict) -> str:
+        """Derive overall_status from individual state fields."""
+        source_file_state = payload.get("source_file_state")
+        intake_job_state = payload.get("intake_job_state")
+        ticket_state = payload.get("ticket_state")
+        published_document_state = payload.get("published_document_state")
+        index_build_state = payload.get("index_build_state")
+        active_index_version = payload.get("active_index_version")
+
+        if published_document_state == "archived":
+            return "archived"
+        if published_document_state == "retracted":
+            return "retracted"
+        if active_index_version:
+            return "published"
+        if index_build_state == "building":
+            return "indexing"
+        if published_document_state == "publish_succeeded":
+            return "published"
+        if ticket_state == "approved":
+            return "approved"
+        if ticket_state == "rejected":
+            return "rejected"
+        if ticket_state == "pending":
+            return "reviewing"
+        if intake_job_state == "failed":
+            return "failed"
+        if intake_job_state in ("created", "conversion_queued", "conversion_running", "parsing", "processing"):
+            return "parsing"
+        if intake_job_state in ("review_queued", "review_running", "review_succeeded", "approval_requested", "awaiting_approval"):
+            return "reviewing"
+        if intake_job_state in ("publish_queued", "publish_running"):
+            return "publishing"
+        if intake_job_state == "published":
+            return "published"
+        if source_file_state == "ready":
+            return "ready"
+        if source_file_state == "uploaded":
+            return "uploaded"
+        if payload.get("overall_status"):
+            return payload["overall_status"]
+        return "uploading"
+
+    @staticmethod
+    def _build_task_row(payload: dict, version: int, existing=None) -> dict:
         now = _utcnow()
+        overall_status = payload.get("overall_status")
+        if not overall_status:
+            # Merge existing projection state with incoming payload so that
+            # partial events (e.g. FileReady, IntakeJobStateChanged) don't
+            # regress the overall status.
+            merged = {}
+            if existing is not None:
+                for field in (
+                    "source_file_state", "intake_job_state", "ticket_state",
+                    "published_document_state", "index_build_state", "active_index_version",
+                ):
+                    val = getattr(existing, field, None)
+                    if val:
+                        merged[field] = val
+            merged.update({k: v for k, v in payload.items() if v})
+            overall_status = ProjectionProjector._derive_overall_status(merged)
         return {
             "projection_id": payload.get("projection_id", payload.get("upload_id", "")),
             "tenant_id": payload.get("tenant_id", ""),
@@ -125,7 +187,7 @@ class ProjectionProjector:
             "published_document_state": payload.get("published_document_state"),
             "index_build_state": payload.get("index_build_state"),
             "active_index_version": payload.get("active_index_version"),
-            "overall_status": payload.get("overall_status", "uploading"),
+            "overall_status": overall_status,
             "progress_pct": payload.get("progress_pct", 0),
             "blocking_reason": payload.get("blocking_reason"),
             "error_code": payload.get("error_code"),

@@ -558,15 +558,15 @@ def _derive_status(
     index_build_state: str | None,
     active_index_version: str | None,
 ) -> str:
-    if published_document_state == "ARCHIVED":
+    if published_document_state == "archived":
         return "archived"
-    if published_document_state == "RETRACTED":
+    if published_document_state == "retracted":
         return "retracted"
     if active_index_version:
         return "published"
-    if index_build_state == "BUILDING":
+    if index_build_state == "building":
         return "indexing"
-    if published_document_state == "PUBLISH_SUCCEEDED":
+    if published_document_state == "publish_succeeded":
         return "published"
     if ticket_state == "approved":
         return "approved"
@@ -574,12 +574,20 @@ def _derive_status(
         return "rejected"
     if ticket_state == "pending":
         return "reviewing"
-    if intake_job_state == "FAILED":
+    if intake_job_state == "failed":
         return "failed"
-    if intake_job_state in ("CREATED", "PARSING"):
+    if intake_job_state in ("created", "conversion_queued", "conversion_running", "parsing", "processing"):
         return "parsing"
-    if source_file_state == "READY":
-        return "uploading"
+    if intake_job_state in ("review_queued", "review_running", "review_succeeded", "approval_requested", "awaiting_approval"):
+        return "reviewing"
+    if intake_job_state in ("publish_queued", "publish_running"):
+        return "publishing"
+    if intake_job_state == "published":
+        return "published"
+    if source_file_state == "ready":
+        return "ready"
+    if source_file_state == "uploaded":
+        return "uploaded"
     return "uploading"
 
 
@@ -594,9 +602,9 @@ def _derive_progress(
 ) -> int:
     if active_index_version:
         return 100
-    if index_build_state == "BUILDING":
+    if index_build_state == "building":
         return 95
-    if published_document_state == "PUBLISH_SUCCEEDED":
+    if published_document_state == "publish_succeeded":
         return 100
     if ticket_state == "approved":
         return 90
@@ -604,13 +612,13 @@ def _derive_progress(
         return 100
     if ticket_state == "pending":
         return 70
-    if parse_snapshot_state == "PARSED":
+    if parse_snapshot_state == "parsed":
         return 50
-    if parse_snapshot_state == "PARSING":
+    if parse_snapshot_state == "parsing":
         return 40
-    if intake_job_state == "FAILED":
+    if intake_job_state == "failed":
         return 100
-    if source_file_state == "READY":
+    if source_file_state == "ready":
         return 20
     return 0
 

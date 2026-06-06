@@ -1,0 +1,14 @@
+{
+  "source_file_id": "src_09579624ce7c3d49c2195e2e",
+  "intake_job_id": "job-7e7b3403",
+  "final_doc_id": "doc-合同-5b323e8f-v1",
+  "visibility": "EXTERNAL",
+  "confirmed_tags": [],
+  "publish_version": "pub_001",
+  "approval_decision_ref": ".verify\\runtime\\intake\\src_09579624ce7c3d49c2195e2e\\approval.json",
+  "approval_audit_ref": ".verify\\runtime\\intake\\src_09579624ce7c3d49c2195e2e\\approval_audit_log.jsonl",
+  "metadata_ref": ".verify\\runtime\\intake\\src_09579624ce7c3d49c2195e2e\\metadata.json",
+  "canonical_asset_ref": "E:\\AI\\My-Project\\Enterprise KnowledgeBase\\.verify\\runtime\\sidecar-smoke\\test1\\doc-合同-5b323e8f-v1\\canonical.md",
+  "parse_snapshot_id": "pss_sha256:b022c60c5_naive_5093ec61eb75be7f",
+  "generated_at": "2026-06-06T17:27:03.764351+00:00"
+}

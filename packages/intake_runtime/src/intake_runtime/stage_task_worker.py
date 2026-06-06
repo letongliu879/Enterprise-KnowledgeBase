@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import datetime, timezone
 
-from reality_rag_contracts import EventType, OutboxEvent, StageName
+from reality_rag_contracts import EventType, OutboxEvent, StageName, StageTaskState
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,37 @@ def make_stage_task_filter(stage_name: StageName) -> Callable[[OutboxEvent], boo
         )
 
     return should_process
+
+
+def recover_stuck_stage_tasks(stage_name: StageName, worker_id: str, execute: StageExecuteFn) -> int:
+    """Scan for stage tasks stuck in RUNNING with expired leases and re-execute.
+
+    This handles the case where a previous worker crashed after starting a task
+    but before completing it. The StageTaskRequested event was already marked
+    "sent" in the outbox, so the normal poll loop won't pick it up again.
+
+    Returns the number of recovered tasks.
+    """
+    session = get_session()
+    try:
+        repo = StageTaskRepository(session)
+        stuck = repo.find_stuck_running(stage_name.value)
+        recovered = 0
+        for task in stuck:
+            try:
+                ok = execute(session, task.stage_task_id, task.intake_job_id, worker_id)
+                if ok:
+                    session.commit()
+                    recovered += 1
+                    logger.info("recovered stuck %s task=%s", stage_name.value, task.stage_task_id)
+                else:
+                    session.rollback()
+            except Exception:
+                session.rollback()
+                logger.exception("recovery failed for %s task=%s", stage_name.value, task.stage_task_id)
+        return recovered
+    finally:
+        session.close()
 
 
 def make_stage_task_deliver(

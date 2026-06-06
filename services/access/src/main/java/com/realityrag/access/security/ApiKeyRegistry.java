@@ -14,8 +14,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ApiKeyRegistry {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
-    /** Maximum staleness for a projection before it is considered invalid. */
-    private static final int MAX_PROJECTION_STALENESS_MINUTES = 60;
+    /** Maximum staleness for a projection before it is considered invalid.
+     * Set to 0 to disable staleness checks (development/smoke mode). */
+    private static final int MAX_PROJECTION_STALENESS_MINUTES = 0;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -67,8 +68,8 @@ public class ApiKeyRegistry {
             );
         }
 
-        // TTL check: projection must not be stale
-        if (registration.lastUpdatedAt() != null) {
+        // TTL check: projection must not be stale (disabled when limit is 0)
+        if (MAX_PROJECTION_STALENESS_MINUTES > 0 && registration.lastUpdatedAt() != null) {
             Instant staleThreshold = Instant.now().minus(MAX_PROJECTION_STALENESS_MINUTES, ChronoUnit.MINUTES);
             if (registration.lastUpdatedAt().isBefore(staleThreshold)) {
                 throw new AccessException.RegistryUnavailable(

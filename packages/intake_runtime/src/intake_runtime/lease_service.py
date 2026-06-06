@@ -47,6 +47,7 @@ class StageTaskLeaseService:
             .where(StageTaskModel.state.in_([
                 StageTaskState.QUEUED.value,
                 StageTaskState.RETRY_SCHEDULED.value,
+                StageTaskState.RUNNING.value,  # recover stuck tasks with expired lease
             ]))
             .where(
                 (StageTaskModel.locked_by.is_(None))

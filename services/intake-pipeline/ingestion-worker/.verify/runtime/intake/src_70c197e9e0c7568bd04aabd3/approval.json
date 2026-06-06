@@ -1,0 +1,16 @@
+{
+  "ticket_id": "atck_9b1a1f2fd4d5e07a205539ef",
+  "intake_job_id": "job-5effd0fd",
+  "decision": "approve",
+  "actor_id": "demo-admin",
+  "confirmed_tags": [],
+  "final_doc_id": "doc-关键字-f464fa05-v1",
+  "state": "approved",
+  "routing_recommendation": "require_approval",
+  "decision_reason": "",
+  "approval_round": 1,
+  "version_decision": "",
+  "supersedes_final_doc_id": "",
+  "created_at": "2026-06-06T18:42:41.759464+00:00",
+  "decided_at": "2026-06-06T18:50:19.496348+00:00"
+}

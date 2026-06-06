@@ -1,0 +1,14 @@
+{
+  "source_file_id": "src_43a6293393d09c12dfa30381",
+  "intake_job_id": "job-a749b50c",
+  "final_doc_id": "doc-第七组rest服务技术与应用-c4d213ab-v1",
+  "visibility": "EXTERNAL",
+  "confirmed_tags": [],
+  "publish_version": "pub_001",
+  "approval_decision_ref": ".verify\\runtime\\intake\\src_43a6293393d09c12dfa30381\\approval.json",
+  "approval_audit_ref": ".verify\\runtime\\intake\\src_43a6293393d09c12dfa30381\\approval_audit_log.jsonl",
+  "metadata_ref": ".verify\\runtime\\intake\\src_43a6293393d09c12dfa30381\\metadata.json",
+  "canonical_asset_ref": "E:\\AI\\My-Project\\Enterprise KnowledgeBase\\.verify\\runtime\\sidecar-smoke\\test1\\doc-第七组rest服务技术与应用-c4d213ab-v1\\canonical.md",
+  "parse_snapshot_id": "pss_sha256:d8292d600_presentation_109303deb76c5a0e",
+  "generated_at": "2026-06-06T18:51:14.342502+00:00"
+}

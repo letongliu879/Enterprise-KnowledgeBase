@@ -15,6 +15,7 @@ Thumbs.db
 *.log
 .env
 .env.*
+.opencode/
 源码/
 tmp/
 .run-logs/

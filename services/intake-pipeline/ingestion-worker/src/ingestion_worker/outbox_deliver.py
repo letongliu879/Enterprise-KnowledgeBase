@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import asyncio
 import os
+from datetime import datetime, timezone
 import httpx
 from typing import Any
 
@@ -57,28 +58,31 @@ def _serialize_workbench_native_event(event: OutboxEvent, *, aggregate_version: 
 
 
 def _forward_event_to_workbench(service: str, event: OutboxEvent, *, aggregate_version: int) -> bool:
+    native_event = _serialize_workbench_native_event(event, aggregate_version=aggregate_version)
+    return _post_native_events_to_workbench(service, [native_event])
+
+
+def _post_native_events_to_workbench(service: str, native_events: list[dict[str, Any]]) -> bool:
     url = _workbench_events_url(service)
     api_key = _workbench_service_key(service)
     if not url or not api_key:
         return True
 
-    native_event = _serialize_workbench_native_event(event, aggregate_version=aggregate_version)
     try:
         response = httpx.post(
             url,
-            json=[native_event],
+            json=native_events,
             headers={"X-Service-Key": api_key},
             timeout=30.0,
         )
     except Exception:
-        logger.exception("outbox: failed to forward %s event %s to workbench", service, event.event_id)
+        logger.exception("outbox: failed to forward events to workbench %s", service)
         return False
 
     if response.status_code >= 400:
         logger.error(
-            "outbox: workbench rejected %s event %s with status %s: %s",
+            "outbox: workbench rejected %s events with status %s: %s",
             service,
-            event.event_id,
             response.status_code,
             response.text,
         )
@@ -88,7 +92,7 @@ def _forward_event_to_workbench(service: str, event: OutboxEvent, *, aggregate_v
     except Exception:
         body = {}
     if int(body.get("errors", 0) or 0) > 0:
-        logger.error("outbox: workbench reported projection errors for %s event %s: %s", service, event.event_id, body)
+        logger.error("outbox: workbench reported projection errors for %s events: %s", service, body)
         return False
     return True
 
@@ -355,6 +359,32 @@ def _deliver_file_ready(event: OutboxEvent) -> bool:
         idem_repo.record_processed(_FILE_READY_CONSUMER_ID, event.event_id, event.idempotency_key)
         session.commit()
         logger.info("outbox: file ready scheduled %s", source_file_id)
+
+        # Notify workbench of the intake job creation so the task projection
+        # gets intake_job_id, intake_job_state, and source_file_state immediately.
+        # This replaces the generic FileReady forwarding in make_deliver_callback,
+        # which would arrive with a lower version and be skipped.
+        _post_native_events_to_workbench("intake", [{
+            "event_id": f"evt_job_{intake_job.intake_job_id}",
+            "event_type": "IntakeJobStateChanged",
+            "tenant_id": event.payload_json.get("tenant_id", "default"),
+            "collection_id": source_file.collection_id,
+            "aggregate_type": "intake_job",
+            "aggregate_id": intake_job.intake_job_id,
+            "aggregate_version": 25,
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "payload": {
+                "upload_id": source_file.upload_id or source_file.source_file_id,
+                "intake_job_id": intake_job.intake_job_id,
+                "source_file_id": source_file.source_file_id,
+                "source_file_state": source_file.state.value if hasattr(source_file.state, "value") else str(source_file.state),
+                "state": IntakeJobState.CONVERSION_QUEUED.value,
+                "collection_id": source_file.collection_id,
+                "tenant_id": event.payload_json.get("tenant_id", "default"),
+            },
+            "trace_id": event.trace_id or "",
+        }])
+
         return True
     except Exception:
         session.rollback()
@@ -385,9 +415,10 @@ def make_deliver_callback() -> Any:
         if not success:
             return False
         
-        # Forward relevant events to workbench for projection updates
+        # Forward relevant events to workbench for projection updates.
+        # FILE_READY is handled directly by _deliver_file_ready which sends
+        # a richer IntakeJobStateChanged event with full state.
         if event.event_type in {
-            EventType.FILE_READY.value,
             EventType.STAGE_COMPLETED.value,
             EventType.PUBLISH_COMPLETED.value,
         }:

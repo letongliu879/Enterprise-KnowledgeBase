@@ -1,0 +1,16 @@
+{
+  "source_file_id": "src_0f7129aef8c7e981668b699f",
+  "intake_job_id": "job-01d7d92a",
+  "final_doc_id": "doc-大数据统计ai实践作业-37c5d09e-v1",
+  "visibility": "EXTERNAL",
+  "confirmed_tags": [
+    "low_risk"
+  ],
+  "publish_version": "pub_001",
+  "approval_decision_ref": ".verify\\runtime\\intake\\src_0f7129aef8c7e981668b699f\\approval.json",
+  "approval_audit_ref": ".verify\\runtime\\intake\\src_0f7129aef8c7e981668b699f\\approval_audit_log.jsonl",
+  "metadata_ref": ".verify\\runtime\\intake\\src_0f7129aef8c7e981668b699f\\metadata.json",
+  "canonical_asset_ref": "E:\\AI\\My-Project\\Enterprise KnowledgeBase\\.verify\\runtime\\sidecar-smoke\\test1\\doc-大数据统计ai实践作业-37c5d09e-v1\\canonical.md",
+  "parse_snapshot_id": "pss_sha256:b73f2db2c_naive_5093ec61eb75be7f",
+  "generated_at": "2026-06-06T16:16:09.179175+00:00"
+}
