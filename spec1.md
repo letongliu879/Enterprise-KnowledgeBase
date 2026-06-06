@@ -95,10 +95,29 @@ upload → conversion → review → approval → publish → index → chunk sy
 - `scripts/ekb_e2e_full.py` — 完整数据集 E2E 测试
 - `.claude/mcp.json` — MCP server 配置
 
-## 技术债记录
+## 第二轮修复 (本轮窗口)
 
-1. **Approval 也需要死任务恢复** — ApprovalRequested 事件标记 sent 后不重试，类似 stage task 问题
-2. **Pipeline 阶段缺少自动重试** — 任何 worker 崩溃后任务永久卡住，已修 conversion/agent-review/publishing
-3. **`IndexBuildCompleted` 事件未转发到 workbench** — indexing 完成后不通知 workbench，导致 `active_index_version` 不显示
-4. **检索的空文档问题** — docx 无文本内容时 `"indexing parse returned no canonical preview text"` 应改为降级而非失败
-5. **部署测试无法在 CI 中跑** — 需要 Docker PostgreSQL/OpenSearch/Qdrant/Redis 基础设施
+| # | Bug | 文件 | 修复 |
+|---|-----|------|------|
+| 22 | ApprovalRequested 事件失败后不重试 | `outbox_deliver.py` + `app_factory.py` | `recover_stuck_approvals()` 扫描 `awaiting_approval` 的 intake job，补全 `logical_document_id` + `version` 后重发事件；接入 poll loop |
+| 23 | `MAX_PROJECTION_STALENESS_MINUTES=0` 让所有 key 立即过期 | `ApiKeyRegistry.java` | 加 `> 0` 守卫：`if (MAX_PROJECTION_STALENESS_MINUTES > 0 && ...)` |
+
+## 过程中发现的新问题（未修，留待后续窗口）
+
+1. **`workbench_projection_events.event_id` 列太短** — `VARCHAR(64)`，agent_review findings 的 event_id 含 SHA256 hash 超长，INSERT 报 `value too long`。workbench 投影事件丢失。
+2. **4 个 docx 数据集文件是空文件（0 字节）** — `2000年10月公司现状`、`付款单`、`内部银行贷款程序`、`财务管理规章制度`。上传必定失败。
+3. **2 个 docx 无文本内容（纯图片）** — `审计报告W@`、`所有者权益W@`。转换报 `no canonical preview text`，应降级为"无内容"而非标记 failed。
+4. **Outbox 重试上限 10 次后永久放弃** — FileReader、StageCompleted、PublishCompleted 等事件无恢复扫描。StageTask 和 Approval 已修，其余未覆盖。
+5. **`ekb-svc.py start` 在 Windows 下不稳定** — subprocess 偶尔 exit code 1，start 总是被 backgrounded。
+6. **`_deliver_approval_event` HTTP 4xx 被当作成功** — `return resp.status_code < 500` 导致 400/422 被标记为 sent，审批实际未发生。
+7. **approval recovery 缺字段导致 422** — `recover_stuck_approvals` 初版缺少 `logical_document_id` 和 `version`，approval service 返回 422 Unprocessable Entity。已修复。
+
+## 剩余技术债
+
+1. **`IndexBuildCompleted` 事件未转发到 workbench** — indexing 完成后不通知 workbench，`active_index_version` 不显示（不影响检索功能）
+2. **`workbench_projection_events.event_id` 列太短** — VARCHAR(64) 不够存 hash 前缀的 event_id
+3. **Outbox 事件无统一恢复机制** — 只有 StageTask 和 Approval 有，FileReader/StageCompleted/PublishCompleted 没有
+4. **Docx 空文件/纯图片应有降级而非失败**
+5. **部署测试无法在 CI 中跑** — 需要 Docker 基础设施
+6. **`_deliver_approval_event` HTTP 4xx 应返回 False 触发重试**
+7. **ekb-svc.py Windows 兼容性**
