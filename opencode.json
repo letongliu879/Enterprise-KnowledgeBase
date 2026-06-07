@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ekb-access": {
+      "type": "remote",
+      "url": "http://localhost:18181/mcp",
+      "headers": {
+        "X-API-Key": "smoke-test-retrieval",
+        "X-Agent-Instance-Id": "opencode"
+      },
+      "enabled": true
+    }
+  }
+}
