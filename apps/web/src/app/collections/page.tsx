@@ -3,11 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import {
-  Database,
-  Plus,
-  AlertCircle,
-} from "lucide-react";
+import { Database, Plus, AlertCircle, FolderOpen, Check } from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +16,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/empty-state";
@@ -28,6 +29,7 @@ import { BackendGap } from "@/components/backend-gap";
 import { useAppStore } from "@/lib/store";
 import { isApiError, isBackendGap } from "@/lib/api/errors";
 import { toast } from "sonner";
+import { staggerContainer, staggerItem } from "@/lib/animations";
 
 export default function CollectionsPage() {
   const { setCurrentCollectionId } = useAppStore();
@@ -47,21 +49,17 @@ export default function CollectionsPage() {
     lifecycle_state: "active" as const,
   });
 
-  // Keep tenant_id in sync with auth context once me resolves
   useEffect(() => {
     if (me?.tenant_id) {
       setForm((f) => ({ ...f, tenant_id: me.tenant_id }));
     }
   }, [me?.tenant_id]);
+
   const [gap, setGap] = useState<{ feature: string; endpoint: string } | null>(
     null
   );
 
-  const {
-    data: collectionResponse,
-    isLoading,
-    error,
-  } = useQuery({
+  const { data: collectionResponse, isLoading, error } = useQuery({
     queryKey: ["workbench-collections", userTenantId],
     queryFn: () => workbenchApi.listCollections(userTenantId),
     enabled: !!userTenantId,
@@ -92,32 +90,49 @@ export default function CollectionsPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <motion.div
+      variants={staggerContainer}
+      initial="hidden"
+      animate="visible"
+      className="space-y-6"
+    >
+      {/* Header */}
+      <motion.div
+        variants={staggerItem}
+        className="flex items-center justify-between"
+      >
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">知识库集合</h1>
           <p className="text-sm text-muted-foreground mt-1">
             管理知识库集合。上传必须归属到某个集合。
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button
+          onClick={() => setCreateOpen(true)}
+          className="shadow-glow"
+        >
           <Plus className="h-4 w-4 mr-2" />
           新建集合
         </Button>
-      </div>
+      </motion.div>
 
+      {/* Loading */}
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-lg" />
+            <Skeleton key={i} className="h-40 rounded-xl" />
           ))}
         </div>
       )}
 
+      {/* Error */}
       {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+        <Alert
+          variant="destructive"
+          className="border-red-500/20 bg-red-500/5"
+        >
+          <AlertCircle className="h-4 w-4 text-red-400" />
+          <AlertDescription className="text-red-300">
             {isApiError(error) ? error.message : "加载集合失败"}
           </AlertDescription>
         </Alert>
@@ -125,47 +140,64 @@ export default function CollectionsPage() {
 
       {gap && <BackendGap feature={gap.feature} endpoint={gap.endpoint} />}
 
+      {/* Collection Grid */}
       {collections.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {collections.map((c, i) => (
             <motion.div
               key={c.collection_id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
+              variants={staggerItem}
+              initial="hidden"
+              animate="visible"
+              custom={i}
             >
-              <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-                <CardHeader className="pb-3">
+              <Card
+                interactive
+                className="relative overflow-hidden group"
+              >
+                {/* Hover gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+                <CardHeader className="pb-3 relative">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{c.name}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                        <FolderOpen className="h-4 w-4 text-primary" />
+                      </div>
+                      <CardTitle className="text-base">{c.name}</CardTitle>
+                    </div>
                     <Badge
                       variant={
-                        c.lifecycle_state === "active" ? "default" : "secondary"
+                        c.lifecycle_state === "active"
+                          ? "success"
+                          : "secondary"
                       }
+                      className="text-[10px] h-5"
                     >
                       {c.lifecycle_state}
                     </Badge>
                   </div>
-                  <CardDescription className="text-xs">
+                  <CardDescription className="text-[10px] text-muted-foreground/50 mt-1.5 font-mono">
                     {c.collection_id}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-sm text-muted-foreground line-clamp-2">
+                <CardContent className="space-y-3 relative">
+                  <p className="text-sm text-muted-foreground/70 line-clamp-2 min-h-[40px]">
                     {c.description || "无描述"}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
                     <span>租户: {c.tenant_id}</span>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full mt-2"
+                    className="w-full mt-2 glass border-white/10 hover:border-primary/30 hover:bg-primary/5 transition-all"
                     onClick={() => {
                       setCurrentCollectionId(c.collection_id);
                       toast.success(`已选择集合: ${c.name}`);
                     }}
                   >
+                    <Check className="h-3.5 w-3.5 mr-1.5" />
                     选择用于上传
                   </Button>
                 </CardContent>
@@ -174,23 +206,30 @@ export default function CollectionsPage() {
           ))}
         </div>
       ) : (
-        <EmptyState
-          icon={Database}
-          title="暂无集合"
-          description="创建第一个集合以开始上传文档。"
-          action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              创建集合
-            </Button>
-          }
-        />
+        !isLoading &&
+        !error && (
+          <EmptyState
+            icon={Database}
+            title="暂无集合"
+            description="创建第一个集合以开始上传文档。"
+            action={
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="shadow-glow"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                创建集合
+              </Button>
+            }
+          />
+        )
       )}
 
+      {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="glass-strong rounded-2xl border-white/10 max-w-md">
           <DialogHeader>
-            <DialogTitle>创建集合</DialogTitle>
+            <DialogTitle className="text-lg">创建集合</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
@@ -227,7 +266,7 @@ export default function CollectionsPage() {
               />
             </div>
             <Button
-              className="w-full"
+              className="w-full shadow-glow"
               disabled={
                 meLoading ||
                 createCollection.isPending ||
@@ -242,6 +281,6 @@ export default function CollectionsPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }
