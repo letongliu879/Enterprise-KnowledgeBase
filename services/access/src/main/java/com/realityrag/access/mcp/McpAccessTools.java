@@ -26,15 +26,14 @@ public class McpAccessTools {
     )
     public KnowledgeContext retrieveKnowledgeContext(
         @ToolParam(description = "User question to search in enterprise knowledge.", required = true) String query,
-        @ToolParam(description = "Allowed knowledge scope / collection id to search.", required = true) String knowledge_scope,
-        @ToolParam(description = "Optional retrieval profile id.") String retrieval_profile_id,
+        @ToolParam(description = "Knowledge scope / collection id to search. If omitted, all authorized scopes are searched.", required = false) String knowledge_scope,
         @ToolParam(description = "Optional token budget.") Integer token_budget,
         @ToolParam(description = "Debug level: none, basic, or full.") String debug,
         ToolContext toolContext
     ) {
         AccessRequestContext context = resolveContext(toolContext);
         return accessGatewayService.retrieveWithContext(
-            buildRequest(query, knowledge_scope, retrieval_profile_id, token_budget, debug, context),
+            buildRequest(query, knowledge_scope, token_budget, debug, context),
             context
         );
     }
@@ -50,24 +49,31 @@ public class McpAccessTools {
     private ExternalRetrieveRequest buildRequest(
         String query,
         String knowledgeScope,
-        String retrievalProfileId,
         Integer tokenBudget,
         String debug,
         AccessRequestContext context
     ) {
-        String scope = knowledgeScope.trim();
-        if (!context.knowledgeScopes().contains(scope)) {
-            throw new AccessException.Forbidden("Knowledge scope is not allowed for this agent integration");
+        List<String> scopes;
+        if (knowledgeScope == null || knowledgeScope.isBlank()) {
+            scopes = context.knowledgeScopes();
+        } else {
+            String scope = knowledgeScope.trim();
+            if (!context.knowledgeScopes().contains(scope)) {
+                throw new AccessException.Forbidden(
+                    "Knowledge scope '" + scope + "' is not allowed. Allowed scopes: " + context.knowledgeScopes()
+                );
+            }
+            scopes = List.of(scope);
         }
         return new ExternalRetrieveRequest(
             query,
-            List.of(scope),
+            scopes,
             java.util.Map.of(),
             null,
             List.of(),
             false,
             java.util.Map.of(),
-            retrievalProfileId,
+            null,
             null,
             tokenBudget,
             debug

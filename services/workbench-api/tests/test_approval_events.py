@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from workbench_api.events import SERVICE_KEYS
+from workbench_api.events.adapters.approval_adapter import ApprovalEventAdapter
 from workbench_api.projections.repository import AgentReviewProjectionRepository, TicketProjectionRepository
 
 
@@ -60,3 +61,26 @@ class TestApprovalEventIngestion:
         assert finding is not None
         assert finding.source_quote == "Original quote"
         assert finding.parse_snapshot_id == "ps_001"
+
+    def test_agent_review_event_id_is_bounded(self):
+        adapter = ApprovalEventAdapter()
+        events = adapter.adapt(
+            {
+                "event_id": "evt_approval_very_long_identifier_001",
+                "event_type": "ApprovalDecided",
+                "occurred_at": datetime(2026, 6, 3, 12, 0, 0, tzinfo=timezone.utc).isoformat(),
+                "payload": {
+                    "ticket_id": "ticket_001",
+                    "tenant_id": "tenant_acme",
+                    "collection_id": "col_default",
+                    "findings": [
+                        {
+                            "finding_id": "8ec77ae30446b6818baff54e75c826d3b7fcd665a457ef13dbcb27d3bffd4f4c",
+                            "problem_summary": "Needs correction",
+                        }
+                    ],
+                },
+            }
+        )
+        finding_event = next(event for event in events if event.aggregate_type == "agent_review")
+        assert len(finding_event.event_id) <= 64

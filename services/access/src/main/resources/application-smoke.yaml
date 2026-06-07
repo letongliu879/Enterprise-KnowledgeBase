@@ -23,6 +23,7 @@ management:
         include: health,info
 
 access:
+  default-retrieval-profile-id: ret_smoke_01
   retrieval:
     base-url: http://127.0.0.1:18182
     connect-timeout: 5s

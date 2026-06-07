@@ -48,7 +48,7 @@
 | `GET` | `/health` | 健康检查 |
 | `POST` | `/internal/parse-previews` | 提交预解析请求（异步，202 Accepted） |
 | `GET` | `/internal/parse-snapshots/{parse_snapshot_id}` | 查询 ParseSnapshot |
-| `GET` | `/internal/parse-snapshots/{parse_snapshot_id}/chunks` | 分页查询 snapshot 内的 upstream chunks |
+| `GET` | `/internal/parse-snapshots/{parse_snapshot_id}/chunks` | 分页查询 snapshot 内的 upstream chunks（`doc_id` 优先返回 `final_doc_id`） |
 | `POST` | `/internal/index-jobs` | 提交正式索引构建请求（异步，202 Accepted） |
 | `GET` | `/internal/index-jobs/{job_id}` | 查询索引构建任务状态 |
 | `GET` | `/internal/indexed-documents` | 列出已索引文档（支持按 collection_id / index_version / final_doc_id 过滤） |

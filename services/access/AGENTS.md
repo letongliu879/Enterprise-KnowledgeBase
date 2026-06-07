@@ -69,7 +69,7 @@ access 是知识库的在线接入网关，不是检索内核。
 
 ## 约束
 - `profile` 仍是兼容别名，但正式字段是 `retrieval_profile_id`；两者同时存在且不一致时抛 `ACC_INVALID_REQUEST`
-- MCP tool 当前一次只查一个 `knowledge_scope`，`McpKnowledgeScopeMapper` 转成单元素 `collection_scope`
+- MCP tool 的 `knowledge_scope` 可选，省略时自动使用 API Key 的全部授权 scope；显式指定时只查单个 scope
 - RestClient 超时：connect=1s, read=3s（配置项 `access.retrieval.*`）
 - Wire format 使用 snake_case，`query_text` → `query`，`max_context_tokens` → `token_budget`
 - `KnowledgeContext.ResultChunk` wire 名：`evidence_items`/`doc_id`/`evidence_id`/`content`

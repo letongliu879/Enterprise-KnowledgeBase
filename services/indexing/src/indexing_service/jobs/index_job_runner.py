@@ -21,6 +21,7 @@ from indexing_service.governance_assets import (
     governance_visibility,
     load_governance_assets,
 )
+from indexing_service.events import build_indexing_event, emit_indexing_events
 from indexing_service.metrics import InMemoryIndexingMetrics
 from indexing_service.repository import IndexingRepository
 from indexing_service.security import IndexingSecurity
@@ -139,6 +140,64 @@ class IndexJobRunner:
                 index_version_id,
                 chunk_records,
             )
+
+            # Emit projection events to workbench so that document/chunk
+            # counts are visible in the UI.
+            all_page_nums = [
+                pn for chunk in chunk_records for pn in (chunk.page_num_int or [])
+            ]
+            page_count = max(all_page_nums) if all_page_nums else 0
+            chunk_previews = [
+                {
+                    "evidence_id": chunk.chunk_id,
+                    "preview": str(chunk.display_text or "")[:500],
+                    "ordinal": idx + 1,
+                    "page_from": min(chunk.page_num_int) if chunk.page_num_int else None,
+                    "page_to": max(chunk.page_num_int) if chunk.page_num_int else None,
+                    "section_path": list(chunk.section_path or []),
+                }
+                for idx, chunk in enumerate(chunk_records)
+            ]
+            emit_indexing_events([
+                build_indexing_event(
+                    event_id=f"evt_pss_{command.build_request_id}",
+                    event_type="ParseSnapshotCompleted",
+                    tenant_id=command.tenant_id,
+                    collection_id=command.collection_id,
+                    aggregate_type="document",
+                    aggregate_id=resolved_final_doc_id,
+                    aggregate_version=1,
+                    payload={
+                        "doc_id": resolved_final_doc_id,
+                        "tenant_id": command.tenant_id,
+                        "collection_id": command.collection_id,
+                        "parse_snapshot_id": command.parse_snapshot_id,
+                        "document_state": "PARSED",
+                        "page_count": page_count,
+                        "parser_profile_id": snapshot.parser_profile_id or snapshot.parser_id,
+                        "parser_profile_name": snapshot.parser_profile_id or snapshot.parser_id,
+                    },
+                    trace_id=command.trace_id,
+                ),
+                build_indexing_event(
+                    event_id=f"evt_chunks_{command.build_request_id}",
+                    event_type="ChunksMaterialized",
+                    tenant_id=command.tenant_id,
+                    collection_id=command.collection_id,
+                    aggregate_type="document",
+                    aggregate_id=resolved_final_doc_id,
+                    aggregate_version=2,
+                    payload={
+                        "doc_id": resolved_final_doc_id,
+                        "tenant_id": command.tenant_id,
+                        "collection_id": command.collection_id,
+                        "chunk_count": len(chunk_records),
+                        "chunks": chunk_previews,
+                    },
+                    trace_id=command.trace_id,
+                ),
+            ])
+
             visible_chunk_count = len([chunk for chunk in chunk_records if chunk.available_int >= 1])
             hidden_chunk_count = len(chunk_records) - visible_chunk_count
             has_toc_chunk = any(chunk.metadata.get("is_toc_chunk") for chunk in chunk_records)
@@ -226,6 +285,27 @@ class IndexJobRunner:
                     chunk_records=chunk_records,
                     trace_id=command.trace_id,
                 )
+            # Emit IndexBuildCompleted so workbench knows the document is
+            # indexed and can show the active_index_version.
+            emit_indexing_events([
+                build_indexing_event(
+                    event_id=f"evt_idx_{command.build_request_id}",
+                    event_type="IndexBuildCompleted",
+                    tenant_id=command.tenant_id,
+                    collection_id=command.collection_id,
+                    aggregate_type="document",
+                    aggregate_id=resolved_final_doc_id,
+                    aggregate_version=3,
+                    payload={
+                        "doc_id": resolved_final_doc_id,
+                        "tenant_id": command.tenant_id,
+                        "collection_id": command.collection_id,
+                        "state": "ACTIVE" if request_type_value in ("publish", "reindex") else "CANDIDATE",
+                        "index_version": index_version_id,
+                    },
+                    trace_id=command.trace_id,
+                ),
+            ])
             chunk_count = len(self.repository.list_active_chunks())
             duration_ms = int((perf_counter() - started_at) * 1000)
             self.metrics.incr("indexing.materialization.succeeded_total")

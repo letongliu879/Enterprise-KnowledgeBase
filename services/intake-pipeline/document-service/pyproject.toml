@@ -5,6 +5,7 @@ description = "Standalone document service for Reality-RAG"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.100",
+    "httpx",
     "python-multipart",
     "uvicorn[standard]",
     "reality-rag-contracts",

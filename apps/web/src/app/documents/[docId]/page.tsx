@@ -40,6 +40,15 @@ export default function DocumentDetailPage() {
   const parseSnapshotId = document?.parse_snapshot_id ?? "";
 
   const {
+    data: parseSnapshot,
+  } = useQuery({
+    queryKey: ["document-parse-snapshot", parseSnapshotId],
+    queryFn: () => workbenchApi.getParseSnapshot(parseSnapshotId),
+    enabled: Boolean(parseSnapshotId),
+    retry: 0,
+  });
+
+  const {
     data: chunks,
     isLoading: chunksLoading,
   } = useQuery({
@@ -148,8 +157,16 @@ export default function DocumentDetailPage() {
               </Alert>
             ) : (
               <DocumentViewer
-                parseSnapshotId={parseSnapshotId}
-                filename={document.filename || undefined}
+                sourceFileId={document.source_file_id}
+                filename={
+                  document.filename ||
+                  parseSnapshot?.source_filename ||
+                  undefined
+                }
+                previewText={parseSnapshot?.preview_text}
+                parserId={parseSnapshot?.parser_id}
+                parserBackend={parseSnapshot?.parser_backend}
+                warnings={parseSnapshot?.warnings ?? []}
                 chunks={chunks?.items ?? []}
               />
             )}

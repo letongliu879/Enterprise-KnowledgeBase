@@ -21,6 +21,7 @@ from reality_rag_contracts.indexing_models import (
 from indexing_service.security import IndexingSecurity
 from reality_rag_contracts import IndexedDocument, IndexedDocumentState
 from reality_rag_persistence.database import create_all, get_session
+from reality_rag_persistence.models import IntakeJobModel
 from reality_rag_persistence.repositories import (
     ChunkRegistryRepository,
     IndexBuildJobRepository,
@@ -707,11 +708,30 @@ class PersistentIndexingRepository:
         snapshot = self.get_parse_snapshot(parse_snapshot_id)
         page = max(1, int(page))
         page_size = max(1, int(page_size))
-        items = [_snapshot_chunk_view(parse_snapshot_id, snapshot, chunk, ordinal) for ordinal, chunk in enumerate(snapshot.upstream_chunks)]
+        doc_id = self._resolve_snapshot_doc_id(snapshot)
+        items = [
+            _snapshot_chunk_view(parse_snapshot_id, snapshot, chunk, ordinal, doc_id)
+            for ordinal, chunk in enumerate(snapshot.upstream_chunks)
+        ]
         total = len(items)
         start = (page - 1) * page_size
         end = start + page_size
         return items[start:end], total
+
+    def _resolve_snapshot_doc_id(self, snapshot: ParseSnapshotRecord) -> str:
+        session = get_session()
+        try:
+            job = (
+                session.query(IntakeJobModel)
+                .filter_by(source_file_id=snapshot.source_file_id)
+                .order_by(IntakeJobModel.updated_at.desc())
+                .first()
+            )
+        finally:
+            session.close()
+        if job is not None and (job.final_doc_id or job.preliminary_doc_id):
+            return str(job.final_doc_id or job.preliminary_doc_id)
+        return snapshot.source_file_id
 
     @staticmethod
     def stable_chunk_hash(content: str) -> str:
@@ -767,6 +787,7 @@ def _snapshot_chunk_view(
     snapshot: ParseSnapshotRecord,
     chunk: dict[str, object],
     ordinal: int,
+    doc_id: str,
 ) -> dict[str, object]:
     content = str(chunk.get("content_with_weight", "") or "").strip()
     evidence_id = "psc_" + sha256(
@@ -781,7 +802,7 @@ def _snapshot_chunk_view(
     }
     return {
         "evidence_id": evidence_id,
-        "doc_id": snapshot.source_file_id,
+        "doc_id": doc_id,
         "content": content,
         "section_path": list(chunk.get("section_path", []) or []),
         "page_spans": page_spans,

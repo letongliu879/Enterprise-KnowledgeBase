@@ -11,11 +11,14 @@ This service owns:
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import os
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+import httpx
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from reality_rag_contracts import HealthResponse, SourceFileState, UploadSessionStatus
@@ -24,6 +27,7 @@ from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.collections import CollectionRepository
 from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
+from reality_rag_persistence.repositories.object_blobs import ObjectBlobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 
 app = FastAPI(
@@ -34,6 +38,11 @@ app = FastAPI(
 
 _UPLOAD_CHUNK_SIZE = 1024 * 1024
 _VALID_VISIBILITIES = {"INTERNAL", "EXTERNAL"}
+_TEXT_MIME_PREFIXES = ("text/",)
+_TEXT_EXTENSIONS = {"txt", "md", "markdown", "log", "json", "csv"}
+_HTML_EXTENSIONS = {"html", "htm"}
+_IMAGE_MIME_PREFIX = "image/"
+_OFFICE_PREVIEW_EXTENSIONS = {"doc", "docx", "docm", "rtf", "ppt", "pptx", "pptm", "xls", "xlsx", "xlsm"}
 
 
 def _serialize_state(value: object) -> str:
@@ -53,6 +62,228 @@ def _sanitize_filename(name: str) -> str:
         return "upload.bin"
     sanitized = "".join(ch if ch.isalnum() or ch in {".", "-", "_"} else "_" for ch in candidate)
     return sanitized.strip("._") or "upload.bin"
+
+
+def _guess_mime_type(filename: str, path_hint: str = "") -> str:
+    mime_type, _ = mimetypes.guess_type(filename or path_hint)
+    return mime_type or "application/octet-stream"
+
+
+def _conversion_worker_base_url() -> str:
+    configured = os.environ.get("CONVERSION_WORKER_BASE_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    return "http://127.0.0.1:18089"
+
+
+def _native_preview_descriptor(filename: str, mime_type: str) -> dict[str, object]:
+    ext = Path(filename or "").suffix.lower().lstrip(".")
+    if mime_type == "application/pdf":
+        return {
+            "preview_available": True,
+            "preview_status": "ready",
+            "preview_kind": "pdf",
+            "preview_mime_type": mime_type,
+        }
+    if mime_type.startswith(_IMAGE_MIME_PREFIX):
+        return {
+            "preview_available": True,
+            "preview_status": "ready",
+            "preview_kind": "image",
+            "preview_mime_type": mime_type,
+        }
+    if ext in _HTML_EXTENSIONS or mime_type == "text/html":
+        return {
+            "preview_available": True,
+            "preview_status": "ready",
+            "preview_kind": "html",
+            "preview_mime_type": "text/html",
+        }
+    if mime_type.startswith(_TEXT_MIME_PREFIXES) or ext in _TEXT_EXTENSIONS:
+        preview_mime = mime_type if mime_type.startswith("text/") else "text/plain"
+        return {
+            "preview_available": True,
+            "preview_status": "ready",
+            "preview_kind": "text",
+            "preview_mime_type": preview_mime,
+        }
+    return {
+        "preview_available": False,
+        "preview_status": "unsupported",
+        "preview_kind": "unsupported",
+        "preview_mime_type": None,
+    }
+
+
+def _requires_generated_preview(filename: str, mime_type: str) -> bool:
+    ext = Path(filename or "").suffix.lower().lstrip(".")
+    if ext in _OFFICE_PREVIEW_EXTENSIONS:
+        return True
+    office_mime = mime_type.lower()
+    return any(
+        token in office_mime
+        for token in (
+            "msword",
+            "wordprocessingml",
+            "powerpoint",
+            "presentationml",
+            "excel",
+            "spreadsheetml",
+        )
+    )
+
+
+async def _request_generated_preview(
+    *,
+    source_file_id: str,
+    collection_id: str,
+    storage_key: str,
+    filename: str,
+    mime_type: str,
+) -> dict[str, object]:
+    payload = {
+        "source_file_id": source_file_id,
+        "collection_id": collection_id,
+        "source_file_path": storage_key,
+        "filename": filename,
+        "mime_type": mime_type,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                f"{_conversion_worker_base_url()}/internal/source-previews/render",
+                json=payload,
+            )
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=503, detail=f"Preview renderer unavailable: {exc}") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail=f"Preview renderer timeout: {exc}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"Preview renderer error: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Preview renderer returned HTTP {response.status_code}: {response.text}",
+        )
+    return dict(response.json())
+
+
+async def _build_preview_descriptor(
+    *,
+    source_file_id: str,
+    collection_id: str,
+    storage_key: str,
+    filename: str,
+    mime_type: str,
+) -> dict[str, object]:
+    preview = _native_preview_descriptor(filename, mime_type)
+    if bool(preview["preview_available"]):
+        return {
+            "source_file_id": source_file_id,
+            "collection_id": collection_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "preview_available": preview["preview_available"],
+            "preview_status": preview["preview_status"],
+            "preview_kind": preview["preview_kind"],
+            "preview_mime_type": preview["preview_mime_type"],
+            "preview_url": f"/internal/source-files/{source_file_id}/preview/content",
+            "thumbnail_url": None,
+            "page_count": None,
+        }
+
+    if not _requires_generated_preview(filename, mime_type):
+        return {
+            "source_file_id": source_file_id,
+            "collection_id": collection_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "preview_available": preview["preview_available"],
+            "preview_status": preview["preview_status"],
+            "preview_kind": preview["preview_kind"],
+            "preview_mime_type": preview["preview_mime_type"],
+            "preview_url": None,
+            "thumbnail_url": None,
+            "page_count": None,
+        }
+
+    generated = await _request_generated_preview(
+        source_file_id=source_file_id,
+        collection_id=collection_id,
+        storage_key=storage_key,
+        filename=filename,
+        mime_type=mime_type,
+    )
+    return {
+        "source_file_id": source_file_id,
+        "collection_id": collection_id,
+        "filename": str(generated.get("filename") or filename),
+        "mime_type": str(generated.get("mime_type") or mime_type),
+        "preview_available": bool(generated.get("preview_available")),
+        "preview_status": generated.get("preview_status"),
+        "preview_kind": generated.get("preview_kind"),
+        "preview_mime_type": generated.get("preview_mime_type"),
+        "preview_url": (
+            f"/internal/source-files/{source_file_id}/preview/content"
+            if bool(generated.get("preview_available"))
+            and str(generated.get("preview_status") or "").lower() == "ready"
+            else None
+        ),
+        "thumbnail_url": generated.get("thumbnail_url"),
+        "page_count": generated.get("page_count"),
+    }
+
+
+async def _proxy_generated_preview_content(
+    *,
+    source_file_id: str,
+    collection_id: str,
+    storage_key: str,
+    filename: str,
+    mime_type: str,
+) -> Response:
+    descriptor = await _request_generated_preview(
+        source_file_id=source_file_id,
+        collection_id=collection_id,
+        storage_key=storage_key,
+        filename=filename,
+        mime_type=mime_type,
+    )
+    if not bool(descriptor.get("preview_available")):
+        raise HTTPException(status_code=409, detail="Source preview unsupported for this file type")
+    if str(descriptor.get("preview_status") or "").lower() != "ready":
+        raise HTTPException(status_code=409, detail="Source preview is not ready")
+
+    preview_url = str(descriptor.get("preview_url") or "").strip()
+    if not preview_url:
+        raise HTTPException(status_code=404, detail="Source preview asset missing")
+    if not preview_url.startswith("http"):
+        preview_url = f"{_conversion_worker_base_url()}{preview_url}"
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.get(preview_url)
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=503, detail=f"Preview asset unavailable: {exc}") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=503, detail=f"Preview asset timeout: {exc}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"Preview asset error: {exc}") from exc
+
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="Source preview asset missing")
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Preview asset returned HTTP {response.status_code}: {response.text}",
+        )
+
+    return Response(
+        content=response.content,
+        media_type=response.headers.get("content-type") or descriptor.get("preview_mime_type") or "application/octet-stream",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _upload_temp_path(upload_id: str, sanitized_name: str) -> Path:
@@ -417,6 +648,17 @@ async def get_source_file(source_file_id: str) -> dict:
         sf = repo.get(source_file_id)
         if sf is None:
             raise HTTPException(status_code=404, detail=f"Source file {source_file_id} not found")
+        obj = ObjectBlobRepository(session).get(sf.object_id)
+        storage_key = obj.storage_key if obj is not None else ""
+        filename = sf.original_name or sf.sanitized_name or ""
+        mime_type = _guess_mime_type(filename, storage_key)
+        preview = await _build_preview_descriptor(
+            source_file_id=sf.source_file_id,
+            collection_id=sf.collection_id,
+            storage_key=storage_key,
+            filename=filename,
+            mime_type=mime_type,
+        )
         return {
             "source_file_id": sf.source_file_id,
             "collection_id": sf.collection_id,
@@ -430,7 +672,83 @@ async def get_source_file(source_file_id: str) -> dict:
             "consumed_at": sf.updated_at.isoformat() if sf.updated_at and sf.state and hasattr(sf.state, "value") and sf.state.value == "consumed" else None,
             "created_at": sf.created_at.isoformat() if sf.created_at else None,
             "updated_at": sf.updated_at.isoformat() if sf.updated_at else None,
+            "original_name": sf.original_name,
+            "sanitized_name": sf.sanitized_name,
+            "filename": filename,
+            "mime_type": mime_type,
+            "size_bytes": sf.size_bytes,
+            "storage_key": storage_key,
+            "preview_available": preview["preview_available"],
+            "preview_status": preview["preview_status"],
+            "preview_kind": preview["preview_kind"],
+            "preview_mime_type": preview["preview_mime_type"],
+            "preview_url": preview["preview_url"],
+            "thumbnail_url": preview["thumbnail_url"],
+            "page_count": preview["page_count"],
         }
+    finally:
+        session.close()
+
+
+@app.get("/internal/source-files/{source_file_id}/preview")
+async def get_source_file_preview(source_file_id: str) -> dict:
+    session = get_session()
+    try:
+        repo = SourceFileRepository(session)
+        sf = repo.get(source_file_id)
+        if sf is None:
+            raise HTTPException(status_code=404, detail=f"Source file {source_file_id} not found")
+        obj = ObjectBlobRepository(session).get(sf.object_id)
+        storage_key = obj.storage_key if obj is not None else ""
+        filename = sf.original_name or sf.sanitized_name or ""
+        mime_type = _guess_mime_type(filename, storage_key)
+        return await _build_preview_descriptor(
+            source_file_id=sf.source_file_id,
+            collection_id=sf.collection_id,
+            storage_key=storage_key,
+            filename=filename,
+            mime_type=mime_type,
+        )
+    finally:
+        session.close()
+
+
+@app.get("/internal/source-files/{source_file_id}/preview/content")
+async def get_source_file_preview_content(source_file_id: str):
+    session = get_session()
+    try:
+        repo = SourceFileRepository(session)
+        sf = repo.get(source_file_id)
+        if sf is None:
+            raise HTTPException(status_code=404, detail=f"Source file {source_file_id} not found")
+        obj = ObjectBlobRepository(session).get(sf.object_id)
+        if obj is None or not obj.storage_key:
+            raise HTTPException(status_code=404, detail="Source object not found")
+
+        filename = sf.original_name or sf.sanitized_name or ""
+        mime_type = _guess_mime_type(filename, obj.storage_key)
+        native_preview = _native_preview_descriptor(filename, mime_type)
+        if bool(native_preview["preview_available"]):
+            path = Path(obj.storage_key)
+            if not path.exists():
+                raise HTTPException(status_code=404, detail="Source object bytes not found")
+            return FileResponse(
+                path=path,
+                media_type=str(native_preview["preview_mime_type"] or mime_type),
+                filename=filename or path.name,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        if not _requires_generated_preview(filename, mime_type):
+            raise HTTPException(status_code=409, detail="Source preview unsupported for this file type")
+
+        return await _proxy_generated_preview_content(
+            source_file_id=sf.source_file_id,
+            collection_id=sf.collection_id,
+            storage_key=obj.storage_key,
+            filename=filename,
+            mime_type=mime_type,
+        )
     finally:
         session.close()
 

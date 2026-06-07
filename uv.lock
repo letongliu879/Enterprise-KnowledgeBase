@@ -580,6 +580,7 @@ version = "0.1.0"
 source = { editable = "services/intake-pipeline/document-service" }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "python-multipart" },
     { name = "reality-rag-contracts" },
     { name = "reality-rag-documents" },
@@ -596,6 +597,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.100" },
+    { name = "httpx" },
     { name = "httpx", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-multipart" },

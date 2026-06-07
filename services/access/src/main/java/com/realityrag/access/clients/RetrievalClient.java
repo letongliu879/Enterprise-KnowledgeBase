@@ -64,6 +64,22 @@ public class RetrievalClient {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public java.util.List<String> listAvailableProfiles() {
+        try {
+            var response = restClient.get()
+                .uri("/internal/retrieval-profiles")
+                .retrieve()
+                .body(java.util.List.class);
+            if (response == null) {
+                return java.util.List.of();
+            }
+            return (java.util.List<String>) response;
+        } catch (RuntimeException error) {
+            return java.util.List.of();
+        }
+    }
+
     public boolean retrievalProfileExists(String profileId) {
         try {
             restClient.get()

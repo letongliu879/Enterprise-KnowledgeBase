@@ -41,10 +41,11 @@ Spring AI MCP Server, protocol `STREAMABLE`, transport `Streamable HTTP`
 当前暴露一个 tool:
 - **`search_enterprise_knowledge`**
   - `query` (string, 必填) — 用户问题
-  - `knowledge_scope` (string, 必填) — 知识库 scope/collection id
-  - `retrieval_profile_id` (string, 可选)
+  - `knowledge_scope` (string, 可选) — 知识库 scope/collection id；不传则搜所有授权 scope
   - `token_budget` (integer, 可选)
   - `debug` (string, 可选, none|basic|full)
+
+> `knowledge_scope` 省略时自动搜索 API Key 有权访问的全部 scope。`retrieval_profile_id` 对 Agent 透明，走服务端默认 profile。
 
 MCP 请求通过 `X-API-Key` + `X-Agent-Instance-Id` header 认证，Streamable HTTP 使用 `Mcp-Session-Id` header 维护会话状态。
 

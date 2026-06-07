@@ -8,6 +8,8 @@ import type {
   TicketDecisionResult,
   AgentReviewView,
   ChunkView,
+  ParseSnapshotView,
+  SourceFilePreviewView,
 } from "./types";
 import { ApiClientError, BackendGapError } from "./errors";
 import { useAppStore } from "@/lib/store";
@@ -17,13 +19,27 @@ const WORKBENCH_BASE =
   process.env.NEXT_PUBLIC_WORKBENCH_API_URL ||
   "/api/workbench";
 const REQUEST_TIMEOUT_MS = 15000;
+const WORKBENCH_AUTH_COOKIE = "ekb_workbench_token";
+
+function syncWorkbenchAuthCookie(token?: string) {
+  if (typeof document === "undefined") return;
+  if (!token) {
+    document.cookie = `${WORKBENCH_AUTH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+    return;
+  }
+  document.cookie = `${WORKBENCH_AUTH_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; SameSite=Lax`;
+}
 
 function getToken(): string | undefined {
   if (typeof window === "undefined") return undefined;
   const storeToken = useAppStore.getState().demoToken;
   // Reject non-JWT values (e.g. legacy "123456") and fall back to env
-  if (storeToken && storeToken.split(".").length === 3) return storeToken;
-  return process.env.NEXT_PUBLIC_DEMO_TOKEN || undefined;
+  const token =
+    storeToken && storeToken.split(".").length === 3
+      ? storeToken
+      : process.env.NEXT_PUBLIC_DEMO_TOKEN || undefined;
+  syncWorkbenchAuthCookie(token);
+  return token;
 }
 
 function getApiKey(): string | undefined {
@@ -297,7 +313,7 @@ export const workbenchApi = {
       { method: "PATCH", body: JSON.stringify(payload) }
     ),
   getParseSnapshot: (id: string) =>
-    request<Record<string, unknown>>(
+    request<ParseSnapshotView>(
       WORKBENCH_BASE,
       `/workbench/parse-snapshots/${id}`
     ),
@@ -324,10 +340,68 @@ export const workbenchApi = {
       WORKBENCH_BASE,
       `/workbench/documents/${doc_id}`
     ),
+  getSourceFilePreview: (source_file_id: string) =>
+    request<SourceFilePreviewView>(
+      WORKBENCH_BASE,
+      `/workbench/source-files/${source_file_id}/preview`
+    ),
+  getSourceFilePreviewContentUrl: (source_file_id: string) => {
+    const token = getToken();
+    syncWorkbenchAuthCookie(token);
+    return resolveUrl(
+      WORKBENCH_BASE,
+      `/workbench/source-files/${source_file_id}/preview/content`
+    ).toString();
+  },
   getParseSnapshotSourceBlob: async (parse_snapshot_id: string) => {
     const url = resolveUrl(
       WORKBENCH_BASE,
       `/workbench/parse-snapshots/${parse_snapshot_id}/source`
+    );
+    const headers = new Headers();
+    const token = getToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const res = await fetch(url.toString(), {
+      headers,
+      signal: controller.signal,
+    }).catch((error: unknown) => {
+      clearTimeout(timeout);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiClientError(
+          "REQUEST_TIMEOUT",
+          `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
+          408
+        );
+      }
+      throw error;
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      let body: { code?: string; message?: string; detail?: string } = {};
+      try {
+        body = await res.json();
+      } catch {
+        /* ignore */
+      }
+      throw new ApiClientError(
+        body.code || `HTTP_${res.status}`,
+        body.message || body.detail || `HTTP ${res.status}`,
+        res.status
+      );
+    }
+
+    const blob = await res.blob();
+    const contentType = res.headers.get("content-type") || "application/octet-stream";
+    return { blob, contentType };
+  },
+  getSourceFilePreviewBlob: async (source_file_id: string) => {
+    const url = resolveUrl(
+      WORKBENCH_BASE,
+      `/workbench/source-files/${source_file_id}/preview/content`
     );
     const headers = new Headers();
     const token = getToken();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   FileText,
-  Loader2,
   Search,
   ZoomIn,
   ZoomOut,
@@ -16,7 +15,6 @@ import {
 import { toast } from "sonner";
 import { workbenchApi } from "@/lib/api/client";
 import type { ChunkView } from "@/lib/api/types";
-import DOMPurify from "dompurify";
 import { isApiError, getErrorMessage } from "@/lib/api/errors";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -57,40 +55,18 @@ function collectAnchoredPages(chunks?: ChunkView[]) {
   return Array.from(pages).sort((a, b) => a - b);
 }
 
-async function extractPptxText(bytes: ArrayBuffer): Promise<string> {
-  const JSZip = (await import("jszip")).default;
-  const zip = await JSZip.loadAsync(bytes);
-  const parser = new DOMParser();
-  const slides = Object.keys(zip.files)
-    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const sections: string[] = [];
-
-  for (const slide of slides) {
-    const xml = await zip.file(slide)?.async("text");
-    if (!xml) continue;
-    const doc = parser.parseFromString(xml, "application/xml");
-    const texts = Array.from(doc.getElementsByTagName("a:t"))
-      .map((node) => node.textContent?.trim() || "")
-      .filter(Boolean);
-    if (texts.length > 0) {
-      sections.push(texts.join("\n"));
-    }
-  }
-
-  return sections.join("\n\n");
-}
-
 function HighlightText({ text, highlight }: { text: string; highlight: string }) {
   if (!highlight.trim()) return <>{text}</>;
 
-  const parts = text.split(new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"));
+  const parts = text.split(
+    new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
+  );
 
   return (
     <>
       {parts.map((part, i) =>
         part.toLowerCase() === highlight.toLowerCase() ? (
-          <mark key={i} className="bg-amber-200 text-amber-900 px-0.5 rounded">
+          <mark key={i} className="rounded bg-amber-200 px-0.5 text-amber-900">
             {part}
           </mark>
         ) : (
@@ -101,35 +77,128 @@ function HighlightText({ text, highlight }: { text: string; highlight: string })
   );
 }
 
-function ZoomableHtml({
-  html,
+function PdfCanvasPreview({
+  url,
+  page,
   zoom,
+  title,
 }: {
-  html: string;
+  url: string;
+  page: number;
   zoom: number;
+  title: string;
 }) {
-  const scale = zoom / 100;
-  const sanitizedHtml = DOMPurify.sanitize(html);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const documentRef = useRef<any>(null);
+  const renderTaskRef = useRef<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [documentEpoch, setDocumentEpoch] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    let loadingTask: any = null;
+
+    setLoading(true);
+    setError("");
+
+    void (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/webpack.mjs");
+        loadingTask = pdfjs.getDocument({ url, withCredentials: true });
+        const pdfDocument = await loadingTask.promise;
+        if (!active) {
+          await pdfDocument.destroy();
+          return;
+        }
+        documentRef.current = pdfDocument;
+        setDocumentEpoch((value) => value + 1);
+        setLoading(false);
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load PDF preview");
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+      renderTaskRef.current?.cancel?.();
+      renderTaskRef.current = null;
+      void loadingTask?.destroy?.();
+      void documentRef.current?.destroy?.();
+      documentRef.current = null;
+    };
+  }, [url]);
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const pdfDocument = documentRef.current;
+      const canvas = canvasRef.current;
+      if (!pdfDocument || !canvas) return;
+
+      try {
+        setError("");
+        const safePage = Math.max(1, Math.min(page, pdfDocument.numPages));
+        const pdfPage = await pdfDocument.getPage(safePage);
+        const viewport = pdfPage.getViewport({ scale: zoom / 100 });
+        const context = canvas.getContext("2d");
+        if (!context) {
+          setError("Canvas 2D context unavailable");
+          return;
+        }
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+
+        renderTaskRef.current?.cancel?.();
+        const renderTask = pdfPage.render({ canvasContext: context, viewport });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to render PDF page");
+      }
+    })();
+
+    return () => {
+      active = false;
+      renderTaskRef.current?.cancel?.();
+      renderTaskRef.current = null;
+    };
+  }, [documentEpoch, page, zoom, url]);
+
+  if (loading) {
+    return <Skeleton className="h-[780px] rounded-lg" />;
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={FileText}
+        title="PDF preview failed"
+        description={error}
+      />
+    );
+  }
+
   return (
     <div className="overflow-auto rounded-lg border bg-white p-4">
-      <div
-        className="origin-top-left"
-        style={{
-          transform: `scale(${scale})`,
-          width: `${100 / scale}%`,
-        }}
-      >
-        <div
-          className="prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-        />
-      </div>
+      <canvas
+        ref={canvasRef}
+        aria-label={title}
+        className="mx-auto block max-w-full shadow-sm"
+      />
     </div>
   );
 }
 
 export function DocumentViewer({
-  parseSnapshotId,
+  sourceFileId,
   filename,
   previewText,
   parserId,
@@ -139,7 +208,7 @@ export function DocumentViewer({
   searchText,
   onSearchComplete,
 }: {
-  parseSnapshotId?: string | null;
+  sourceFileId?: string | null;
   filename?: string | null;
   previewText?: string | null;
   parserId?: string | null;
@@ -154,10 +223,7 @@ export function DocumentViewer({
   const [currentPage, setCurrentPage] = useState(anchoredPages[0] || 1);
   const [pageInput, setPageInput] = useState(String(anchoredPages[0] || 1));
   const [zoom, setZoom] = useState(100);
-  const [objectUrl, setObjectUrl] = useState("");
-  const [htmlPreview, setHtmlPreview] = useState("");
-  const [textPreview, setTextPreview] = useState("");
-  const [rendering, setRendering] = useState(false);
+  const [sourceText, setSourceText] = useState("");
   const [searchHighlight, setSearchHighlight] = useState("");
 
   const pageCount = anchoredPages.length > 0 ? anchoredPages[anchoredPages.length - 1] : null;
@@ -166,19 +232,47 @@ export function DocumentViewer({
     const firstPage = anchoredPages[0] || 1;
     setCurrentPage(firstPage);
     setPageInput(String(firstPage));
-  }, [parseSnapshotId, anchoredPages]);
+  }, [sourceFileId, anchoredPages]);
 
-  const { data, error, isLoading } = useQuery({
-    queryKey: ["document-viewer-source", parseSnapshotId],
-    queryFn: () => workbenchApi.getParseSnapshotSourceBlob(parseSnapshotId as string),
-    enabled: Boolean(parseSnapshotId),
+  const {
+    data: sourcePreview,
+    error: sourcePreviewError,
+    isLoading: sourcePreviewLoading,
+  } = useQuery({
+    queryKey: ["document-viewer-source-preview", sourceFileId],
+    queryFn: () => workbenchApi.getSourceFilePreview(sourceFileId as string),
+    enabled: Boolean(sourceFileId),
     retry: 0,
   });
 
+  const {
+    data: sourceBlob,
+    error: sourceBlobError,
+    isLoading: sourceBlobLoading,
+  } = useQuery({
+    queryKey: ["document-viewer-source-preview-content", sourceFileId],
+    queryFn: () => workbenchApi.getSourceFilePreviewBlob(sourceFileId as string),
+    enabled: Boolean(
+      sourceFileId &&
+        sourcePreview?.preview_available &&
+        (sourcePreview?.preview_kind === "text" ||
+          sourcePreview?.preview_mime_type?.startsWith("text/"))
+    ),
+    retry: 0,
+  });
+
+  const sourceError = sourcePreviewError || sourceBlobError;
+  const isLoading = sourcePreviewLoading || sourceBlobLoading;
+
   const mode = useMemo(
-    () => inferMode(extension, data?.contentType || ""),
-    [data?.contentType, extension]
+    () => inferMode(extension, sourcePreview?.preview_mime_type || sourceBlob?.contentType || ""),
+    [extension, sourceBlob?.contentType, sourcePreview?.preview_mime_type]
   );
+
+  const directPreviewUrl = useMemo(() => {
+    if (!sourceFileId || !sourcePreview?.preview_available) return "";
+    return workbenchApi.getSourceFilePreviewContentUrl(sourceFileId);
+  }, [sourceFileId, sourcePreview?.preview_available]);
 
   const effectiveWarnings = useMemo(
     () => warnings.filter((item) => String(item || "").trim().length > 0),
@@ -186,78 +280,21 @@ export function DocumentViewer({
   );
 
   useEffect(() => {
-    if (!data?.blob) {
-      setObjectUrl("");
+    if (!sourceBlob?.blob || mode !== "text") {
+      setSourceText("");
       return;
     }
-    const url = URL.createObjectURL(data.blob);
-    setObjectUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [data?.blob]);
 
-  useEffect(() => {
     let active = true;
-    async function render() {
-      if (!data?.blob) {
-        setHtmlPreview("");
-        setTextPreview("");
-        return;
-      }
+    void sourceBlob.blob.text().then((text) => {
+      if (active) setSourceText(text);
+    });
 
-      setRendering(true);
-      setHtmlPreview("");
-      setTextPreview("");
-
-      try {
-        const bytes = await data.blob.arrayBuffer();
-
-        if (extension === "docx") {
-          const mammoth = await import("mammoth");
-          const result = await mammoth.convertToHtml({ arrayBuffer: bytes });
-          if (active) setHtmlPreview(result.value);
-          return;
-        }
-
-        if (extension === "xlsx" || extension === "xls" || extension === "csv") {
-          const XLSX = await import("xlsx");
-          const workbook = XLSX.read(bytes, { type: "array" });
-          const html = workbook.SheetNames.slice(0, 5)
-            .map((sheetName) => {
-              const sheet = workbook.Sheets[sheetName];
-              return `<section><h3>${sheetName}</h3>${XLSX.utils.sheet_to_html(sheet)}</section>`;
-            })
-            .join("");
-          if (active) setHtmlPreview(html);
-          return;
-        }
-
-        if (extension === "pptx" || extension === "ppt") {
-          const text = await extractPptxText(bytes);
-          if (active) setTextPreview(text);
-          return;
-        }
-
-        if (extension === "txt" || extension === "md" || extension === "markdown") {
-          const text = new TextDecoder("utf-8").decode(bytes);
-          if (active) setTextPreview(text);
-          return;
-        }
-
-        if (!parseSnapshotId && previewText) {
-          if (active) setTextPreview(previewText);
-        }
-      } finally {
-        if (active) setRendering(false);
-      }
-    }
-
-    void render();
     return () => {
       active = false;
     };
-  }, [data?.blob, extension, parseSnapshotId, previewText]);
+  }, [sourceBlob?.blob, mode]);
 
-  // Handle external search requests
   useEffect(() => {
     if (!searchText?.trim()) {
       setSearchHighlight("");
@@ -265,62 +302,59 @@ export function DocumentViewer({
     }
 
     setSearchHighlight(searchText);
-
-    // For text/html modes, try to find and scroll to the text
-    if (mode === "text" || mode === "html") {
-      const container = document.querySelector("[data-document-viewer-content]");
-      if (container) {
-        const text = container.textContent || "";
-        const index = text.toLowerCase().indexOf(searchText.toLowerCase());
-        if (index >= 0) {
-          // Try to find the element containing this text
-          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-          let currentIndex = 0;
-          let foundNode: Text | null = null;
-          let foundOffset = 0;
-
-          while (walker.nextNode()) {
-            const node = walker.currentNode as Text;
-            const nodeText = node.textContent || "";
-            if (currentIndex <= index && currentIndex + nodeText.length > index) {
-              foundNode = node;
-              foundOffset = index - currentIndex;
-              break;
-            }
-            currentIndex += nodeText.length;
-          }
-
-          if (foundNode) {
-            const range = document.createRange();
-            range.setStart(foundNode, foundOffset);
-            range.setEnd(foundNode, Math.min(foundOffset + searchText.length, foundNode.length));
-            const selection = window.getSelection();
-            selection?.removeAllRanges();
-            selection?.addRange(range);
-            foundNode.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-
-          onSearchComplete?.(true);
-          return;
-        }
-      }
+    if (!previewText?.trim()) {
+      onSearchComplete?.(false);
+      return;
     }
 
-    // For PDF, we can't programmatically search inside iframe easily.
-    // For text/html, reaching here means the text was not found.
+    const container = document.querySelector("[data-document-viewer-content]");
+    if (!container) {
+      onSearchComplete?.(false);
+      return;
+    }
+
+    const text = container.textContent || "";
+    const index = text.toLowerCase().indexOf(searchText.toLowerCase());
+    if (index < 0) {
+      onSearchComplete?.(false);
+      return;
+    }
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let currentIndex = 0;
+    let foundNode: Text | null = null;
+    let foundOffset = 0;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      const nodeText = node.textContent || "";
+      if (currentIndex <= index && currentIndex + nodeText.length > index) {
+        foundNode = node;
+        foundOffset = index - currentIndex;
+        break;
+      }
+      currentIndex += nodeText.length;
+    }
+
+    if (foundNode) {
+      const range = document.createRange();
+      range.setStart(foundNode, foundOffset);
+      range.setEnd(foundNode, Math.min(foundOffset + searchText.length, foundNode.length));
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      foundNode.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+      onSearchComplete?.(true);
+      return;
+    }
+
     onSearchComplete?.(false);
-  }, [searchText, mode, textPreview, htmlPreview, onSearchComplete]);
+  }, [searchText, previewText, onSearchComplete]);
 
-  const pdfUrl = useMemo(() => {
-    if (!objectUrl || mode !== "pdf") return "";
-    return `${objectUrl}#page=${currentPage}&zoom=${zoom}`;
-  }, [currentPage, mode, objectUrl, zoom]);
-
-  const copyPreviewText = async () => {
-    const text = textPreview || previewText || "";
-    if (!text.trim()) return;
-    await navigator.clipboard.writeText(text);
-    toast.success("Preview text copied");
+  const copyParsedText = async () => {
+    if (!previewText?.trim()) return;
+    await navigator.clipboard.writeText(previewText);
+    toast.success("Parsed text copied");
   };
 
   const jumpToPage = (next: number) => {
@@ -363,14 +397,14 @@ export function DocumentViewer({
               <ZoomIn className="mr-1 h-3.5 w-3.5" />
               Zoom in
             </Button>
-            {(textPreview || previewText) ? (
-              <Button variant="outline" size="sm" onClick={() => void copyPreviewText()}>
+            {previewText ? (
+              <Button variant="outline" size="sm" onClick={() => void copyParsedText()}>
                 <Copy className="mr-1 h-3.5 w-3.5" />
                 Copy text
               </Button>
             ) : null}
-            {objectUrl ? (
-              <a href={objectUrl} download={filename || "source-preview"}>
+            {directPreviewUrl ? (
+              <a href={directPreviewUrl} download={filename || "source-preview"}>
                 <Button variant="outline" size="sm">
                   <Download className="mr-1 h-3.5 w-3.5" />
                   Download
@@ -403,9 +437,7 @@ export function DocumentViewer({
               }}
               className="h-8 w-20 bg-background"
             />
-            <span className="text-xs text-muted-foreground">
-              / {pageCount || "-"}
-            </span>
+            <span className="text-xs text-muted-foreground">/ {pageCount || "-"}</span>
           </div>
           <Button
             variant="outline"
@@ -437,87 +469,76 @@ export function DocumentViewer({
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="source">Source</TabsTrigger>
           <TabsTrigger value="parsed-text">Parsed text</TabsTrigger>
-          <TabsTrigger value="metadata">Metadata</TabsTrigger>
         </TabsList>
 
         <TabsContent value="source">
           {isLoading ? (
             <Skeleton className="h-[720px] rounded-lg" />
-          ) : error ? (
+          ) : sourceError ? (
             <Alert variant="destructive">
               <FileText className="h-4 w-4" />
-              <AlertDescription>{isApiError(error) ? error.message : getErrorMessage(error)}</AlertDescription>
+              <AlertDescription>
+                {isApiError(sourceError) ? sourceError.message : getErrorMessage(sourceError)}
+              </AlertDescription>
             </Alert>
-          ) : !parseSnapshotId || !data?.blob ? (
-            previewText ? (
-              <div className="max-h-[720px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 text-sm leading-7">
-                {previewText}
-              </div>
-            ) : (
-              <EmptyState
-                icon={FileText}
-                title="Source preview is not available"
-                description="This document does not currently expose a readable source file stream."
-              />
-            )
-          ) : rendering ? (
-            <div className="flex h-[720px] items-center justify-center rounded-lg border bg-muted/10">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : mode === "pdf" && pdfUrl ? (
-            <iframe
-              title={filename || "preview"}
-              src={pdfUrl}
-              className="h-[780px] w-full rounded-lg border bg-white"
+          ) : !sourceFileId ? (
+            <EmptyState
+              icon={FileText}
+              title="Source preview is not available"
+              description="This document does not currently link to a source file."
             />
-          ) : mode === "image" && objectUrl ? (
+          ) : !sourcePreview?.preview_available ? (
+            <EmptyState
+              icon={FileText}
+              title="Original preview is not available for this format"
+              description="This file type does not currently expose a source preview asset. Use Download to open the source file."
+            />
+          ) : mode === "pdf" && directPreviewUrl ? (
+            <PdfCanvasPreview
+              title={filename || "preview"}
+              url={directPreviewUrl}
+              page={currentPage}
+              zoom={zoom}
+            />
+          ) : mode === "image" && directPreviewUrl ? (
             <div className="overflow-auto rounded-lg border bg-muted/10 p-4">
               <img
-                src={objectUrl}
+                src={directPreviewUrl}
                 alt={filename || "preview"}
                 className="mx-auto max-w-full"
                 style={{ maxWidth: `${zoom}%` }}
               />
             </div>
-          ) : htmlPreview ? (
-            <div data-document-viewer-content>
-              <ZoomableHtml html={htmlPreview} zoom={zoom} />
-            </div>
-          ) : textPreview ? (
-            <div
-              data-document-viewer-content
-              className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 leading-7"
-              style={{ fontSize: `${Math.max(12, zoom / 6)}px` }}
-            >
-              {searchHighlight ? (
-                <HighlightText text={textPreview} highlight={searchHighlight} />
-              ) : (
-                textPreview
-              )}
-            </div>
-          ) : objectUrl && mode === "html" ? (
+          ) : mode === "html" && directPreviewUrl ? (
             <iframe
               title={filename || "preview"}
-              src={objectUrl}
+              src={directPreviewUrl}
               className="h-[780px] w-full rounded-lg border bg-white"
             />
+          ) : mode === "text" ? (
+            <div className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 leading-7">
+              {sourceText || "Source preview text is empty."}
+            </div>
           ) : (
             <EmptyState
               icon={FileText}
-              title="Preview format is not available yet"
-              description="The source file is reachable, but the viewer adapter has not produced a readable in-app rendering for this format."
+              title="Original preview is not available"
+              description="This format does not currently support an in-app original-file preview. Use Download to open the source file."
             />
           )}
         </TabsContent>
 
         <TabsContent value="parsed-text">
           {previewText ? (
-            <div className="max-h-[720px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 text-sm leading-7">
-              {previewText}
-            </div>
-          ) : textPreview ? (
-            <div className="max-h-[720px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 text-sm leading-7">
-              {textPreview}
+            <div
+              data-document-viewer-content
+              className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 text-sm leading-7"
+            >
+              {searchHighlight ? (
+                <HighlightText text={previewText} highlight={searchHighlight} />
+              ) : (
+                previewText
+              )}
             </div>
           ) : (
             <EmptyState
@@ -526,34 +547,6 @@ export function DocumentViewer({
               description="This parse snapshot does not currently expose normalized preview text."
             />
           )}
-        </TabsContent>
-
-        <TabsContent value="metadata">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-xl border bg-muted/15 p-4">
-              <p className="text-xs text-muted-foreground">Filename</p>
-              <p className="mt-1 break-all font-medium">{filename || "-"}</p>
-            </div>
-            <div className="rounded-xl border bg-muted/15 p-4">
-              <p className="text-xs text-muted-foreground">Current page</p>
-              <p className="mt-1 font-medium">{pageCount ? `${currentPage} / ${pageCount}` : "-"}</p>
-            </div>
-            <div className="rounded-xl border bg-muted/15 p-4">
-              <p className="text-xs text-muted-foreground">Parser</p>
-              <p className="mt-1 font-medium">{parserId || "-"}</p>
-            </div>
-            <div className="rounded-xl border bg-muted/15 p-4">
-              <p className="text-xs text-muted-foreground">Backend</p>
-              <p className="mt-1 font-medium">{parserBackend || "-"}</p>
-            </div>
-          </div>
-
-          {effectiveWarnings.length > 0 ? (
-            <Alert className="mt-4">
-              <FileText className="h-4 w-4" />
-              <AlertDescription>{effectiveWarnings.join("; ")}</AlertDescription>
-            </Alert>
-          ) : null}
         </TabsContent>
       </Tabs>
     </div>

@@ -15,6 +15,17 @@ source_system, metadata, trace_id
 ### GET /internal/parse-snapshots/{id} — 查询 ParseSnapshot
 ### GET /internal/parse-snapshots/{id}/chunks?page=1&page_size=50
 
+`GET /internal/parse-snapshots/{id}/chunks` 返回字段约定：
+```
+items[].evidence_id, items[].doc_id, items[].content,
+items[].section_path, items[].page_spans, items[].chunk_type, items[].metadata
+```
+
+备注：
+- `doc_id` 对外统一使用 canonical 文档身份，优先返回 `final_doc_id`
+- 如果该 ParseSnapshot 还没有关联到已发布文档，则允许回退为 `source_file_id`
+- 不再把 `source_file_id` 当作已发布文档场景下的 `doc_id`
+
 ### POST /internal/index-jobs — 提交正式索引
 `IndexBuildRequestedCommand`:
 ```
@@ -118,3 +129,7 @@ chunk_edit_refs, idempotency_key, trace_id
 - **控制字段**: available_int / removed_kwd / visibility / published_document_state
 - **权限字段**: allowed_principal_ids / allowed_groups
 - **引用字段**: citation_payload / source_block_ids / source_id
+
+## Wire 约束补充
+- ParseSnapshot chunk 预览、chunk 查询、检索证据等所有对外 wire 字段统一使用 `doc_id`
+- `final_doc_id` 可以保留为 indexing 内部持久化和治理字段名，但不应继续作为新对外接口字段

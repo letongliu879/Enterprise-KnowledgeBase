@@ -61,6 +61,22 @@ public class JdbcRetrievalProfileStore implements RetrievalProfileStore {
     }
 
     @Override
+    public List<RetrievalProfile> findAllEnabled() {
+        return jdbcTemplate.query(
+            """
+                SELECT profile_id, collection_id, profile_version, profile_hash,
+                       bm25_weight, vector_weight, candidate_top_k, similarity_threshold,
+                       rerank_enabled, rerank_model, fail_policy, expansion_policy,
+                       pack_budget, updated_at, updated_by
+                FROM retrieval_profiles
+                WHERE enabled = TRUE
+                ORDER BY profile_id, collection_id
+                """,
+            (rs, rowNum) -> mapRow(rs)
+        );
+    }
+
+    @Override
     public void upsert(RetrievalProfile profile) {
         String expansionJson;
         try {

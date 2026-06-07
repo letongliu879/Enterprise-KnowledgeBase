@@ -47,6 +47,10 @@ upload_id, source_file_id, collection_id, tenant_id,
 parser_profile_id, parser_override_json(opt), actor
 ```
 
+备注：
+- `GET /workbench/parse-snapshots/{id}`、`/chunks` 优先走下游 `indexing`；下游不可用时允许从本地 `parse_snapshots` / `chunk_registry` 回退读取，便于已入库文档在离线/局部降级时仍可查看。
+- ParseSnapshot 的 `preview_text` 属于 Parsed text，不属于 Source 预览。
+
 ### Chunks
 | 方法 | 路径 | 说明 | 角色 |
 |------|------|------|------|
@@ -90,12 +94,29 @@ reason(opt), tenant_id, collection_id
 | 方法 | 路径 | 说明 | 角色 |
 |------|------|------|------|
 | GET | `/workbench/documents` | 文档列表（projection） | JWT |
+| GET | `/workbench/documents/{doc_id}` | 单文档详情（projection） | JWT |
+
+`GET /workbench/documents` query:
+```
+collection_id(opt), document_state(opt), status(opt 兼容旧参数),
+offset(opt), limit(opt), order_by(opt), order_dir(opt)
+```
+
+备注：
+- `document_state` 是当前 canonical 过滤参数；`status` 仅作为兼容别名保留。
+- 文档列表/详情均读取 `workbench_document_projection`。若历史数据缺字段，可通过 document reconcile 从本地事实表回填 `source_file_id / parse_snapshot_id / filename / active_index_version / chunk_count / page_count`。
 
 ### Source Files
 | 方法 | 路径 | 说明 | 角色 |
 |------|------|------|------|
 | GET | `/workbench/source-files/{id}/content` | 元数据+下载URL | JWT |
-| GET | `/workbench/source-files/{id}/preview` | 预览信息 | JWT |
+| GET | `/workbench/source-files/{id}/preview` | 原文预览元数据（preview_kind / status / url / page_count） | JWT |
+| GET | `/workbench/source-files/{id}/preview/content` | 原文预览内容流 | JWT |
+
+备注：
+- `Source` tab 应优先消费 `/workbench/source-files/{id}/preview`
+- `Parsed text` 应消费 ParseSnapshot 的 `preview_text`
+- `Source` 不得再通过 `/workbench/parse-snapshots/{id}/source` 混用解析文本与原文预览语义
 
 ### Retrieval 验证
 | 方法 | 路径 | 说明 | 角色 |

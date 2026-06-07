@@ -438,6 +438,161 @@ paths:
                 required: [revision_id, status]
         "403":
           description: Insufficient permissions
+
+  # ── Documents ─────────────────────────────────────────────────────────
+
+  /workbench/documents:
+    get:
+      operationId: listDocuments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: document_state
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            description: Legacy alias for document_state
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            default: projection_updated_at
+        - name: order_dir
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Document projection list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DocumentProjectionItem"
+                  total:
+                    type: integer
+                required: [items, total]
+
+  /workbench/documents/{doc_id}:
+    get:
+      operationId: getDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Single document projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentProjectionItem"
+        "404":
+          description: Document not found
+
+  /workbench/source-files/{source_file_id}/preview:
+    get:
+      operationId: getSourceFilePreview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: source_file_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Source preview descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  source_file_id:
+                    type: string
+                  collection_id:
+                    type: string
+                  filename:
+                    type: string
+                  mime_type:
+                    type: string
+                  page_count:
+                    type: integer
+                    nullable: true
+                  preview_available:
+                    type: boolean
+                  preview_status:
+                    type: string
+                    nullable: true
+                  preview_kind:
+                    type: string
+                    nullable: true
+                  preview_mime_type:
+                    type: string
+                    nullable: true
+                  preview_url:
+                    type: string
+                    nullable: true
+                  thumbnail_url:
+                    type: string
+                    nullable: true
+                required:
+                  - source_file_id
+                  - collection_id
+                  - filename
+                  - mime_type
+                  - preview_available
+
+  /workbench/source-files/{source_file_id}/preview/content:
+    get:
+      operationId: getSourceFilePreviewContent
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: source_file_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Source preview content stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
         "409":
           description: Conflict
         "501":
@@ -858,3 +1013,75 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    DocumentProjectionItem:
+      type: object
+      additionalProperties: false
+      properties:
+        doc_id:
+          type: string
+        tenant_id:
+          type: string
+        collection_id:
+          type: string
+        source_file_id:
+          type: string
+          nullable: true
+        parse_snapshot_id:
+          type: string
+          nullable: true
+        published_doc_id:
+          type: string
+          nullable: true
+        upload_id:
+          type: string
+          nullable: true
+        filename:
+          type: string
+          nullable: true
+        mime_type:
+          type: string
+          nullable: true
+        document_state:
+          type: string
+          nullable: true
+        publish_state:
+          type: string
+          nullable: true
+        active_index_version:
+          type: string
+          nullable: true
+        chunk_count:
+          type: integer
+        page_count:
+          type: integer
+        parser_profile_id:
+          type: string
+          nullable: true
+        parser_profile_name:
+          type: string
+          nullable: true
+        projection_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_stale:
+          type: boolean
+        degraded_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - doc_id
+        - tenant_id
+        - collection_id
+        - chunk_count
+        - page_count
+        - is_stale

@@ -789,6 +789,12 @@ materialization 成功后，indexing 调用 `POST /internal/cache/purge`（retri
 | `GET` | `/internal/chunks` | 按租户/主体查询 active chunks（tenant_id, principal_id, collection_id, principal_groups） |
 | `GET` | `/internal/metrics` | 服务内部聚合指标快照 |
 
+关于 `GET /internal/parse-snapshots/{parse_snapshot_id}/chunks` 的 `doc_id`：
+- 对外 wire 统一返回 canonical `doc_id`
+- 已关联发布文档时，`doc_id = final_doc_id`
+- 仅在尚未发布、无法解析发布身份时，才允许回退为 `source_file_id`
+- 不再把 `source_file_id` 作为已发布场景下的文档 ID 返回给上游调用方
+
 ### 13.2 外部调用（Outbound）
 
 | 方向 | 方法 | 路径 | 说明 |

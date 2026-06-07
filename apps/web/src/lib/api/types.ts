@@ -212,6 +212,41 @@ export interface ChunkRevisionRequest {
   edit_reason?: string;
 }
 
+export interface ParseSnapshotView {
+  parse_snapshot_id: string;
+  source_file_id: string;
+  tenant_id?: string;
+  collection_id?: string;
+  source_binary_ref?: string;
+  source_filename?: string;
+  source_suffix?: string;
+  parser_id?: string;
+  parser_backend?: string;
+  parser_profile_id?: string;
+  effective_policy?: string;
+  decision_reason?: string;
+  preview_text?: string;
+  document_metadata?: Record<string, unknown>;
+  outline?: unknown[];
+  chunk_preview?: unknown[];
+  warnings?: string[];
+  created_at?: string | null;
+}
+
+export interface SourceFilePreviewView {
+  source_file_id: string;
+  collection_id: string;
+  filename: string;
+  mime_type: string;
+  page_count?: number | null;
+  preview_available: boolean;
+  preview_status?: string | null;
+  preview_kind?: "pdf" | "image" | "html" | "text" | "unsupported" | string | null;
+  preview_mime_type?: string | null;
+  preview_url?: string | null;
+  thumbnail_url?: string | null;
+}
+
 // ── Access / Retrieval ─────────────────────────────────────────────────
 
 export interface RetrieveRequest {

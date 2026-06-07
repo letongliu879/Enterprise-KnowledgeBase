@@ -21,6 +21,8 @@
 | POST | `/internal/source-files/{id}/release-claim` | 释放 claim |
 | POST | `/internal/source-files/{id}/gc` | GC source file |
 | POST | `/internal/dedup-check` | 重复检查（`{ "content_hash", "collection_id" }`） |
+| GET | `/internal/source-files/{id}/preview` | 查询 source preview 元数据 |
+| GET | `/internal/source-files/{id}/preview/content` | 读取 source preview 内容流（可返回 preview_url 的代理流） |
 
 ### intake-orchestrator API (ingestion-worker)
 
@@ -37,6 +39,8 @@
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | POST | `/internal/conversion/run` | 执行转换（`ConversionRunRequest`） |
+| POST | `/internal/source-previews/render` | 为 source file 生成或复用 preview 资产，返回 preview descriptor |
+| GET | `/internal/source-previews/{source_file_id}/content` | 读取 preview 资产内容流 |
 
 `ConversionRunRequest`:
 ```
@@ -45,6 +49,25 @@ collection_authority_level, index_version,
 existing_published_doc_id_by_source_hash (opt),
 latest_version_by_logical_id (opt)
 ```
+
+`POST /internal/source-previews/render` body:
+```
+source_file_id, collection_id, source_file_path, filename, mime_type
+```
+
+返回：
+```
+source_file_id, filename, mime_type,
+preview_available, preview_status, preview_kind,
+preview_mime_type, preview_url, thumbnail_url, page_count
+```
+
+语义约束：
+- 该接口是 preview asset 的 owner 入口；可同步生成，也可命中已有缓存
+- `preview_url` 指向 conversion-worker 自己的内容端点；上游如 `document-service` 可代理重写为自己的 `/internal/source-files/{id}/preview/content`
+- `preview_status=ready` 时，`preview_url` 必须可读
+- `preview_status=failed` 时，应返回 machine-readable 的失败原因（至少写入日志）
+- `preview_status=unsupported` 时，不得用 `canonical_md` / `preview_text` 冒充 Source
 
 ### agent-review-worker API
 
@@ -111,6 +134,24 @@ canonical_content, collection_authority_level, review_model
 
 ## 关键数据模型
 
+### Source Preview Asset
+`preview_status = pending | ready | failed | unsupported`
+
+推荐返回字段：
+```
+source_file_id, filename, mime_type,
+preview_available, preview_status, preview_kind,
+preview_url, thumbnail_url, page_count, preview_mime_type
+```
+
+语义约束：
+- `preview_kind` 表示前端消费的正式预览载体，而不是原始文件后缀
+- `preview_available=true` 仅表示存在可消费的 preview 资产
+- `preview_status=ready` 时，`preview_url` 或 `preview/content` 必须可读
+- `preview_status=unsupported` 时，前端应退回 Download
+- `canonical_md` / `preview_text` 不得作为 Source 预览的替代物
+- `document-service` 是 source file 对外读取入口，但不是 preview 资产 owner；对于 Office 等非原生可预览格式，必须委托 `conversion-worker`
+
 ### SourceFileState
 `UPLOADING -> UPLOADED -> SCANNING -> READY -> CLAIMED -> CONSUMED -> CLEANABLE -> CLEANED`
 任意非终态 -> `FAILED`
@@ -153,6 +194,21 @@ collections/{collection_id}/docs/{final_doc_id}/sanitized.md
 collections/{collection_id}/docs/{final_doc_id}/metadata.json
 collections/{collection_id}/docs/{final_doc_id}/quality_report.json
 collections/{collection_id}/docs/{final_doc_id}/review_report.json
+```
+
+推荐补充 preview 资产路径：
+```
+collections/{collection_id}/source-files/{source_file_id}/preview/preview.pdf
+collections/{collection_id}/source-files/{source_file_id}/preview/thumbnail.png
+collections/{collection_id}/source-files/{source_file_id}/preview/pages/{n}.png
+collections/{collection_id}/source-files/{source_file_id}/preview/preview.html
+```
+
+推荐运行时落盘路径：
+```
+${REALITY_RAG_INTAKE_RUNTIME_DIR}/source-preview/{source_file_id}/preview.pdf
+${REALITY_RAG_INTAKE_RUNTIME_DIR}/source-preview/{source_file_id}/preview.html
+${REALITY_RAG_INTAKE_RUNTIME_DIR}/source-preview/{source_file_id}/manifest.json
 ```
 
 ## 配置环境变量

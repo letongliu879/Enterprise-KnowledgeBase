@@ -2,6 +2,7 @@ package com.realityrag.retrieval.api;
 
 import com.realityrag.retrieval.contracts.RetrievalProfile;
 import com.realityrag.retrieval.profiles.RetrievalProfileStore;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,6 +15,15 @@ public class RetrievalProfileController {
 
     public RetrievalProfileController(RetrievalProfileStore retrievalProfileStore) {
         this.retrievalProfileStore = retrievalProfileStore;
+    }
+
+    @GetMapping("/internal/retrieval-profiles")
+    public List<String> listProfiles() {
+        return retrievalProfileStore.findAllEnabled().stream()
+            .map(RetrievalProfile::profileId)
+            .distinct()
+            .sorted()
+            .toList();
     }
 
     @GetMapping("/internal/retrieval-profiles/{profileId}")

@@ -5,8 +5,10 @@ import com.realityrag.retrieval.contracts.RetrievalProfile;
 import com.realityrag.retrieval.support.JsonProjectionReader;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class FileProjectionRetrievalProfileStore implements RetrievalProfileStore {
     private final Path profilesPath;
@@ -54,6 +56,13 @@ public class FileProjectionRetrievalProfileStore implements RetrievalProfileStor
             JsonProjectionReader.parseInstant(item.get("updated_at")),
             JsonProjectionReader.stringValue(item, "updated_by")
         );
+    }
+
+    @Override
+    public List<RetrievalProfile> findAllEnabled() {
+        return JsonProjectionReader.readJsonLines(profilesPath, objectMapper).stream()
+            .map(this::toProfile)
+            .collect(Collectors.toList());
     }
 
     @Override

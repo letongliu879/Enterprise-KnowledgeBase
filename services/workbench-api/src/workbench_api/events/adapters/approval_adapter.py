@@ -6,6 +6,7 @@ Approval outbox delivery uses the canonical cross-service EventType names.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from .base import EventAdapter
@@ -203,7 +204,7 @@ class ApprovalEventAdapter(EventAdapter):
                 continue
             events.append(
                 ProjectionEvent(
-                    event_id=f"{native_event['event_id']}:finding:{finding_id}",
+                    event_id=self._finding_event_id(str(native_event.get("event_id", "")), finding_id),
                     event_type=native_event.get("event_type", "approval_event"),
                     service=self.service_name,
                     tenant_id=tenant_id,
@@ -240,6 +241,12 @@ class ApprovalEventAdapter(EventAdapter):
                 )
             )
         return events
+
+    @staticmethod
+    def _finding_event_id(base_event_id: str, finding_id: str) -> str:
+        digest = hashlib.sha256(f"{base_event_id}:{finding_id}".encode("utf-8")).hexdigest()[:16]
+        safe_base = base_event_id[:44] if len(base_event_id) > 44 else base_event_id
+        return f"{safe_base}:f:{digest}"
 
     @staticmethod
     def _default_state(event_type: str, payload: dict[str, Any]) -> str:

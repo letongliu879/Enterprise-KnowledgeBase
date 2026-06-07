@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.responses import Response
 
 from reality_rag_contracts import CanonicalMetadata, IndexStatus, PublishStatus
 from reality_rag_persistence.database import get_session
@@ -128,3 +129,82 @@ def test_upload_returns_existing_published_document(client: TestClient, monkeypa
     assert data["existing_doc_id"] == "doc-published-1"
     assert data["source_file_id"] is None
     assert data["intake_job_id"] is None
+
+
+def test_source_preview_returns_native_text_descriptor(client: TestClient, monkeypatch, tmp_path):
+    monkeypatch.setenv("DOCUMENT_STAGING_DIR", str(tmp_path))
+
+    upload = client.post(
+        "/upload",
+        data={"collection_id": "col_policy"},
+        files={"file": ("notes.md", b"# title\nbody", "text/markdown")},
+    )
+    assert upload.status_code == 200
+    source_file_id = upload.json()["source_file_id"]
+
+    preview = client.get(f"/internal/source-files/{source_file_id}/preview")
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["preview_available"] is True
+    assert payload["preview_kind"] == "text"
+    assert payload["preview_status"] == "ready"
+    assert payload["preview_url"] == f"/internal/source-files/{source_file_id}/preview/content"
+
+
+def test_source_preview_delegates_to_conversion_worker(client: TestClient, monkeypatch, tmp_path):
+    monkeypatch.setenv("DOCUMENT_STAGING_DIR", str(tmp_path))
+
+    async def fake_request_generated_preview(**kwargs):
+        assert kwargs["filename"] == "slides.pptx"
+        assert kwargs["source_file_id"].startswith("src_")
+        return {
+            "source_file_id": kwargs["source_file_id"],
+            "filename": kwargs["filename"],
+            "mime_type": kwargs["mime_type"],
+            "preview_available": True,
+            "preview_status": "ready",
+            "preview_kind": "pdf",
+            "preview_mime_type": "application/pdf",
+            "preview_url": f"/internal/source-previews/{kwargs['source_file_id']}/content",
+            "thumbnail_url": None,
+            "page_count": 7,
+        }
+
+    async def fake_proxy_generated_preview_content(**kwargs):
+        assert kwargs["filename"] == "slides.pptx"
+        return Response(
+            content=b"%PDF-1.4 delegated preview",
+            media_type="application/pdf",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    monkeypatch.setattr("document_service.main._request_generated_preview", fake_request_generated_preview)
+    monkeypatch.setattr("document_service.main._proxy_generated_preview_content", fake_proxy_generated_preview_content)
+
+    upload = client.post(
+        "/upload",
+        data={"collection_id": "col_policy"},
+        files={
+            "file": (
+                "slides.pptx",
+                b"pptx-bytes",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        },
+    )
+    assert upload.status_code == 200
+    source_file_id = upload.json()["source_file_id"]
+
+    preview = client.get(f"/internal/source-files/{source_file_id}/preview")
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["preview_available"] is True
+    assert payload["preview_kind"] == "pdf"
+    assert payload["preview_status"] == "ready"
+    assert payload["page_count"] == 7
+    assert payload["preview_url"] == f"/internal/source-files/{source_file_id}/preview/content"
+
+    content = client.get(f"/internal/source-files/{source_file_id}/preview/content")
+    assert content.status_code == 200
+    assert content.headers["content-type"].startswith("application/pdf")
+    assert content.content.startswith(b"%PDF-1.4")

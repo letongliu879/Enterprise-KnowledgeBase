@@ -13,10 +13,22 @@ import difflib
 import re
 import uuid
 from datetime import datetime, timezone
+from mimetypes import guess_type
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
+
+from reality_rag_persistence.models import (
+    ChunkRegistryModel,
+    DocumentModel,
+    IndexedDocumentModel,
+    IntakeJobModel,
+    ParseSnapshotModel,
+    PublishedDocumentModel,
+    SourceFileModel,
+    WorkbenchDocumentProjectionModel,
+)
 
 from ..downstream_clients import ApprovalClient, IndexingClient, IntakeClient
 from ..downstream_clients.errors import DownstreamError
@@ -152,6 +164,7 @@ class ProjectionReconciler:
             "status": "running",
             "trace_id": run_id,
         })
+        dialect = self._session.bind.dialect.name if self._session.bind else ""
 
         parts = [
             "SELECT ticket_id, tenant_id, collection_id, version",
@@ -222,7 +235,7 @@ class ProjectionReconciler:
         }
 
     async def reconcile_documents(self, tenant_id: str | None = None, limit: int = 100) -> dict[str, Any]:
-        """Scan stale document projections with row-level locks."""
+        """Rebuild incomplete document projections from local owner tables."""
         run_id = f"rec_{uuid.uuid4().hex[:16]}"
         self._reconcile_repo.create({
             "run_id": run_id,
@@ -232,38 +245,69 @@ class ProjectionReconciler:
             "status": "running",
             "trace_id": run_id,
         })
+        dialect = self._session.bind.dialect.name if self._session.bind else ""
 
-        parts = [
-            "SELECT doc_id, tenant_id, collection_id, version",
-            "FROM workbench_document_projection",
-            "WHERE is_stale = true",
-        ]
+        query = self._session.query(WorkbenchDocumentProjectionModel).filter(
+            or_(
+                WorkbenchDocumentProjectionModel.is_stale.is_(True),
+                WorkbenchDocumentProjectionModel.source_file_id.is_(None),
+                WorkbenchDocumentProjectionModel.parse_snapshot_id.is_(None),
+                WorkbenchDocumentProjectionModel.filename.is_(None),
+                WorkbenchDocumentProjectionModel.active_index_version.is_(None),
+                WorkbenchDocumentProjectionModel.chunk_count == 0,
+                WorkbenchDocumentProjectionModel.page_count == 0,
+            )
+        )
         if tenant_id:
-            parts.append("AND tenant_id = :tenant_id")
-        parts.extend([
-            "ORDER BY projection_updated_at ASC",
-            "LIMIT :limit",
-        ])
+            query = query.filter_by(tenant_id=tenant_id)
+        query = query.order_by(WorkbenchDocumentProjectionModel.projection_updated_at.asc()).limit(limit)
         if dialect != "sqlite":
-            parts.append("FOR UPDATE SKIP LOCKED")
-        sql = text(" ".join(parts))
+            query = query.with_for_update(skip_locked=True)
 
-        params = {"limit": limit}
-        if tenant_id:
-            params["tenant_id"] = tenant_id
+        scanned = 0
+        updated = 0
+        failed = 0
+        degraded = 0
 
-        scanned = len(self._session.execute(sql, params).mappings().all())
-        # Document reconciliation is primarily event-driven; reconcile just marks scanned
+        for row in query.all():
+            scanned += 1
+            try:
+                event = {
+                    "event_id": f"rec_ev_{uuid.uuid4().hex[:16]}",
+                    "event_type": "RECONCILE_DOCUMENT",
+                    "tenant_id": row.tenant_id,
+                    "collection_id": row.collection_id,
+                    "aggregate_type": "document",
+                    "aggregate_id": row.doc_id,
+                    "aggregate_version": row.version + 1,
+                    "occurred_at": _utcnow(),
+                    "payload": self._rebuild_document_payload(row),
+                    "trace_id": run_id,
+                }
+                result = self._projector.record_and_apply(event)
+                if result["applied"]:
+                    updated += 1
+                else:
+                    degraded += 1
+            except Exception:
+                failed += 1
+
         self._reconcile_repo.update(run_id, {
             "completed_at": _utcnow(),
             "scanned_count": scanned,
-            "updated_count": 0,
-            "failed_count": 0,
-            "degraded_count": 0,
+            "updated_count": updated,
+            "failed_count": failed,
+            "degraded_count": degraded,
             "status": "completed",
         })
 
-        return {"run_id": run_id, "scanned": scanned, "updated": 0, "failed": 0, "degraded": 0}
+        return {
+            "run_id": run_id,
+            "scanned": scanned,
+            "updated": updated,
+            "failed": failed,
+            "degraded": degraded,
+        }
 
     async def reconcile_chunks(self, tenant_id: str | None = None, limit: int = 100) -> dict[str, Any]:
         """Scan stale chunk projections with row-level locks."""
@@ -276,6 +320,7 @@ class ProjectionReconciler:
             "status": "running",
             "trace_id": run_id,
         })
+        dialect = self._session.bind.dialect.name if self._session.bind else ""
 
         parts = [
             "SELECT evidence_id, tenant_id, collection_id, version",
@@ -525,6 +570,91 @@ class ProjectionReconciler:
         payload["degraded_reason"] = None
         return payload
 
+    def _rebuild_document_payload(self, row: WorkbenchDocumentProjectionModel) -> dict[str, Any]:
+        published = self._session.query(PublishedDocumentModel).filter_by(final_doc_id=row.doc_id).first()
+        document = self._session.query(DocumentModel).filter_by(doc_id=row.doc_id).first()
+        intake_job = (
+            self._session.query(IntakeJobModel)
+            .filter_by(final_doc_id=row.doc_id)
+            .order_by(IntakeJobModel.updated_at.desc())
+            .first()
+        )
+
+        source_file = None
+        parse_snapshot = None
+        task_projection = None
+        if intake_job is not None and intake_job.source_file_id:
+            source_file = self._session.query(SourceFileModel).filter_by(
+                source_file_id=intake_job.source_file_id
+            ).first()
+            parse_snapshot = (
+                self._session.query(ParseSnapshotModel)
+                .filter_by(source_file_id=intake_job.source_file_id)
+                .order_by(ParseSnapshotModel.created_at.desc())
+                .first()
+            )
+
+        if source_file is not None and source_file.upload_id:
+            task_projection = self._task_repo.get_by_upload_id(source_file.upload_id)
+
+        indexed_documents = (
+            self._session.query(IndexedDocumentModel)
+            .filter_by(final_doc_id=row.doc_id)
+            .all()
+        )
+        indexed_document = _pick_indexed_document(indexed_documents, published)
+
+        chunk_rows = (
+            self._session.query(ChunkRegistryModel)
+            .filter_by(final_doc_id=row.doc_id, available_int=1)
+            .all()
+        )
+
+        filename = None
+        if source_file is not None:
+            filename = source_file.original_name or source_file.sanitized_name
+        if not filename and parse_snapshot is not None:
+            filename = parse_snapshot.source_filename
+        if not filename and task_projection is not None:
+            filename = task_projection.filename
+
+        mime_type = None
+        if task_projection is not None:
+            mime_type = task_projection.mime_type
+        if not mime_type and filename:
+            mime_type = guess_type(filename)[0]
+
+        parser_name = row.parser_profile_name
+        if indexed_document is not None and indexed_document.parser_id:
+            parser_name = indexed_document.parser_id
+        elif parse_snapshot is not None and parse_snapshot.parser_id:
+            parser_name = parse_snapshot.parser_id
+
+        return {
+            "doc_id": row.doc_id,
+            "tenant_id": row.tenant_id,
+            "collection_id": row.collection_id,
+            "source_file_id": source_file.source_file_id if source_file is not None else row.source_file_id,
+            "parse_snapshot_id": parse_snapshot.parse_snapshot_id if parse_snapshot is not None else row.parse_snapshot_id,
+            "published_doc_id": published.published_document_id if published is not None else row.published_doc_id,
+            "upload_id": source_file.upload_id if source_file is not None else row.upload_id,
+            "filename": filename or row.filename,
+            "mime_type": mime_type or row.mime_type,
+            "document_state": _derive_document_state(published, intake_job, indexed_document, row.document_state),
+            "publish_state": _derive_publish_state(published, document, row.publish_state),
+            "active_index_version": (
+                published.active_index_version
+                if published is not None and published.active_index_version
+                else indexed_document.index_version if indexed_document is not None else row.active_index_version
+            ),
+            "chunk_count": _derive_chunk_count(indexed_document, chunk_rows),
+            "page_count": _derive_page_count(chunk_rows),
+            "parser_profile_id": row.parser_profile_id,
+            "parser_profile_name": parser_name,
+            "is_stale": False,
+            "degraded_reason": None,
+        }
+
     @staticmethod
     def _ticket_raw_to_payload(raw: dict) -> dict[str, Any]:
         return {
@@ -671,3 +801,78 @@ def _source_anchor_json(chunk: dict[str, Any]) -> dict[str, Any] | None:
     if not anchor["section_path"] and not anchor["page_spans"]:
         return None
     return anchor
+
+
+def _pick_indexed_document(
+    indexed_documents: list[IndexedDocumentModel],
+    published: PublishedDocumentModel | None,
+) -> IndexedDocumentModel | None:
+    if not indexed_documents:
+        return None
+    if published is not None and published.active_index_version:
+        for item in indexed_documents:
+            if item.index_version == published.active_index_version:
+                return item
+    for item in indexed_documents:
+        if str(item.state or "").lower() == "active":
+            return item
+    return indexed_documents[0]
+
+
+def _derive_page_count(chunk_rows: list[ChunkRegistryModel]) -> int:
+    max_page = 0
+    for row in chunk_rows:
+        payload = row.payload_json or {}
+        page_spans = payload.get("page_spans") or []
+        if not isinstance(page_spans, list):
+            continue
+        for span in page_spans:
+            if not isinstance(span, dict):
+                continue
+            try:
+                page_to = int(span.get("page_to") or span.get("page_from") or 0)
+            except (TypeError, ValueError):
+                continue
+            max_page = max(max_page, page_to)
+    return max_page
+
+
+def _derive_chunk_count(
+    indexed_document: IndexedDocumentModel | None,
+    chunk_rows: list[ChunkRegistryModel],
+) -> int:
+    if indexed_document is not None:
+        return indexed_document.visible_chunk_count or indexed_document.chunk_count or len(chunk_rows)
+    return len(chunk_rows)
+
+
+def _derive_document_state(
+    published: PublishedDocumentModel | None,
+    intake_job: IntakeJobModel | None,
+    indexed_document: IndexedDocumentModel | None,
+    fallback: str | None,
+) -> str | None:
+    if published is not None:
+        state = str(published.state or "").upper()
+        if state in {"ARCHIVED", "RETRACTED", "DEPRECATED"}:
+            return "ARCHIVED"
+        if published.active_index_version or (
+            indexed_document is not None and str(indexed_document.state or "").lower() == "active"
+        ):
+            return "ACTIVE"
+        return state or fallback
+    if intake_job is not None and str(intake_job.state or "").lower() != "published":
+        return "PENDING"
+    return fallback
+
+
+def _derive_publish_state(
+    published: PublishedDocumentModel | None,
+    document: DocumentModel | None,
+    fallback: str | None,
+) -> str | None:
+    if published is not None and published.state:
+        return str(published.state).lower()
+    if document is not None and document.publish_status:
+        return str(document.publish_status).lower()
+    return fallback

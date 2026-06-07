@@ -323,7 +323,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                 </Alert>
               ) : (
                 <DocumentViewer
-                  parseSnapshotId={parseSnapshotId}
+                  sourceFileId={ticket.source_file_id}
                   filename={ticket.filename || parseSnapshotSummary?.sourceFilename}
                   previewText={parseSnapshotSummary?.previewText}
                   parserId={parseSnapshotSummary?.parserId}

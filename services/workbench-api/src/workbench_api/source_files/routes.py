@@ -5,9 +5,13 @@ or returns a signed URL for object storage. Original binary content is never sto
 in workbench SQL.
 """
 
+from urllib.parse import quote
+
+import httpx
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
+from ..config import config
 from ..deps import get_db, require_auth, CurrentUser
 from ..downstream_clients import IntakeClient
 from ..downstream_clients.errors import DownstreamError
@@ -15,6 +19,12 @@ from ..errors import not_found, forbidden, downstream_unavailable
 from ..projections.repository import DocumentProjectionRepository
 
 router = APIRouter()
+
+
+def _content_disposition(filename: str) -> str:
+    ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in filename) or "source-preview.bin"
+    utf8_name = quote(filename, safe="")
+    return f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{utf8_name}"
 
 
 @router.get("/workbench/source-files/{source_file_id}/content")
@@ -86,17 +96,70 @@ async def get_source_file_preview(
 
     intake_client = IntakeClient()
     try:
-        source_file = await intake_client.get_source_file(source_file_id)
+        source_file = await intake_client.get_source_file_preview(source_file_id)
     except DownstreamError as e:
         raise downstream_unavailable(f"Cannot fetch source file preview: {e.message}")
 
     return {
         "source_file_id": source_file_id,
         "collection_id": task.collection_id,
-        "filename": source_file.get("original_name", ""),
+        "filename": source_file.get("filename", ""),
         "mime_type": source_file.get("mime_type", "application/octet-stream"),
         "page_count": source_file.get("page_count"),
         "preview_available": source_file.get("preview_available", False),
+        "preview_status": source_file.get("preview_status"),
+        "preview_kind": source_file.get("preview_kind"),
+        "preview_mime_type": source_file.get("preview_mime_type"),
         "preview_url": source_file.get("preview_url"),
         "thumbnail_url": source_file.get("thumbnail_url"),
     }
+
+
+@router.get("/workbench/source-files/{source_file_id}/preview/content")
+async def get_source_file_preview_content(
+    source_file_id: str,
+    session: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_auth),
+):
+    from reality_rag_persistence.models import WorkbenchTaskProjectionModel
+
+    task = session.query(WorkbenchTaskProjectionModel).filter_by(
+        tenant_id=user.tenant_id,
+        source_file_id=source_file_id,
+    ).first()
+    if task is None or not user.can_access_collection(task.collection_id):
+        raise forbidden("Source file access denied")
+
+    intake_client = IntakeClient()
+    try:
+        source_file = await intake_client.get_source_file_preview(source_file_id)
+    except DownstreamError as e:
+        raise downstream_unavailable(f"Cannot fetch source file preview: {e.message}")
+
+    preview_url = source_file.get("preview_url")
+    if not preview_url:
+        raise not_found("Source file preview is not available")
+
+    if not str(preview_url).startswith("http"):
+        preview_url = f"{config.document_service_base_url.rstrip('/')}{preview_url}"
+
+    try:
+        async with httpx.AsyncClient(timeout=config.default_http_timeout) as client:
+            response = await client.get(str(preview_url))
+            response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise not_found("Source file preview is not available") from e
+        raise downstream_unavailable(
+            f"Cannot fetch source file preview content: HTTP {e.response.status_code}"
+        ) from e
+    except httpx.HTTPError as e:
+        raise downstream_unavailable(f"Cannot fetch source file preview content: {e}") from e
+
+    filename = str(source_file.get("filename") or "source-preview.bin")
+    content_type = response.headers.get("content-type") or source_file.get("preview_mime_type") or "application/octet-stream"
+    headers = {
+        "Content-Disposition": _content_disposition(filename),
+        "Cache-Control": "no-store",
+    }
+    return Response(content=response.content, media_type=str(content_type), headers=headers)

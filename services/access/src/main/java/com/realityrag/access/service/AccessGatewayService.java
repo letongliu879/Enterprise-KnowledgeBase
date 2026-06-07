@@ -110,7 +110,9 @@ public class AccessGatewayService {
 
     private String requireExisting(String profileId) {
         if (!retrievalClient.retrievalProfileExists(profileId)) {
-            throw new AccessException.InvalidRequest("Unknown retrieval profile: " + profileId);
+            java.util.List<String> available = retrievalClient.listAvailableProfiles();
+            String hint = available.isEmpty() ? "" : " Available profiles: " + available;
+            throw new AccessException.InvalidRequest("Unknown retrieval profile: " + profileId + hint);
         }
         return profileId;
     }
@@ -129,11 +131,17 @@ public class AccessGatewayService {
             .collect(java.util.stream.Collectors.collectingAndThen(
                 java.util.stream.Collectors.toCollection(LinkedHashSet::new),
                 List::copyOf));
+        if (collectionScope.isEmpty()) {
+            collectionScope = List.copyOf(context.knowledgeScopes());
+        }
         List<String> forbiddenScopes = collectionScope.stream()
             .filter(scope -> !context.knowledgeScopes().contains(scope))
             .toList();
         if (!forbiddenScopes.isEmpty()) {
-            throw new AccessException.Forbidden("Collection scope is not allowed for this API key: " + forbiddenScopes);
+            throw new AccessException.Forbidden(
+                "Collection scope is not allowed for this API key: " + forbiddenScopes +
+                ". Allowed scopes: " + context.knowledgeScopes()
+            );
         }
 
         return new InternalRetrieveRequest(

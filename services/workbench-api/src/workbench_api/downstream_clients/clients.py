@@ -207,6 +207,9 @@ class IntakeClient(BaseHttpClient):
     async def get_source_file(self, source_file_id: str) -> dict:
         return await self._request("get", f"/internal/source-files/{source_file_id}")
 
+    async def get_source_file_preview(self, source_file_id: str) -> dict:
+        return await self._request("get", f"/internal/source-files/{source_file_id}/preview")
+
     async def get_intake_job(self, intake_job_id: str) -> dict:
         return await self._request("get", f"{self._ingestion_worker_url}/internal/intake-jobs/{intake_job_id}")
 

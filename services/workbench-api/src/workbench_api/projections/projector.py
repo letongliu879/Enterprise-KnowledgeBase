@@ -90,7 +90,8 @@ class ProjectionProjector:
         return self._ticket_repo.upsert_with_version_check(row)
 
     def _apply_document_event(self, event_type: str, payload: dict, version: int) -> bool:
-        row = self._build_document_row(payload, version)
+        existing = self._document_repo.get(payload.get("doc_id", ""))
+        row = self._build_document_row(payload, version, existing)
         return self._document_repo.upsert_with_version_check(row)
 
     def _apply_agent_review_event(self, event_type: str, payload: dict, version: int) -> bool:
@@ -229,31 +230,65 @@ class ProjectionProjector:
         }
 
     @staticmethod
-    def _build_document_row(payload: dict, version: int) -> dict:
+    def _build_document_row(payload: dict, version: int, existing=None) -> dict:
         now = _utcnow()
-        return {
+        fields = (
+            "tenant_id",
+            "collection_id",
+            "source_file_id",
+            "parse_snapshot_id",
+            "published_doc_id",
+            "upload_id",
+            "filename",
+            "mime_type",
+            "document_state",
+            "publish_state",
+            "active_index_version",
+            "chunk_count",
+            "page_count",
+            "parser_profile_id",
+            "parser_profile_name",
+            "is_stale",
+            "degraded_reason",
+        )
+
+        row = {
             "doc_id": payload.get("doc_id", ""),
-            "tenant_id": payload.get("tenant_id", ""),
-            "collection_id": payload.get("collection_id", ""),
-            "source_file_id": payload.get("source_file_id"),
-            "parse_snapshot_id": payload.get("parse_snapshot_id"),
-            "published_doc_id": payload.get("published_doc_id"),
-            "upload_id": payload.get("upload_id"),
-            "filename": payload.get("filename"),
-            "mime_type": payload.get("mime_type"),
-            "document_state": payload.get("document_state"),
-            "publish_state": payload.get("publish_state"),
-            "active_index_version": payload.get("active_index_version"),
-            "chunk_count": payload.get("chunk_count", 0),
-            "page_count": payload.get("page_count", 0),
-            "parser_profile_id": payload.get("parser_profile_id"),
-            "parser_profile_name": payload.get("parser_profile_name"),
-            "updated_at": now,
-            "projection_updated_at": now,
-            "is_stale": payload.get("is_stale", False),
-            "degraded_reason": payload.get("degraded_reason"),
-            "version": version,
+            "tenant_id": "",
+            "collection_id": "",
+            "source_file_id": None,
+            "parse_snapshot_id": None,
+            "published_doc_id": None,
+            "upload_id": None,
+            "filename": None,
+            "mime_type": None,
+            "document_state": None,
+            "publish_state": None,
+            "active_index_version": None,
+            "chunk_count": 0,
+            "page_count": 0,
+            "parser_profile_id": None,
+            "parser_profile_name": None,
+            "is_stale": False,
+            "degraded_reason": None,
         }
+
+        if existing is not None:
+            for field in fields:
+                row[field] = getattr(existing, field)
+
+        for field in fields:
+            if field in payload:
+                row[field] = payload[field]
+
+        row.update(
+            {
+                "updated_at": now,
+                "projection_updated_at": now,
+                "version": version,
+            }
+        )
+        return row
 
     @staticmethod
     def _build_agent_review_row(payload: dict, version: int) -> dict:

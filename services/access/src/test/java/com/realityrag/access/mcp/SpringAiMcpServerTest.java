@@ -232,7 +232,6 @@ class SpringAiMcpServerTest {
                     "arguments": {
                       "query": "What expenses are reimbursable?",
                       "knowledge_scope": "col_policy",
-                      "retrieval_profile_id": "ret_default",
                       "debug": "none"
                     }
                   }

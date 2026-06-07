@@ -7,7 +7,10 @@ bug where app.include_router() was called before routes were registered.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from reality_rag_contracts import HealthResponse
@@ -15,6 +18,7 @@ from reality_rag_contracts import HealthResponse
 from intake_runtime.stages.schemas import ConversionStageInput
 from intake_runtime.stages.pure_stages import run_conversion_stage
 from intake_runtime.converters.ragflow_converter import RAGFlowConverter
+from conversion_worker.source_preview import render_source_preview, resolve_preview_asset
 
 router = APIRouter()
 
@@ -31,6 +35,14 @@ class ConversionRunRequest(BaseModel):
     index_version: str = "v1"
     existing_published_doc_id_by_source_hash: str | None = None
     latest_version_by_logical_id: int | None = None
+
+
+class SourcePreviewRenderRequest(BaseModel):
+    source_file_id: str
+    collection_id: str = ""
+    source_file_path: str
+    filename: str = ""
+    mime_type: str = "application/octet-stream"
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -70,3 +82,29 @@ async def run_conversion(request: ConversionRunRequest) -> dict:
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/internal/source-previews/render")
+async def render_preview(request: SourcePreviewRenderRequest) -> dict:
+    descriptor = render_source_preview(
+        source_file_id=request.source_file_id,
+        collection_id=request.collection_id,
+        source_file_path=request.source_file_path,
+        filename=request.filename,
+        mime_type=request.mime_type,
+    )
+    return descriptor.to_payload()
+
+
+@router.get("/internal/source-previews/{source_file_id}/content")
+async def get_preview_content(source_file_id: str):
+    descriptor, preview_path = resolve_preview_asset(source_file_id)
+    if descriptor is None or preview_path is None:
+        raise HTTPException(status_code=404, detail="Source preview asset not found")
+    filename = Path(descriptor.filename or "preview").stem + ".pdf"
+    return FileResponse(
+        path=preview_path,
+        media_type=descriptor.preview_mime_type or "application/pdf",
+        filename=filename,
+        headers={"Cache-Control": "no-store"},
+    )

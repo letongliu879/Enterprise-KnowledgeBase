@@ -39,7 +39,15 @@ export async function proxyRequest(
   // Forward headers (preserve auth)
   const headers = new Headers();
   const authHeader = req.headers.get("authorization");
-  if (authHeader) headers.set("Authorization", authHeader);
+  const cookieToken = req.cookies.get("ekb_workbench_token")?.value;
+  const envToken = process.env.NEXT_PUBLIC_DEMO_TOKEN;
+  if (authHeader) {
+    headers.set("Authorization", authHeader);
+  } else if (cookieToken) {
+    headers.set("Authorization", `Bearer ${cookieToken}`);
+  } else if (envToken) {
+    headers.set("Authorization", `Bearer ${envToken}`);
+  }
   const apiKeyHeader = req.headers.get("x-api-key");
   if (apiKeyHeader) headers.set("X-API-Key", apiKeyHeader);
   const contentType = req.headers.get("content-type");
