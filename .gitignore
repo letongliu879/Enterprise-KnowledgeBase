@@ -21,6 +21,10 @@ tmp/
 .run-logs/
 .verify/runtime/
 .verify/logs/
+**/.verify/runtime/
+**/.verify/logs/
+**/.verify/runtime/**
+**/.verify/logs/**
 target/
 *.egg-info/
 *.egg
