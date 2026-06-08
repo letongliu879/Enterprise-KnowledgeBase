@@ -38,7 +38,7 @@
 |---|---|
 | 前端 | Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui |
 | 摄入与治理 | Python 3.12 + FastAPI + SQLAlchemy + Celery |
-| 在线接入与检索 | Java 17 + Spring Boot 3.5 + JDBC |
+| 在线接入与检索 | Java 21 + Spring Boot 3.5 + JDBC |
 | 向量/文本检索 | OpenSearch 2.19 (BM25) + Qdrant (Dense Vector) |
 | 嵌入与精排 | SiliconFlow API (BAAI/bge-m3 / bge-reranker-v2-m3) |
 | 持久化 | PostgreSQL 16 |
@@ -69,14 +69,14 @@
           ▼                         ▼                 │
    ┌──────────────────────────────────────────┐        │
    │           retrieval (18082)              │        │
-   │  检索内核 · Spring Boot · Java 17 · Maven│        │
+   │  检索内核 · Spring Boot · Java 21 · Maven│        │
    │  OpenSearch + Qdrant 混合检索            │        │
    └──────────────┬──────────────────────────-┘        │
                   │  POST /internal/retrieve            │
                   ▼                                     │
    ┌──────────────────────────────────────┐             │
    │          access (18081)              │◄────────────┘
-   │  对外网关 · Spring Boot · Java 17     │  REST (MCP)
+   │  对外网关 · Spring Boot · Java 21     │  REST (MCP)
    │  REST + MCP Streamable HTTP          │
    └──────────────────────────────────────┘
 
@@ -227,7 +227,7 @@ access → 返回给外部系统
 | Python | 3.12+ | Python 服务运行时 |
 | uv | latest | Python 包管理与 workspace |
 | Node.js | 20+ | 前端构建 |
-| Java | 17 | Java 服务运行时 |
+| Java | 21 | Java 服务运行时 |
 | Maven | 3.9+ | 已 bundled 到 `tools/apache-maven-3.9.16` |
 | PostgreSQL | 16 | 主数据库 |
 | OpenSearch | 2.19 | 文本检索 |

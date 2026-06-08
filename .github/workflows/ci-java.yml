@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         service: [access, retrieval]
-        java-version: ["17"]
+        java-version: ["21"]
 
     defaults:
       run:
