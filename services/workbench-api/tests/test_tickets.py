@@ -82,6 +82,29 @@ class TestTicketsProjection:
         assert data["total"] == 1
         assert [item["ticket_id"] for item in data["items"]] == ["ticket_123"]
 
+    def test_list_tickets_allows_wildcard_collection_scope(self, client: TestClient, db_session: Session):
+        self._create_ticket_projection(
+            db_session,
+            "ticket_wildcard_001",
+            tenant_id="default",
+            collection_id="test1",
+        )
+        wildcard_token = _make_token(
+            "user-wildcard",
+            "wildcard@example.com",
+            ["reviewer"],
+            tenant_id="default",
+            allowed_collections=["*"],
+        )
+        resp = client.get(
+            "/workbench/tickets",
+            headers={"Authorization": f"Bearer {wildcard_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["ticket_id"] == "ticket_wildcard_001"
+
     def test_list_tickets_zero_downstream_calls(self, client: TestClient, reviewer_token: str, db_session: Session):
         """Verify that listing tickets does NOT call approval service."""
         self._create_ticket_projection(db_session, "ticket_123")
@@ -92,6 +115,44 @@ class TestTicketsProjection:
         )
         assert resp.status_code == 200
         assert resp.json()["total"] == 1
+
+    def test_list_tickets_backfills_from_approval_when_projection_empty(self, client: TestClient):
+        reviewer_token = _make_token(
+            "user-default",
+            "reviewer-default@example.com",
+            ["reviewer"],
+            tenant_id="default",
+            allowed_collections=["test1"],
+        )
+        with respx.mock:
+            route = respx.get("http://localhost:8004/internal/tickets").respond(
+                200,
+                json={
+                    "items": [
+                        {
+                            "ticket_id": "ticket_backfill_001",
+                            "tenant_id": "default",
+                            "collection_id": "test1",
+                            "state": "pending",
+                            "preliminary_doc_id": "doc_backfill_v1",
+                            "source_file_id": "src_backfill_001",
+                            "parse_snapshot_id": "ps_backfill_001",
+                        }
+                    ],
+                    "total": 1,
+                },
+            )
+            resp = client.get(
+                "/workbench/tickets",
+                headers={"Authorization": f"Bearer {reviewer_token}"},
+            )
+
+        assert route.called
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["ticket_id"] == "ticket_backfill_001"
+        assert data["items"][0]["status"] == "pending"
 
     def test_list_tickets_pagination(self, client: TestClient, reviewer_token: str, db_session: Session):
         for i in range(5):

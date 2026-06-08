@@ -4,12 +4,16 @@ List endpoints read from SQL projection (no downstream fan-out).
 Detail endpoints read projection first, with optional approval fallback.
 """
 
+from datetime import datetime, timezone
+import uuid
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_auth, require_role, CurrentUser
 from ..downstream_clients import ApprovalClient
 from ..errors import not_found
+from ..projections.projector import ProjectionProjector
 from ..projections.repository import TicketProjectionRepository
 from .models import TicketDecisionRequest
 from .service import TicketService
@@ -77,6 +81,77 @@ def _normalize_approval_agent_review(result: dict) -> dict:
     }
 
 
+def _ticket_raw_to_payload(raw: dict) -> dict:
+    return {
+        "ticket_id": raw.get("ticket_id", ""),
+        "tenant_id": raw.get("tenant_id", ""),
+        "collection_id": raw.get("collection_id", ""),
+        "upload_id": raw.get("upload_id"),
+        "source_file_id": raw.get("source_file_id"),
+        "parse_snapshot_id": raw.get("parse_snapshot_id"),
+        "doc_id": raw.get("doc_id") or raw.get("final_doc_id") or raw.get("preliminary_doc_id"),
+        "title": raw.get("title"),
+        "filename": raw.get("filename"),
+        "state": raw.get("state", "pending"),
+        "priority": raw.get("priority"),
+        "routing_recommendation": raw.get("routing_recommendation"),
+        "assignee_user_id": raw.get("assignee_user_id"),
+        "agent_decision": raw.get("agent_decision"),
+        "agent_risk_level": raw.get("agent_risk_level"),
+        "agent_finding_count": raw.get("agent_finding_count", 0),
+        "agent_blocking_finding_count": raw.get("agent_blocking_finding_count", 0),
+        "is_stale": False,
+        "degraded_reason": None,
+    }
+
+
+async def _backfill_ticket_projection(
+    *,
+    repo: TicketProjectionRepository,
+    db: Session,
+    user: CurrentUser,
+    collection_id: str | None,
+    state: str | None,
+) -> bool:
+    approval_items = await ApprovalClient().list_tickets(
+        tenant_id=user.tenant_id,
+        collection_id=collection_id,
+        status=state,
+    )
+    if not approval_items:
+        return False
+
+    projector = ProjectionProjector(db)
+    applied_any = False
+    now = datetime.now(timezone.utc)
+    for raw in approval_items:
+        raw_collection_id = str(raw.get("collection_id") or "")
+        if raw_collection_id and not user.can_access_collection(raw_collection_id):
+            continue
+        ticket_id = str(raw.get("ticket_id") or "")
+        if not ticket_id:
+            continue
+        existing = repo.get(ticket_id)
+        version = (existing.version + 1) if existing is not None else 1
+        result = projector.record_and_apply({
+            "event_id": f"backfill_ticket_{ticket_id}_{uuid.uuid4().hex[:8]}",
+            "event_type": "BACKFILL_TICKET",
+            "tenant_id": str(raw.get("tenant_id") or user.tenant_id),
+            "collection_id": raw_collection_id,
+            "aggregate_type": "ticket",
+            "aggregate_id": ticket_id,
+            "aggregate_version": version,
+            "occurred_at": now,
+            "payload": _ticket_raw_to_payload(raw),
+            "trace_id": f"backfill:{ticket_id}",
+        })
+        applied_any = applied_any or bool(result.get("applied"))
+
+    if applied_any:
+        db.commit()
+    return applied_any
+
+
 @router.get("")
 async def list_tickets(
     collection_id: str | None = None,
@@ -99,7 +174,7 @@ async def list_tickets(
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
         collection_ids = [collection_id]
     else:
-        collection_ids = user.allowed_collections or None
+        collection_ids = None if "*" in user.allowed_collections else (user.allowed_collections or None)
 
     items, total = repo.list(
         tenant_id=user.tenant_id,
@@ -108,6 +183,23 @@ async def list_tickets(
         offset=offset,
         limit=page_size,
     )
+
+    if total == 0:
+        repaired = await _backfill_ticket_projection(
+            repo=repo,
+            db=db,
+            user=user,
+            collection_id=collection_id,
+            state=status or state,
+        )
+        if repaired:
+            items, total = repo.list(
+                tenant_id=user.tenant_id,
+                collection_ids=collection_ids,
+                state=status or state,
+                offset=offset,
+                limit=page_size,
+            )
 
     return {
         "items": [

@@ -18,7 +18,12 @@ from reality_rag_contracts import AgentReviewView, HealthResponse, PublishStatus
 from reality_rag_persistence.database import get_session
 
 from .approval_domain import ApprovalService, system_decide
-from .review_artifacts import load_review_artifact_payload, normalize_agent_review_findings, utc_now_iso
+from .review_artifacts import (
+    load_review_artifact_payload,
+    normalize_agent_review_findings,
+    resolve_ticket_tenant_id,
+    utc_now_iso,
+)
 
 app = FastAPI(
     title="Approval Service",
@@ -319,7 +324,7 @@ def _ticket_to_view(ticket: ApprovalTicket, *, session=None) -> ApprovalTicketVi
         ticket_id=ticket.ticket_id,
         intake_job_id=ticket.intake_job_id,
         collection_id=ticket.collection_id,
-        tenant_id=ticket.tenant_id or "tenant_acme",
+        tenant_id=resolve_ticket_tenant_id(session, ticket),
         state=ticket.state.value,
         preliminary_doc_id=ticket.preliminary_doc_id,
         final_doc_id=ticket.final_doc_id,

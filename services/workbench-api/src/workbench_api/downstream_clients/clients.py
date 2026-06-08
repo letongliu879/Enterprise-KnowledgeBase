@@ -164,7 +164,11 @@ class ApprovalClient(BaseHttpClient):
             params["collection_id"] = collection_id
         if status:
             params["state"] = status
-        return await self._request("get", "/internal/tickets", params=params)
+        result = await self._request("get", "/internal/tickets", params=params)
+        if isinstance(result, dict):
+            items = result.get("items", [])
+            return items if isinstance(items, list) else []
+        return result if isinstance(result, list) else []
 
     async def get_ticket(self, ticket_id: str) -> dict:
         return await self._request("get", f"/internal/tickets/{ticket_id}")

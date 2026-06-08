@@ -3,7 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from reality_rag_contracts import Collection
 from reality_rag_persistence.database import create_all, drop_all, override_url_for_testing
+from reality_rag_persistence.repositories.collections import CollectionRepository
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +64,43 @@ class TestListTickets:
         data_other = resp_other.json()
         assert data_other["total"] == 0
         assert len(data_other["items"]) == 0
+
+    def test_list_tickets_uses_collection_tenant_when_ticket_tenant_missing(self, client: TestClient):
+        from reality_rag_persistence.database import get_session
+
+        session = get_session()
+        try:
+            CollectionRepository(session).save(
+                Collection(
+                    collection_id="col_default",
+                    tenant_id="default",
+                    name="Default Collection",
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        create_resp = client.post(
+            "/internal/approval/pending",
+            json={
+                "intake_job_id": "job_default",
+                "preliminary_doc_id": "doc_default",
+                "collection_id": "col_default",
+            },
+        )
+        assert create_resp.status_code == 200
+        ticket_id = create_resp.json()["ticket_id"]
+
+        resp_default = client.get("/internal/tickets?tenant_id=default")
+        assert resp_default.status_code == 200
+        data_default = resp_default.json()
+        assert data_default["total"] == 1
+        assert data_default["items"][0]["ticket_id"] == ticket_id
+
+        resp_acme = client.get("/internal/tickets?tenant_id=tenant_acme")
+        assert resp_acme.status_code == 200
+        assert resp_acme.json()["total"] == 0
 
 
 class TestGetTicket:

@@ -36,6 +36,19 @@ def load_review_artifact_payload(session, intake_job_id: str) -> dict[str, Any] 
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def resolve_ticket_tenant_id(session, ticket: ApprovalTicket) -> str:
+    from reality_rag_persistence.repositories.collections import CollectionRepository
+
+    if ticket.tenant_id:
+        return ticket.tenant_id
+
+    collection = CollectionRepository(session).get(ticket.collection_id)
+    if collection is not None and collection.tenant_id:
+        return collection.tenant_id
+
+    return "tenant_acme"
+
+
 def build_ticket_event_payload(session, ticket: ApprovalTicket) -> dict[str, Any]:
     from reality_rag_persistence.repositories.collections import CollectionRepository
     from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
@@ -86,7 +99,7 @@ def build_ticket_event_payload(session, ticket: ApprovalTicket) -> dict[str, Any
 
     return {
         "ticket_id": ticket.ticket_id,
-        "tenant_id": ticket.tenant_id or (collection.tenant_id if collection is not None else "tenant_acme"),
+        "tenant_id": resolve_ticket_tenant_id(session, ticket),
         "collection_id": ticket.collection_id,
         "upload_id": upload_id,
         "source_file_id": source_file_id,

@@ -36,7 +36,7 @@ from reality_rag_contracts import (
     VersionDecision,
 )
 from reality_rag_persistence import EventPublisher
-from .review_artifacts import build_ticket_event_payload
+from .review_artifacts import build_ticket_event_payload, resolve_ticket_tenant_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -146,10 +146,12 @@ class ApprovalService:
             version=version,
             version_decision=None,
         )
+        tenant_id = self._resolve_tenant_id(collection_id)
 
         ticket = ApprovalTicket(
             ticket_id=ticket_id,
             intake_job_id=intake_job_id,
+            tenant_id=tenant_id,
             approval_round=1,
             preliminary_doc_id=preliminary_doc_id,
             collection_id=collection_id,
@@ -189,10 +191,12 @@ class ApprovalService:
     ) -> ApprovalTicket:
         """Create a SYSTEM_DECIDED ticket for auto-reject. No final_doc_id."""
         ticket_id = _generate_ticket_id()
+        tenant_id = self._resolve_tenant_id(collection_id)
 
         ticket = ApprovalTicket(
             ticket_id=ticket_id,
             intake_job_id=intake_job_id,
+            tenant_id=tenant_id,
             approval_round=1,
             preliminary_doc_id=preliminary_doc_id,
             collection_id=collection_id,
@@ -235,10 +239,12 @@ class ApprovalService:
     ) -> ApprovalTicket:
         """Create a PENDING ticket for manual approval."""
         ticket_id = _generate_ticket_id()
+        tenant_id = self._resolve_tenant_id(collection_id)
 
         ticket = ApprovalTicket(
             ticket_id=ticket_id,
             intake_job_id=intake_job_id,
+            tenant_id=tenant_id,
             approval_round=1,
             preliminary_doc_id=preliminary_doc_id,
             collection_id=collection_id,
@@ -379,6 +385,7 @@ class ApprovalService:
         new_ticket = ApprovalTicket(
             ticket_id=new_ticket_id,
             intake_job_id=ticket.intake_job_id,
+            tenant_id=ticket.tenant_id or self._resolve_tenant_id(ticket.collection_id),
             approval_round=ticket.approval_round + 1,
             preliminary_doc_id=ticket.preliminary_doc_id,
             collection_id=ticket.collection_id,
@@ -438,6 +445,16 @@ class ApprovalService:
     def get_ticket_history(self, intake_job_id: str) -> list[ApprovalTicket]:
         """Return all tickets for an intake job, ordered by created_at."""
         return self._ticket_repo.get_by_intake_job(intake_job_id)
+
+    def _resolve_tenant_id(self, collection_id: str) -> str:
+        ticket = ApprovalTicket(
+            ticket_id="",
+            intake_job_id="",
+            tenant_id=None,
+            preliminary_doc_id="",
+            collection_id=collection_id,
+        )
+        return resolve_ticket_tenant_id(self._session, ticket)
 
     # ------------------------------------------------------------------
     # Internal helpers
