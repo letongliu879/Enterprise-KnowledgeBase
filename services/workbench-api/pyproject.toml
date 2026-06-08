@@ -2,7 +2,16 @@
 name = "reality-rag-workbench"
 version = "0.1.0"
 description = "Document processing workbench for Reality-RAG Enterprise KnowledgeBase"
+license = {text = "MIT"}
 requires-python = ">=3.12"
+authors = [
+    {name = "Enterprise KnowledgeBase Contributors"},
+]
+keywords = ["workbench", "knowledge-base", "document-processing"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",

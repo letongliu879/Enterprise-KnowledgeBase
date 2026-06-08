@@ -1,7 +1,23 @@
 [project]
 name = "enterprise-knowledgebase"
 version = "0.1.0"
+description = "企业知识治理、RAG 检索与 MCP 接入平台"
+license = {text = "MIT"}
+readme = "README.md"
 requires-python = ">=3.12"
+homepage = "https://github.com/reality-rag/enterprise-knowledgebase"
+repository = "https://github.com/reality-rag/enterprise-knowledgebase"
+authors = [
+    {name = "Enterprise KnowledgeBase Contributors"},
+]
+keywords = ["knowledge-base", "rag", "document-management", "enterprise-search", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database :: Database Engines/Servers",
+]
 dependencies = [
     "reality-rag-admin",
     "enterprise-kb-indexing",

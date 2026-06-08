@@ -1,7 +1,17 @@
 [project]
 name = "reality-rag-persistence"
 version = "0.1.0"
+description = "Shared persistence layer (ORM / repository) for Enterprise KnowledgeBase"
+license = {text = "MIT"}
 requires-python = ">=3.12"
+authors = [
+    {name = "Enterprise KnowledgeBase Contributors"},
+]
+keywords = ["persistence", "sqlalchemy", "knowledge-base"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "sqlalchemy>=2.0",
     "psycopg2-binary>=2.9",

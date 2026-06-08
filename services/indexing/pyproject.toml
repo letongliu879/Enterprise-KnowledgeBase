@@ -1,7 +1,17 @@
 [project]
 name = "enterprise-kb-indexing"
 version = "0.1.0"
+description = "Document parsing, chunking and index building service"
+license = {text = "MIT"}
 requires-python = ">=3.12"
+authors = [
+    {name = "Enterprise KnowledgeBase Contributors"},
+]
+keywords = ["indexing", "parsing", "chunking", "knowledge-base"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "beautifulsoup4>=4.13,<5",
     "chardet>=7.0,<8",

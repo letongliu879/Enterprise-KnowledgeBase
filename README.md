@@ -1,95 +1,220 @@
 # Enterprise KnowledgeBase
 
-企业知识治理、RAG 检索与 MCP 接入平台。
+> 企业知识治理、RAG 检索与 MCP 接入平台。不是问答机器人，而是文档摄入、审批治理、索引构建、权限感知检索与审计追踪的治理型知识库系统。
 
-本项目是一个**治理型知识库系统**，不是问答机器人。核心能力围绕文档摄入、审批治理、索引构建、权限感知检索与审计追踪。
+<!-- BADGES_START -->
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!-- BADGES_END -->
 
 ---
 
-## 技术栈概览
+## 简介
+
+**Enterprise KnowledgeBase（EKB）** 是一套面向企业的知识治理与 RAG 检索平台，提供从文档上传、解析、审批、发布、索引，到 REST / MCP 双入口在线检索的完整闭环，并内置细粒度权限、审计与投影同步。
+
+- **治理型设计**：文档 ACL、审批结论、生命周期状态由本平台拥有，不依赖上游 RAGFlow 宿主。
+- **契约优先**：所有跨语言、跨服务契约定义在 `contracts/`，Python 与 Java 不得各自维护漂移契约。
+- **投影同步**：运行时数据（profile、index、api key）通过幂等投影同步推送，不做跨服务 DB 直连。
+- **fail-closed 优先**：认证/权限默认拒绝，安全降级需显式配置。
+
+---
+
+## 演示视频
+
+<!-- DEMO_VIDEO_START -->
+<!-- 将下方 src 替换为真实视频地址。推荐：GitHub issue/release 附件、CDN、对象存储直链。 -->
+<video src="https://user-images.githubusercontent.com/YOUR_USERNAME/REPO_NAME/demo.mp4" controls width="100%">
+  你的浏览器不支持 <video> 标签，请 <a href="#">点击此处观看演示</a>。
+</video>
+
+> **如何嵌入视频**：GitHub README 支持 HTML5 `<video>` 标签，不支持 YouTube iframe。把 `.mp4` 上传到 GitHub Issue / Discussion / Release 附件，复制浏览器获得的直链地址替换上方 `src` 即可。
+<!-- DEMO_VIDEO_END -->
+
+---
+
+## 技术栈
 
 | 层级 | 技术 |
 |---|---|
-| 前端工作台 | Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui |
-| 摄入与治理服务 | Python 3.12+ + FastAPI + SQLAlchemy + Celery |
-| 在线接入与检索 | Java 21 + Spring Boot + JDBC |
-| 向量与文本检索 | OpenSearch (BM25) + Qdrant (Dense Vector) |
-| 嵌入与精排 | SiliconFlow API (BAAI/bge-m3) |
+| 前端 | Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui |
+| 摄入与治理 | Python 3.12 + FastAPI + SQLAlchemy + Celery |
+| 在线接入与检索 | Java 17 + Spring Boot 3.5 + JDBC |
+| 向量/文本检索 | OpenSearch 2.19 (BM25) + Qdrant (Dense Vector) |
+| 嵌入与精排 | SiliconFlow API (BAAI/bge-m3 / bge-reranker-v2-m3) |
 | 持久化 | PostgreSQL 16 |
-| 缓存 | Redis / Valkey (检索读路径缓存) |
+| 缓存 | Redis / Valkey（检索读路径，默认 noop） |
+| 构建 | Maven 3.9.16（已 bundled 到 `tools/`）；uv workspace |
 
 ---
 
-## 服务地图
+## 架构全景
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        前端入口                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ workbench-ui │  │ admin-console│  │   外部 Agent      │  │
-│  │ (文档/审批)   │  │ (管理/运维)   │  │  (REST / MCP)    │  │
-│  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
-└─────────┼─────────────────┼───────────────────┼────────────┘
-          │                 │                   │
-          ▼                 ▼                   ▼
-┌─────────────────┐ ┌───────────────┐ ┌─────────────────────┐
-│  workbench-api  │ │     admin     │ │       access        │
-│   (Python)      │ │   (Python)    │ │      (Java)         │
-│  Bearer JWT     │ │  Bearer JWT   │ │    X-API-Key        │
-└────────┬────────┘ └───────┬───────┘ └──────────┬──────────┘
-         │                  │                    │
-         ▼                  ▼                    ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      内部服务层                               │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐  │
-│  │ intake-pipeline │  │    indexing     │  │  retrieval  │  │
-│  │  (摄入/审批/发布) │  │ (解析/分块/索引) │  │ (混合检索核心) │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      基础设施                                 │
-│  PostgreSQL 16  │  OpenSearch 2.x  │  Qdrant  │  Redis      │
-└─────────────────────────────────────────────────────────────┘
+                 ┌──────────────────────────────────────┐
+                 │            admin (18084)              │
+                 │  管理控制面 · FastAPI · Python        │
+                 │  collection / profile / api-key / ops │
+                 └────┬──────┬──────┬────────┬──────────┘
+                      │      │      │        │
+              REST    │      │      │        │  REST
+           ┌──────────┘      │      │        └──────────┐
+           ▼                 │      │                   ▼
+   ┌──────────────┐          │      │          ┌──────────────┐
+   │ indexing     │◄─────────┘      │          │ workbench-api│
+   │ (18080)      │  profile        │          │ (18083)      │
+   │ FastAPI/Py   │  validate       │          │ FastAPI/Py   │
+   └──────┬───────┘                 │          └──────┬───────┘
+          │                         │                 │
+          │ projection sync         │ projection sync │
+          ▼                         ▼                 │
+   ┌──────────────────────────────────────────┐        │
+   │           retrieval (18082)              │        │
+   │  检索内核 · Spring Boot · Java 17 · Maven│        │
+   │  OpenSearch + Qdrant 混合检索            │        │
+   └──────────────┬──────────────────────────-┘        │
+                  │  POST /internal/retrieve            │
+                  ▼                                     │
+   ┌──────────────────────────────────────┐             │
+   │          access (18081)              │◄────────────┘
+   │  对外网关 · Spring Boot · Java 17     │  REST (MCP)
+   │  REST + MCP Streamable HTTP          │
+   └──────────────────────────────────────┘
+
+                   ┌──────────────────────────┐
+                   │  intake-pipeline (18085)  │
+                   │ 文档摄入流水线 · FastAPI/Py │
+                   │  ┌──────────────────┐     │
+                   │  │ document-service │     │
+                   │  │ indexing-service │     │
+                   │  │ ingestion-worker │     │
+                   │  │ publishing-worker│     │
+                   │  │ approval-service │     │
+                   │  │ agent-review     │     │
+                   │  │ conversion-worker│     │
+                   │  └──────────────────┘     │
+                   └──────────────────────────┘
 ```
+
+### 基础设施
+
+| 组件 | 用途 | 端口 |
+|------|------|------|
+| PostgreSQL 16 | 主数据库 | 5432 |
+| OpenSearch 2.19 | 全文检索 (BM25) | 19201 |
+| Qdrant | 向量检索 | 6333/6334 |
+| Valkey (Redis) 8 | 缓存（可选） | 6379 |
+| MinIO | 对象存储（暂未使用） | 9000 |
+
+### 服务清单
 
 | 服务 | 语言 | 端口 | 认证 | 职责 |
 |---|---|---|---|---|
-| **workbench-api** | Python | 18083 | Bearer JWT | 文档上传、审批工作台、生命周期跟踪 |
-| **admin** | Python | 18084 | Bearer JWT | 集合管理、API 密钥、检索配置、运维控制面 |
-| **access** | Java | 18181 | X-API-Key | REST + MCP 双入口、认证、请求翻译、trace |
-| **retrieval** | Java | 18182 | 无 (caller-gated) | 权限感知混合检索、精排、上下文包装 |
-| **intake-pipeline** | Python | 18085 | 无 (internal) | 文档摄入、治理、审批流、发布命令 |
-| **indexing** | Python | 18080 | 无 (internal) | 解析、分块、embedding、索引写入与版本管理 |
-| **publishing-worker** | Python | 18086 | 无 (internal) | 发布命令执行、索引激活 |
-| **document-service** | Python | 8006 | 无 (internal) | 源文件元数据与存储管理（intake-pipeline 子服务） |
-| **approval-service** | Python | 18087 | 无 (internal) | 审批决策服务（intake-pipeline 子服务） |
-| **agent-review-worker** | Python | 18090 | 无 (internal) | 智能审核 Worker（intake-pipeline 子服务） |
-| **conversion-worker** | Python | 18089 | 无 (internal) | 文档转换 Worker（intake-pipeline 子服务） |
-| **ingestion-worker** | Python | 18088 | 无 (internal) | 摄入任务 Worker（intake-pipeline 子服务） |
+| **workbench-api** | Python | 18083 | Bearer JWT | 文档上传、审批工作台、生命周期跟踪、检索代理、SQL Projection Store |
+| **admin** | Python | 18084 | Bearer JWT | 集合管理、API 密钥、Parser/Retrieval Profile、运维控制面 |
+| **access** | Java | 18081 | X-API-Key | REST + MCP 双入口、认证、请求翻译、trace |
+| **retrieval** | Java | 18082 | 无 (caller-gated) | 权限感知混合检索、精排、上下文包装、两层读路径缓存 |
+| **indexing** | Python | 18080 | 应用层授权 | 解析、分块、embedding、索引写入与版本管理、Chunk Revision |
+| **document-service** | Python | 8006 | 内部 | 源文件元数据、上传、去重、扫描 |
+| **approval-service** | Python | 18087 | 内部 | 审批决策、工单、final_doc_id 生成 |
+| **publishing-worker** | Python | 18086 | 内部 | 发布命令执行、资产写入、索引激活编排 |
+| **conversion-worker** | Python | 18089 | 内部 | 文档转换、质量评分、相似度检测 |
+| **agent-review-worker** | Python | 18090 | 内部 | 智能审核（PII、visibility 风险） |
+| **ingestion-worker** | Python | 18088 | 内部 | 摄入任务编排、阶段调度、事件分发 |
+| **indexing-service**（intake facade）| Python | — | 内部 | publishing-worker 调用 indexing 的 facade |
+
+> `intake-pipeline`（端口 18085）当前仅用于兼容/冒烟场景，ekb-svc.py 默认启动 6 个独立子服务而非该 monolith。
 
 ---
 
-## 核心链路
+## 核心数据流
+
+### 1. 文档摄入治理流
 
 ```
-文件进入
-  → 预解析与 ParseSnapshot
-  → 治理与审批
-  → 发布与索引激活
-  → 在线接入 (REST / MCP)
-  → 权限感知检索
-  → 返回 KnowledgeContext
+上传
+  │ POST /upload
+  ▼
+DocumentService — SHA-256 校验 + 恶意扫描
+  │ source_file: UPLOADING → UPLOADED → SCANNING → READY
+  ▼
+FileReady 事件 → ingestion-worker (orchestrator)
+  │ claim → 创建 intake_job
+  ▼
+CONVERSION_QUEUED ──► conversion-worker ──► StageCompleted
+  │
+REVIEW_QUEUED ─────► agent-review-worker ──► StageCompleted
+  │
+APPROVAL_REQUESTED ─► approval-service ──► ApprovalDecided
+  │
+PUBLISH_QUEUED ────► publishing-worker ──► PublishCompleted
+  │
+  ▼
+PUBLISHED
 ```
 
-### 已闭环主链
+**状态机**
 
-1. **摄入治理链路**：source file → intake job → stage tasks → approval → publish command
-2. **解析索引链路**：ParsePreview → ParseSnapshot → IndexBuild → chunk registry → index activate
-3. **在线检索链路**：REST/MCP → access → retrieval → KnowledgeContext
-4. **发布事实投影链路**：indexing → retrieval (HTTP sync)
-5. **权限投影链路**：admin → access (HTTP sync)
+- `source_file_state`：UPLOADING → UPLOADED → SCANNING → READY → CLAIMED → CONSUMED → CLEANABLE → CLEANED / FAILED
+- `intake_job_state`：CREATED → CONVERSION_* → REVIEW_* → APPROVAL_REQUESTED → APPROVAL_DECIDED → PUBLISH_* → PUBLISHED / REJECTED / FAILED
+- `approval_ticket_state`：SYSTEM_DECIDED / PENDING → APPROVED / REJECTED / RETURNED / EXPIRED
+- `publish_state`：PUBLISH_CREATED → ASSET_WRITING → ASSET_WRITTEN → PERSISTING → PERSISTED → INDEXING → INDEXED → PUBLISH_SUCCEEDED / PUBLISH_FAILED
+
+### 2. 解析索引流
+
+```
+ParsePreviewRequested
+  │
+  ▼
+ParseHintDetector → ParsePolicyResolver → RAGFlowAppRuntime.build_preview()
+  │
+  ▼
+ParseSnapshot（可复用的一等产物）
+  │
+  ▼
+IndexBuildRequested → 加载 ParseSnapshot + governance overlay
+  │ 合并 pre-publish chunk edits → chunk materialization
+  │ 按 embedding_text_policy 分片 → embedding
+  │ HybridIndexBackend.write_bundle (OpenSearch + Qdrant)
+  │ activate → projection sync → cache purge (fail-open)
+  ▼
+可检索的 IndexVersion + chunk_registry
+```
+
+### 3. 在线检索流
+
+```
+外部系统
+  │ POST /v1/retrieve (X-API-Key + X-Agent-Instance-Id)
+  ▼
+access (18081)
+  │ → ApiKeyRegistry 读 api_key_projection
+  │ → 校验 collection_scope ⊆ knowledgeScopes
+  │ → 生成 queryId / traceId / principal
+  │ → 构建 InternalRetrieveRequest
+  │ POST /internal/retrieve
+  ▼
+retrieval (18082)
+  │ → CollectionRetrievalPlanBuilder：加载 profile + active index + published docs
+  │ → QueryPreparationService：metadata filter + cross-languages + keyword extraction
+  │ → PermissionPrefilter：collection + state + docId + principal/group + visibility
+  │ → HybridRecaller：OpenSearch (BM25) + Qdrant (vector) → fusion
+  │ → RerankService：token weighting + rank features → live rerank / heuristic fallback
+  │ → SmartTopKCutoff → ChunkExpander (neighbor + breadcrumb)
+  │ → ChunkAggregationService (TOC + children) → KnowledgeContextPacker
+  │ ← KnowledgeContext
+  ▼
+access → 返回给外部系统
+```
+
+### 4. 投影同步
+
+| 源 | 目标 | 端点 | 内容 |
+|---|---|---|---|
+| admin | retrieval | `POST /internal/retrieval-profile-projections/sync` | retrieval profile |
+| admin | access | `POST /internal/api-key-projections/sync` | api key 运行时投影 |
+| indexing | retrieval | `POST /internal/index-projections/sync` | index version + chunk registry |
+
+所有投影同步均携带 `idempotencyKey`，消费者幂等。
 
 ---
 
@@ -102,153 +227,54 @@
 | Python | 3.12+ | Python 服务运行时 |
 | uv | latest | Python 包管理与 workspace |
 | Node.js | 20+ | 前端构建 |
-| Java | 21 | Java 服务运行时 |
-| Maven | 3.9+ | Java 构建 |
+| Java | 17 | Java 服务运行时 |
+| Maven | 3.9+ | 已 bundled 到 `tools/apache-maven-3.9.16` |
 | PostgreSQL | 16 | 主数据库 |
-| OpenSearch | 2.x | 文本检索 |
+| OpenSearch | 2.19 | 文本检索 |
 | Qdrant | latest | 向量检索 |
-| Redis / Valkey | 7+ | 检索缓存 |
+| Redis / Valkey | 8 | 检索缓存（可选） |
 
----
-
-### 步骤 1：启动基础设施
+### 1. 启动基础设施
 
 ```bash
 cd deploy
-
-# 复制环境变量模板并填写真实值
 cp .env.example .env
 # 编辑 .env，填入 DATABASE_PASSWORD、REDIS_PASSWORD、SiliconFlow API Key 等
-
 docker compose up -d postgres opensearch qdrant redis
 ```
 
-基础设施端口映射：
+### 2. 安装 Python 依赖
 
-| 服务 | 容器内端口 | 宿主机端口 |
-|---|---|---|
-| PostgreSQL | 5432 | 5432 |
-| OpenSearch | 9201 | 19201 |
-| Qdrant | 6333 / 6334 | 6333 / 6334 |
-| Redis | 6379 | 6379 |
-
----
-
-### 步骤 2：安装 Python 依赖
-
-项目使用 [uv](https://docs.astral.sh/uv/) 管理 Python workspace。根目录 `pyproject.toml` 定义了 workspace members，依赖锁定在 `uv.lock`。
+项目使用 [uv](https://docs.astral.sh/uv/) 管理 Python workspace，根目录 `pyproject.toml` 统一定义 workspace members。
 
 ```bash
-# 在项目根目录
 uv sync
 ```
 
-uv 会自动创建/管理虚拟环境，workspace 内的本地包（`packages/*`、`services/*`）通过 `tool.uv.workspace` 自动链接，无需手动 PYTHONPATH。
-
----
-
-### 步骤 3：配置环境变量
-
-本地开发环境变量统一放在 `deploy/.env`（已存在，gitignored）。首次设置时复制模板并填入真实值：
+### 3. 配置环境变量
 
 ```bash
 cp deploy/.env.example deploy/.env
 # 编辑 deploy/.env，填入 SiliconFlow API Key 等真实值
 ```
 
-`deploy/.env` 已预配置 localhost 地址，开箱即用。最小可运行配置如下：
+最小可运行配置要点：
+
+- `AUTH_MODE=smoke`：最小模式，使用测试 JWT Secret，无需真实 IdP
+- `INDEXING_EMBEDDING_API_KEY` / `INDEXING_CHAT_API_KEY`：SiliconFlow
+- `EMBEDDING_API_KEY` / `RERANKER_API_KEY`：retrieval 用 SiliconFlow
+- `DATABASE_URL`：PostgreSQL
+
+### 4. 启动后端服务（推荐）
 
 ```bash
-# ========== 数据库 ==========
-DATABASE_URL=postgresql+psycopg2://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow
-
-# ========== admin 服务 (端口 18084) ==========
-ADMIN_JWT_SECRET=smoke-test-secret
-ADMIN_JWT_ISSUER=ekb-admin
-ADMIN_JWT_AUDIENCE=ekb
-AUTH_MODE=smoke
-
-# ========== workbench-api 服务 (端口 18083) ==========
-JWT_SECRET=smoke-test-secret
-JWT_ISSUER=ekb-workbench
-JWT_AUDIENCE=ekb
-AUTH_MODE=smoke
-ADMIN_BASE_URL=http://localhost:18084
-INDEXING_BASE_URL=http://localhost:18080
-INTAKE_BASE_URL=http://localhost:18085
-DOCUMENT_SERVICE_BASE_URL=http://localhost:8006
-
-# ========== indexing 服务 (端口 18080) ==========
-INDEXING_BACKEND_MODE=hybrid
-INDEXING_OPENSEARCH_URL=http://127.0.0.1:19201
-INDEXING_QDRANT_URL=http://127.0.0.1:6333
-INDEXING_EMBEDDING_API_KEY=<your-siliconflow-key>
-INDEXING_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
-INDEXING_EMBEDDING_MODEL=BAAI/bge-m3
-INDEXING_CHAT_API_KEY=<your-siliconflow-key>
-INDEXING_CHAT_BASE_URL=https://api.siliconflow.cn/v1
-INDEXING_CHAT_MODEL=deepseek-chat
-
-# ========== retrieval 服务 (端口 18182) ==========
-DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/rag_flow
-DATABASE_USERNAME=rag_flow
-DATABASE_PASSWORD=infini_rag_flow
-OPENSEARCH_BASE_URL=http://127.0.0.1:19201
-QDRANT_BASE_URL=http://127.0.0.1:6333
-EMBEDDING_API_KEY=<your-siliconflow-key>
-EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
-EMBEDDING_MODEL=BAAI/bge-m3
-RERANKER_API_KEY=<your-siliconflow-key>
-RERANKER_BASE_URL=https://api.siliconflow.cn/v1/rerank
-RERANKER_MODEL=BAAI/bge-reranker-v2-m3
-REDIS_URL=redis://127.0.0.1:6379/0
-SPRING_PROFILES_ACTIVE=smoke
-
-# ========== access 服务 (端口 18181) ==========
-DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/rag_flow
-DATABASE_USERNAME=rag_flow
-DATABASE_PASSWORD=infini_rag_flow
-RETRIEVAL_BASE_URL=http://localhost:18182
-SPRING_PROFILES_ACTIVE=smoke
-```
-
-> **生产环境**：`AUTH_MODE=production` + 非默认 JWT Secret + 显式 issuer/audience。
-> **最小可运行**：`AUTH_MODE=smoke` 允许使用测试 Secret，后端无需真实 IdP。
-
----
-
-### 步骤 4：启动后端服务
-
-**推荐：EKB Service Manager（一键启动，自动处理依赖、编译、健康检查）**
-
-```bash
-# 在项目根目录执行
 uv run python scripts/ekb-svc.py start
-
-# 只启动 Java 服务
-uv run python scripts/ekb-svc.py start --java
-
-# 只启动 Python 服务
-uv run python scripts/ekb-svc.py start --python
-
-# 跳过基础设施检查
-uv run python scripts/ekb-svc.py start --no-infra-check
 ```
 
-功能：
-- 自动检测基础设施（PostgreSQL、OpenSearch、Qdrant、Redis）是否就绪
-- Java 服务先自动编译（`mvn package -DskipTests`），再 `java -jar` 启动，杜绝 PIPE 阻塞和超时
-- 按依赖拓扑分层并行启动，同层服务同时启动
-- 三阶段健康检查（port → HTTP → 200），失败自动打印日志最后 30 行
-- 服务崩溃后自动重启（指数退避，最多 5 次）
-- 每个服务日志独立写到 `tmp/services/<name>.out.log` / `.err.log`
-- `Ctrl+C` 一键停止所有服务
+常用诊断命令：
 
-```
-
-**诊断命令**：
 ```bash
-uv run python scripts/ekb-svc.py status              # 查看所有服务状态
+uv run python scripts/ekb-svc.py status              # 查看服务状态
 uv run python scripts/ekb-svc.py logs retrieval      # 查看 retrieval 日志
 uv run python scripts/ekb-svc.py logs retrieval -f   # 实时跟踪日志
 uv run python scripts/ekb-svc.py restart retrieval   # 重启单个服务
@@ -256,111 +282,71 @@ uv run python scripts/ekb-svc.py stop                # 停止所有服务
 uv run python scripts/ekb-svc.py build               # 手动编译 Java 服务
 ```
 
-**手动启动（备选，每个服务一个终端）**
-
-如果你需要单独调试某个服务，可以手动启动。uv workspace 自动处理包路径。
-
-**依赖顺序（默认真实链路）**：
-
-```
-PostgreSQL / OpenSearch / Qdrant / Redis (Docker)
-  → admin (18084)
-  → indexing (18080)
-  → document-service (8006)
-  → approval-service (18087)
-  → conversion-worker (18089)
-  → agent-review-worker (18090)
-  → publishing-worker (18086)
-  → ingestion-worker (18088)
-  → intake-pipeline (18085, compat/smoke only)
-  → workbench-api (18083)
-  → retrieval (18182)
-  → access (18181)
-```
+<details>
+<summary>手动启动（调试用，每个服务一个终端）</summary>
 
 ```bash
-# 环境变量（各服务共用）
-export DOCUMENT_SERVICE_URL="http://127.0.0.1:8006"
-export APPROVAL_SERVICE_URL="http://127.0.0.1:18087"
-export PUBLISHING_WORKER_URL="http://127.0.0.1:18086"
-export INDEXING_SERVICE_URL="http://127.0.0.1:18080"
-export ALLOW_LOCAL_FALLBACK_FOR_TESTS="false"
+# Python 服务
+uv run python -m uvicorn admin_service.main:app           --host 127.0.0.1 --port 18084
+uv run python -m uvicorn indexing_service.main:app        --host 127.0.0.1 --port 18080
+uv run python -m uvicorn workbench_api.main:app           --host 127.0.0.1 --port 18083
+uv run python -m uvicorn document_service.main:app        --host 127.0.0.1 --port 8006
+uv run python -m uvicorn approval_service.main:app        --host 127.0.0.1 --port 18087
+uv run python -m uvicorn publishing_worker.main:app       --host 127.0.0.1 --port 18086
+uv run python -m uvicorn conversion_worker.main:app       --host 127.0.0.1 --port 18089
+uv run python -m uvicorn agent_review_worker.main:app     --host 127.0.0.1 --port 18090
+uv run python -m uvicorn ingestion_worker.main:app        --host 127.0.0.1 --port 18088
 
-# 各服务（每个一个终端）
-uv run python -m uvicorn admin_service.main:app --host 0.0.0.0 --port 18084
-uv run python -m uvicorn indexing_service.main:app --host 0.0.0.0 --port 18080
-uv run python -m uvicorn document_service.main:app --host 0.0.0.0 --port 8006
-uv run python -m uvicorn approval_service.main:app --host 0.0.0.0 --port 18087
-uv run python -m uvicorn conversion_worker.main:app --host 0.0.0.0 --port 18089
-uv run python -m uvicorn agent_review_worker.main:app --host 0.0.0.0 --port 18090
-uv run python -m uvicorn publishing_worker.main:app --host 0.0.0.0 --port 18086
-uv run python -m uvicorn ingestion_worker.main:app --host 0.0.0.0 --port 18088
-uv run python -m uvicorn intake_pipeline.main:app --host 0.0.0.0 --port 18085  # compat/smoke only
-uv run python -m uvicorn workbench_api.main:app --host 0.0.0.0 --port 18083
-```
-
-**Java 服务**（每个一个终端）：
-
-```bash
-# 先编译（首次或代码变更后需要）
+# Java 服务（先编译）
 cd services/retrieval && mvn package -DskipTests
 cd services/access    && mvn package -DskipTests
 
-# Terminal 7 — retrieval
-cd services/retrieval
-java -Dspring.profiles.active=smoke -Dserver.port=18182 -jar target/retrieval-*.jar
-
-# Terminal 8 — access
-cd services/access
-java -Dspring.profiles.active=smoke -Dserver.port=18181 -Daccess.retrieval.base-url=http://127.0.0.1:18182 -jar target/access-*.jar
+java -Dspring.profiles.active=smoke -Dserver.port=18082 -jar services/retrieval/target/retrieval-*.jar
+java -Dspring.profiles.active=smoke -Dserver.port=18081 \
+     -Daccess.retrieval.base-url=http://127.0.0.1:18082 \
+     -jar services/access/target/access-*.jar
 ```
 
----
+</details>
 
-### 步骤 5：启动前端
+### 5. 启动前端
 
 ```bash
 cd apps/web
-
-# 复制环境变量
 cp .env.local.example .env.local
-
 npm install
 npm run dev
 ```
 
-打开 http://localhost:3000，应用将 `/` 重定向至 `/upload`。
+打开 http://localhost:3000。
 
-前端连接的后端地址（在 `.env.local` 中配置）：
+前端 `.env.local` 默认代理：
 
-| 前端变量 | 默认地址 | 对应服务 |
+| 变量 | 默认地址 | 对应服务 |
 |---|---|---|
 | `NEXT_PUBLIC_ADMIN_API_BASE_URL` | http://localhost:18084 | admin |
 | `NEXT_PUBLIC_WORKBENCH_API_BASE_URL` | http://localhost:18083 | workbench-api |
-| `NEXT_PUBLIC_ACCESS_API_BASE_URL` | http://localhost:18181 | access |
-| `NEXT_PUBLIC_RETRIEVAL_API_BASE_URL` | http://localhost:18182 | retrieval |
+| `NEXT_PUBLIC_ACCESS_API_BASE_URL` | http://localhost:18081 | access |
+| `NEXT_PUBLIC_RETRIEVAL_API_BASE_URL` | http://localhost:18082 | retrieval |
 
----
-
-### 步骤 6：验证启动
+### 6. 验证
 
 ```bash
-# 1. 健康检查
+# 健康检查示例
 curl http://localhost:18084/health        # admin
 curl http://localhost:18083/workbench/health  # workbench-api
 curl http://localhost:18080/health        # indexing
-curl http://localhost:8006/health         # document-service
-curl http://localhost:18087/health        # approval-service
-curl http://localhost:18089/health        # conversion-worker
-curl http://localhost:18090/health        # agent-review-worker
-curl http://localhost:18086/health        # publishing-worker
-curl http://localhost:18088/health        # ingestion-worker
-curl http://localhost:18085/health        # intake-pipeline (compat/smoke only)
-curl http://localhost:18182/health        # retrieval
-curl http://localhost:18181/health        # access
+curl http://localhost:18081/health        # access
+curl http://localhost:18082/health        # retrieval
 
-# 2. 运行时冒烟测试（默认验证 split intake chain，不依赖 /v1/documents）
-uv run python scripts/run_real_runtime_smoke.py --require-live-backends
+# 运行时冒烟测试（要求后端已启动）
+uv run python scripts/run_real_runtime_smoke.py --use-existing-services
+
+# 全链路 smoke
+uv run python scripts/ekb_smoke_test.py
+
+# E2E
+uv run python scripts/ekb_e2e_test.py
 ```
 
 ---
@@ -370,10 +356,10 @@ uv run python scripts/run_real_runtime_smoke.py --require-live-backends
 ### 单元/集成测试
 
 ```bash
-# Python 契约包
-cd packages/contracts && uv run pytest tests/ -v
+# 所有 Python workspace members
+uv run pytest
 
-# Python 服务
+# 单个服务
 cd services/admin         && uv run pytest tests/ -v
 cd services/workbench-api && uv run pytest tests/ -v
 cd services/indexing      && uv run pytest tests/ -v
@@ -394,14 +380,14 @@ npx playwright test
 ### 运行时冒烟测试
 
 ```bash
-# 基础模式（默认验证 document-service -> ingestion-worker -> conversion/agent-review -> approval -> publishing -> indexing）
+# 基础模式（默认验证 split intake chain，使用 stub backend）
 uv run python scripts/run_real_runtime_smoke.py
 
 # 严格模式（要求所有真实后端在线）
-uv run python scripts/run_real_runtime_smoke.py --require-live-backends
+uv run python scripts/run_real_runtime_smoke.py --use-existing-services
 
 # 严格模式 + Redis 缓存验证
-uv run python scripts/run_real_runtime_smoke.py --require-live-backends --require-redis-cache
+uv run python scripts/run_real_runtime_smoke.py --use-existing-services --require-redis-cache
 ```
 
 ---
@@ -411,68 +397,121 @@ uv run python scripts/run_real_runtime_smoke.py --require-live-backends --requir
 ```
 Enterprise KnowledgeBase/
 ├── apps/
-│   └── web/                    # Next.js 前端工作台 (治理型 UI)
-├── contracts/
-│   ├── schemas/                # 核心对象契约
+│   └── web/                    # Next.js 前端工作台（治理型 UI）
+├── contracts/                  # 跨语言契约源
+│   ├── schemas/                # 核心对象 schema
 │   ├── events/                 # 事件契约
 │   └── openapi/                # REST API 契约
 ├── docs/
 │   ├── architecture.md         # 总体架构设计
-│   └── frontend-workbench.md   # 前端工作台文档
-├── packages/
+│   ├── frontend-workbench.md   # 前端工作台文档
+│   └── incident-log.md         # 事件记录
+├── packages/                   # 共享包
 │   ├── contracts/              # Python 运行时契约包
 │   ├── persistence/            # ORM 模型与仓储
 │   ├── documents/              # 共享文档域逻辑
+│   ├── intake_runtime/         # 摄入流水线运行时
 │   └── ragflow_runtime/        # RAGFlow 运行时封装
 ├── scripts/
-│   ├── run_real_runtime_smoke.py   # 真实运行时冒烟测试
-│   └── ekb-svc.py                  # 生产级服务管理器（start/stop/status/logs/restart/build）
+│   ├── ekb-svc.py              # 本地服务管理器（start/stop/status/logs/restart/build）
+│   ├── ekb_smoke_test.py       # 集成 smoke 测试
+│   ├── ekb_e2e_test.py         # E2E 测试入口
+│   └── run_real_runtime_smoke.py   # 真实运行时冒烟测试
 ├── services/
 │   ├── access/                 # Java：外部查询入口 (REST + MCP)
 │   ├── admin/                  # Python：管理控制面
 │   ├── indexing/               # Python：解析、分块、索引构建
-│   ├── intake-pipeline/        # Python：摄入治理与审批流
+│   ├── intake-pipeline/        # Python：摄入治理与审批流（含 6 子服务）
 │   ├── retrieval/              # Java：混合检索核心
-│   ├── smoke_tests/            # 运行时冒烟测试
+│   ├── smoke_tests/            # 运行时冒烟测试集合
 │   └── workbench-api/          # Python：工作台受控 API
 ├── deploy/
-│   └── docker-compose.yml      # 基础设施编排
-└── upstream/
-    └── ragflow/                # RAGFlow 源码分叉 (解析/分块运行时)
+│   ├── docker-compose.yml      # 基础设施编排
+│   └── .env.example            # 环境变量模板
+└── tools/
+    └── apache-maven-3.9.16/    # 已 bundled Maven
 ```
 
 ---
 
 ## 关键设计原则
 
-- **治理真相留在本地**：文档 ACL、审批结论、生命周期状态由本平台拥有，不由上游 RAGFlow 宿主
-- **契约是跨语言真相**：所有跨服务契约定义在 `contracts/`，Python 与 Java 不得各自维护漂移的独立契约
-- **后端缺口可见**：当后端返回 HTTP 501 时，前端显式展示 `<BackendGap>` 组件，绝不静默失败或模拟成功
-- **chunk 是派生产物**：chunk 不拥有独立 ACL，可见性继承自文档级治理
+1. **每类真相只有一个写 owner**
+
+| 状态域 | 唯一写 owner |
+|---|---|
+| source file 生命周期 | document-service |
+| intake job state | ingestion-worker (orchestrator) |
+| approval state | approval-service |
+| publish state | publishing-worker |
+| active index state | indexing |
+| retrieval visibility | published_documents 生命周期事实 |
+| chunk revision | indexing |
+
+2. **契约是跨语言唯一真相源**：所有跨服务契约定义在 `contracts/`，Python 与 Java 不得各自维护漂移的独立契约。
+
+3. **投影同步替代共享 DB**：运行时数据通过显式 projection sync（幂等 + idempotency key）推送，不做跨服务 DB 直连。
+
+4. **规范字段名**：`query`（非 `query_text`）、`token_budget`（非 `max_context_tokens`）、`evidence_items`（非 `result_chunks`）、`doc_id`（非 `final_doc_id`）、`evidence_id`（非 `chunk_id`）、`content`（非 `display_text`）。
+
+5. **profile 不可变性**：published 状态后的 profile 不可修改，只能创建新版本。
+
+6. **chunk 是派生产物**：不拥有独立 ACL，可见性继承自文档级治理。
+
+7. **后端缺口可见**：当后端返回 HTTP 501 时，前端显式展示 `<BackendGap>` 组件，绝不静默失败或模拟成功。
+
+8. **fail-closed 优先**：认证/权限校验默认拒绝，安全降级需显式配置。
 
 ---
 
-## 文档阅读顺序
+## 文档索引
 
 1. [总体架构](docs/architecture.md)
 2. [前端工作台文档](docs/frontend-workbench.md)
-3. services/intake-pipeline/intake-pipeline.md
-4. services/indexing/indexing.md
-5. services/access/access.md
-6. services/retrieval/retrieval.md
-7. services/admin/admin.md
-8. services/workbench-api/workbench-api.md
+3. [services/intake-pipeline/AGENTS.md](services/intake-pipeline/AGENTS.md) + [api.md](services/intake-pipeline/api.md)
+4. [services/indexing/AGENTS.md](services/indexing/AGENTS.md) + [api.md](services/indexing/api.md)
+5. [services/retrieval/AGENTS.md](services/retrieval/AGENTS.md) + [api.md](services/retrieval/api.md)
+6. [services/access/AGENTS.md](services/access/AGENTS.md) + [api.md](services/access/api.md)
+7. [services/admin/AGENTS.md](services/admin/AGENTS.md) + [api.md](services/admin/api.md)
+8. [services/workbench-api/AGENTS.md](services/workbench-api/AGENTS.md) + [api.md](services/workbench-api/api.md)
 
 ---
 
-## 状态
+## 当前状态
 
-- **摄入治理链路**：已闭环
-- **解析索引链路**：已闭环
-- **在线检索链路**：已闭环
-- **发布事实投影链路**：已闭环
-- **权限投影链路**：已闭环
-- **前端工作台**：已产品化 (Next.js 16, 中文 UI, Playwright E2E)
-- **严格运行时冒烟**：28/28 PASS (2026-05-28)
+### 已闭环
 
-未完成：OAuth/IdP SSO、并发/压力测试、容器镜像构建。
+- 摄入治理链路
+- 解析索引链路
+- 在线检索链路
+- 发布事实投影链路
+- 权限投影链路
+- 检索代理链路（workbench-api → access → retrieval）
+- Chunk Revision 链路（materialization + cache purge）
+
+### 已验证
+
+- 严格运行时冒烟：28/28 PASS（`--require-live-backends`）
+- 真实后端：PostgreSQL + OpenSearch/Qdrant + SiliconFlow embedding/rerank
+- 单元测试：contracts / admin / workbench-api / indexing / access / retrieval
+- 前端：Next.js 16，中文 UI，Playwright E2E PASS
+- 索引版本生命周期：activate / rollback / cleanup
+- Projection Store：workbench 7 张投影表 + 事件接收 + 后台协调
+
+### 未完成
+
+- OAuth/IdP SSO
+- 容器镜像构建
+- 并发/压力测试
+- 服务间认证（mTLS / SPIFFE）
+- 检索缓存按 collection/doc 级精确 purge
+
+---
+
+## 贡献指南
+
+欢迎参与贡献。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
+
+## License
+
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。

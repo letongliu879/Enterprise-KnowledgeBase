@@ -2,7 +2,16 @@
 name = "publishing-worker"
 version = "0.1.0"
 description = "Standalone publishing worker for Reality-RAG"
+license = {text = "MIT"}
 requires-python = ">=3.12"
+authors = [
+    {name = "Enterprise KnowledgeBase Contributors"},
+]
+keywords = ["publishing", "knowledge-base"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "fastapi>=0.100",
     "uvicorn[standard]",
