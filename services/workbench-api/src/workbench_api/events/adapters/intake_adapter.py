@@ -97,6 +97,10 @@ class IntakeEventAdapter(EventAdapter):
             if payload.get("published_document_id"):
                 job_payload["published_doc_id"] = payload["published_document_id"]
 
+            # Use explicit version from native event when provided (>25) so
+            # enriched follow-up events (e.g. parse_snapshot_id) can outrank
+            # earlier lifecycle events.
+            _version = native_event.get("aggregate_version", 25)
             events.append(ProjectionEvent(
                 event_id=native_event["event_id"],
                 event_type=event_type,
@@ -105,7 +109,7 @@ class IntakeEventAdapter(EventAdapter):
                 collection_id=collection_id,
                 aggregate_type="task",
                 aggregate_id=payload.get("upload_id", ""),
-                aggregate_version=25,
+                aggregate_version=_version,
                 occurred_at=occurred_at,
                 payload=job_payload,
                 trace_id=trace_id,

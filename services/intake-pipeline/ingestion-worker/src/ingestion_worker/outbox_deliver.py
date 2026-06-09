@@ -22,6 +22,7 @@ from intake_runtime.orchestrator import OrchestratorService
 
 from .job_event_flow import apply_approval_decision, apply_stage_completed
 from .document_service_client import DocumentServiceClient
+from .indexing_service import _conversion_parse_snapshot_id
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +201,36 @@ def _deliver_stage_completed(event: OutboxEvent) -> bool:
             event.idempotency_key,
         )
         session.commit()
+
+        # After conversion succeeds, emit an enriched IntakeJobStateChanged so
+        # workbench learns the parse_snapshot_id that was produced.
+        if stage_name == StageName.CONVERSION:
+            parse_snapshot_id = _conversion_parse_snapshot_id(session, intake_job_id)
+            if parse_snapshot_id:
+                source_file = SourceFileRepository(session).get(job.source_file_id)
+                upload_id = source_file.upload_id if source_file else ""
+                _post_native_events_to_workbench("intake", [{
+                    "event_id": f"evt_job_conv_{intake_job_id}",
+                    "event_type": "IntakeJobStateChanged",
+                    "tenant_id": payload.get("tenant_id", "default"),
+                    "collection_id": job.collection_id,
+                    "aggregate_type": "intake_job",
+                    "aggregate_id": intake_job_id,
+                    "aggregate_version": 35,
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {
+                        "upload_id": upload_id,
+                        "intake_job_id": intake_job_id,
+                        "source_file_id": job.source_file_id,
+                        "source_file_state": "consumed",
+                        "state": IntakeJobState.REVIEW_QUEUED.value,
+                        "collection_id": job.collection_id,
+                        "tenant_id": payload.get("tenant_id", "default"),
+                        "parse_snapshot_id": parse_snapshot_id,
+                    },
+                    "trace_id": event.trace_id or "",
+                }])
+
         return True
     except Exception:
         session.rollback()

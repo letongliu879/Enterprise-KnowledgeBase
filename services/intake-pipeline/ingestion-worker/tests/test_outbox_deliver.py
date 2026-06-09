@@ -15,6 +15,7 @@ from reality_rag_persistence.repositories.tenants import TenantRepository
 from reality_rag_contracts import Collection, Tenant, SourceFileState
 
 from ingestion_worker.outbox_deliver import make_deliver_callback
+from intake_runtime.stage_task_worker import make_stage_task_deliver
 
 
 class TestOutboxDeliverCallbacks:
@@ -132,6 +133,56 @@ class TestOutboxDeliverCallbacks:
         evt = self._make_event(EventType.STAGE_TASK_REQUESTED)
         evt.event_type = "unknown_event"
         assert deliver(evt) is True
+
+    def test_stage_task_deliver_acks_orphaned_job(self):
+        deliver = make_stage_task_deliver(
+            stage_name=StageName.CONVERSION,
+            consumer_id="worker-test:conversion",
+            worker_id="worker-conversion",
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: True,
+        )
+        session = get_session()
+        try:
+            from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
+
+            repo = StageTaskRepository(session)
+            repo.create(
+                stage_task_id="task-orphan-001",
+                intake_job_id="job-missing-001",
+                stage_name=StageName.CONVERSION.value,
+                idempotency_key="orphan:key",
+                schema_version="v1",
+                input_hash="orphan:hash",
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        evt = self._make_event(
+            EventType.STAGE_TASK_REQUESTED,
+            aggregate_id="task-orphan-001",
+            payload={
+                "stage_task_id": "task-orphan-001",
+                "intake_job_id": "job-missing-001",
+                "stage_name": StageName.CONVERSION.value,
+            },
+        )
+        assert deliver(evt) is True
+
+        session = get_session()
+        try:
+            from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+            from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
+
+            task = StageTaskRepository(session).get("task-orphan-001")
+            assert task is not None
+            assert task.state == "failed"
+            assert ConsumerIdempotencyRepository(session).is_processed(
+                "worker-test:conversion",
+                evt.event_id,
+            )
+        finally:
+            session.close()
 
     def test_approval_event_remote_mode_forwards_http(self, monkeypatch):
         monkeypatch.setenv("APPROVAL_SERVICE_URL", "http://approval:8000")
@@ -336,6 +387,118 @@ class TestOutboxDeliverCallbacks:
             assert any(task.stage_name == StageName.AGENT_REVIEW.value for task in tasks)
         finally:
             session.close()
+
+    def test_stage_completed_conversion_forwards_parse_snapshot_id_to_workbench(self, inprocess_document_owner):
+        deliver = make_deliver_callback()
+        session = get_session()
+        try:
+            from intake_runtime.orchestrator import OrchestratorService
+
+            if TenantRepository(session).get("default") is None:
+                TenantRepository(session).save(Tenant(tenant_id="default", name="Default"))
+            if CollectionRepository(session).get("col-1") is None:
+                CollectionRepository(session).save(
+                    Collection(
+                        collection_id="col-1",
+                        tenant_id="default",
+                        name="Test Collection",
+                        authority_level=5,
+                    )
+                )
+            ObjectBlobRepository(session).create(
+                object_id="obj-stage-complete-2",
+                content_hash="sha256:stage-complete-2",
+                storage_key=__file__,
+                size_bytes=1,
+            )
+            SourceFileRepository(session).create(
+                source_file_id="src-stage-complete-2",
+                collection_id="col-1",
+                object_id="obj-stage-complete-2",
+                content_hash="sha256:stage-complete-2",
+                state=SourceFileState.READY,
+            )
+            job = OrchestratorService(session).create_intake_job(
+                "src-stage-complete-2",
+                "obj-stage-complete-2",
+                "col-1",
+            )
+            SourceFileRepository(session).claim("src-stage-complete-2", job.intake_job_id)
+            session.add(
+                StageResultModel(
+                    stage_result_id="res-conv-2",
+                    stage_task_id="task-conv-2",
+                    stage_attempt_id="att-conv-2",
+                    intake_job_id=job.intake_job_id,
+                    stage_name=StageName.CONVERSION.value,
+                    idempotency_key="conv:key2",
+                    result_hash="hash:conv2",
+                    summary_json={
+                        "parse_snapshot_id": "ps-123",
+                        "preliminary_doc_id": "pre-doc-2",
+                        "logical_document_id": "logical-2",
+                        "version": 1,
+                        "conversion_result": {
+                            "source_file_path": __file__,
+                            "conversion_status": "success",
+                            "doc_id": "pre-doc-2",
+                            "canonical_asset_path": "",
+                            "canonical_md": "",
+                            "error_message": "",
+                            "warnings": [],
+                            "metadata": {"parse_snapshot_id": "ps-123"},
+                        },
+                        "quality_report": {
+                            "doc_id": "pre-doc-2",
+                            "recommended_review_status": "published",
+                            "blocking_reasons": [],
+                        },
+                    },
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        evt = self._make_event(
+            EventType.STAGE_COMPLETED,
+            aggregate_id=job.intake_job_id,
+            payload={
+                "intake_job_id": job.intake_job_id,
+                "stage_task_id": "task-conv-2",
+                "stage_attempt_id": "att-conv-2",
+                "stage_name": StageName.CONVERSION.value,
+                "success": True,
+                "tenant_id": "default",
+            },
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "WORKBENCH_API_BASE_URL": "http://workbench:18083",
+                "WORKBENCH_EVENT_KEY_INTAKE": "intake-secret",
+            },
+            clear=False,
+        ):
+            with patch("httpx.post") as mock_post:
+                mock_post.return_value.status_code = 200
+                mock_post.return_value.text = "ok"
+                mock_post.return_value.json.return_value = {"errors": 0}
+                assert deliver(evt) is True
+                # There may be multiple POSTs: the original StageCompleted forward
+                # plus our new IntakeJobStateChanged follow-up.
+                calls = mock_post.call_args_list
+                intakes = [c for c in calls if "internal/events/intake" in str(c.args[0])]
+                # At least one call should contain the enriched IntakeJobStateChanged.
+                enriched = [
+                    c for c in intakes
+                    if any(
+                        item.get("event_type") == "IntakeJobStateChanged"
+                        and item.get("payload", {}).get("parse_snapshot_id") == "ps-123"
+                        for item in c.kwargs.get("json", [])
+                    )
+                ]
+                assert len(enriched) >= 1, f"Expected IntakeJobStateChanged with parse_snapshot_id in calls: {intakes}"
 
     def test_stage_completed_publishing_marks_job_published_and_cleanable(self, inprocess_document_owner):
         deliver = make_deliver_callback()
