@@ -50,6 +50,7 @@ upstream/
 *.swp
 *.swo
 *~
+/services/access/q
 
 # === 测试输出 ===
 coverage/
