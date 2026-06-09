@@ -1,0 +1,25 @@
+{
+  "total": 2,
+  "succeeded": 1,
+  "failed": 1,
+  "items": [
+    {
+      "doc_id": "doc-aop-finance-report-v1",
+      "success": true,
+      "previous_state": "PUBLISHED",
+      "new_state": "REINDEXING",
+      "job_id": "idx_job_001",
+      "error_code": null,
+      "error_message": null
+    },
+    {
+      "doc_id": "doc-aop-finance-report-v2",
+      "success": false,
+      "previous_state": null,
+      "new_state": null,
+      "job_id": null,
+      "error_code": "CONFLICT",
+      "error_message": "Document does not have a parse snapshot and cannot be reindexed"
+    }
+  ]
+}

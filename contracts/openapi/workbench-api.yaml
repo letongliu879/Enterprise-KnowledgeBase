@@ -519,6 +519,191 @@ paths:
         "404":
           description: Document not found
 
+  /workbench/documents/{doc_id}/workspace:
+    get:
+      operationId: getDocumentWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Aggregated document workspace detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchDocumentWorkspaceDetail.schema.json
+        "403":
+          description: Collection access denied
+        "404":
+          description: Document not found
+
+  /workbench/documents/{doc_id}/archive:
+    post:
+      operationId: archiveDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/WorkbenchDocumentLifecycleActionRequest.schema.json
+      responses:
+        "200":
+          description: Archive request completed
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchDocumentLifecycleActionResult.schema.json
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Document not found
+        "409":
+          description: Conflict
+        "501":
+          description: Downstream not implemented
+
+  /workbench/documents/{doc_id}/retract:
+    post:
+      operationId: retractDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/WorkbenchDocumentLifecycleActionRequest.schema.json
+      responses:
+        "200":
+          description: Retract request completed
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchDocumentLifecycleActionResult.schema.json
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Document not found
+        "409":
+          description: Conflict
+        "501":
+          description: Downstream not implemented
+
+  /workbench/documents/{doc_id}/reindex:
+    post:
+      operationId: reindexDocument
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/WorkbenchDocumentLifecycleActionRequest.schema.json
+      responses:
+        "200":
+          description: Reindex request completed
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchDocumentLifecycleActionResult.schema.json
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Document not found
+        "409":
+          description: Conflict
+        "501":
+          description: Downstream not implemented
+
+  /workbench/documents/batch/archive:
+    post:
+      operationId: batchArchiveDocuments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/WorkbenchBatchDocumentActionRequest.schema.json
+      responses:
+        "200":
+          description: Batch archive result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchBatchDocumentActionResult.schema.json
+        "403":
+          description: Insufficient permissions
+
+  /workbench/documents/batch/retract:
+    post:
+      operationId: batchRetractDocuments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/WorkbenchBatchDocumentActionRequest.schema.json
+      responses:
+        "200":
+          description: Batch retract result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchBatchDocumentActionResult.schema.json
+        "403":
+          description: Insufficient permissions
+
+  /workbench/documents/batch/reindex:
+    post:
+      operationId: batchReindexDocuments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/WorkbenchBatchDocumentActionRequest.schema.json
+      responses:
+        "200":
+          description: Batch reindex result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchBatchDocumentActionResult.schema.json
+        "403":
+          description: Insufficient permissions
+
   /workbench/source-files/{source_file_id}/preview:
     get:
       operationId: getSourceFilePreview
@@ -933,6 +1118,29 @@ paths:
         "501":
           description: Downstream not implemented
 
+  /workbench/tickets/{ticket_id}/workspace:
+    get:
+      operationId: getWorkspaceDetail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Aggregated review workspace detail
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/WorkbenchWorkspaceDetail.schema.json
+        "403":
+          description: Collection access denied
+        "404":
+          description: Ticket not found
+
   # ── Tasks ─────────────────────────────────────────────────────────────
 
   /workbench/tasks:
@@ -1069,6 +1277,25 @@ components:
           type: boolean
         degraded_reason:
           type: string
+          nullable: true
+        ticket_id:
+          type: string
+          nullable: true
+        ticket_status:
+          type: string
+          nullable: true
+        task_status:
+          type: string
+          nullable: true
+        has_source_file:
+          type: boolean
+        has_parse_snapshot:
+          type: boolean
+        has_active_index:
+          type: boolean
+        latest_updated_at:
+          type: string
+          format: date-time
           nullable: true
         created_at:
           type: string

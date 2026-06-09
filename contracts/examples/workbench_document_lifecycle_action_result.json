@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "final_doc_id": "doc-aop-finance-report-v1",
+  "previous_state": "PUBLISHED",
+  "new_state": "REINDEXING",
+  "job_id": "idx_job_001"
+}

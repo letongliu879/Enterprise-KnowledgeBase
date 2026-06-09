@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchDocumentWorkspaceDetail.schema.json",
+  "$ref": "https://reality-rag/contracts/schemas/WorkbenchWorkspaceDetail.schema.json"
+}

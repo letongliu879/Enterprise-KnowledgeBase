@@ -13,7 +13,6 @@ import {
   Menu,
   X,
   Activity,
-  ChevronDown,
   Shield,
   Library,
 } from "lucide-react";
@@ -21,11 +20,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/lib/store";
 import { workbenchApi } from "@/lib/api/client";
@@ -88,7 +88,7 @@ function BackendHealth() {
       <div className="flex items-center gap-1.5">
         <Activity className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs text-muted-foreground hidden sm:inline">
-          服务状态
+          Services
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -121,7 +121,7 @@ function BackendHealth() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50" />
             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
           </span>
-          全部正常
+          All Healthy
         </Badge>
       )}
     </div>
@@ -142,32 +142,29 @@ function CollectionSelector() {
   });
   const collections = collectionResponse?.items ?? [];
 
-  const selected = collections?.find(
-    (c) => c.collection_id === currentCollectionId
-  );
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
+    <Select
+      value={currentCollectionId || ""}
+      onValueChange={(value) => setCurrentCollectionId(value || null)}
+      disabled={isLoading || collections.length === 0}
+    >
+      <SelectTrigger
         className={cn(
           buttonVariants({ variant: "outline", size: "sm" }),
-          "h-8 gap-1.5 rounded-full border-input bg-background hover:bg-accent hover:border-primary/30 transition-all duration-200"
+          "h-8 min-w-[200px] gap-1.5 rounded-full border-input bg-background hover:bg-accent hover:border-primary/30 transition-all duration-200"
         )}
       >
         <Database className="h-3.5 w-3.5 text-primary" />
-        <span className="max-w-[140px] truncate">
-          {isLoading ? "加载中..." : selected ? selected.name : "选择知识库集合"}
-        </span>
-        <ChevronDown className="h-3 w-3 opacity-50" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-64 bg-popover rounded-xl border shadow-lg"
-      >
+        <SelectValue
+          placeholder={isLoading ? "Loading..." : "Select Collection"}
+          className="max-w-[140px] truncate"
+        />
+      </SelectTrigger>
+      <SelectContent className="w-64 rounded-xl border bg-popover shadow-lg">
         {collections.length === 0 && (
-          <DropdownMenuItem disabled className="text-muted-foreground">
-            暂无集合
-          </DropdownMenuItem>
+          <SelectItem value="__empty__" disabled className="text-muted-foreground">
+            No collections
+          </SelectItem>
         )}
         {collections.map((c, idx) => (
           <motion.div
@@ -177,8 +174,8 @@ function CollectionSelector() {
             animate="visible"
             custom={idx}
           >
-            <DropdownMenuItem
-              onClick={() => setCurrentCollectionId(c.collection_id)}
+            <SelectItem
+              value={c.collection_id}
               className={cn(
                 "rounded-lg cursor-pointer my-0.5",
                 currentCollectionId === c.collection_id &&
@@ -188,14 +185,14 @@ function CollectionSelector() {
               <div className="flex flex-col gap-0.5">
                 <span className="font-medium text-sm">{c.name}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {c.lifecycle_state} · {c.collection_id}
+                  {c.lifecycle_state} 路 {c.collection_id}
                 </span>
               </div>
-            </DropdownMenuItem>
+            </SelectItem>
           </motion.div>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -215,7 +212,7 @@ function SidebarContent({
           <div className="absolute inset-0 blur-md bg-primary/30 rounded-full" />
         </div>
         <span className="font-semibold text-sm tracking-tight truncate text-foreground">
-          知识库工作台
+          Knowledge Workbench
         </span>
       </div>
 
@@ -254,11 +251,11 @@ function SidebarContent({
       <div className="px-4 py-4 border-t border-border text-[10px] text-muted-foreground space-y-1.5 shrink-0">
         <p className="flex items-center gap-1.5">
           <span className="w-1 h-1 rounded-full bg-primary/40" />
-          检索上下文工作台
+          Retrieval workbench
         </p>
         <p className="flex items-center gap-1.5">
           <span className="w-1 h-1 rounded-full bg-muted-foreground/20" />
-          非问答生成机器人
+          Non-answer-generation agent
         </p>
       </div>
     </>
@@ -341,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               size="icon"
               className="h-8 w-8 rounded-xl hover:bg-accent transition-colors"
               onClick={toggleSidebar}
-              aria-label={sidebarOpen ? "关闭侧边栏" : "打开侧边栏"}
+              aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
               <AnimatePresence mode="wait" initial={false}>
                 {sidebarOpen ? (
@@ -376,7 +373,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 rounded-xl hover:bg-accent transition-colors"
-                aria-label="打开设置"
+                aria-label="Open settings"
               >
                 <Settings className="h-4 w-4" />
               </Button>

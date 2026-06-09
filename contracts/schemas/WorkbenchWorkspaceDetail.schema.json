@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchWorkspaceDetail.schema.json",
+  "title": "WorkbenchWorkspaceDetail",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ticket_id": { "type": "string", "minLength": 1 },
+    "ticket": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": { "type": "string" },
+        "collection_id": { "type": "string" },
+        "status": { "type": "string" },
+        "tenant_id": { "type": "string" },
+        "doc_id": { "type": ["string", "null"] },
+        "source_file_id": { "type": ["string", "null"] },
+        "parse_snapshot_id": { "type": ["string", "null"] },
+        "upload_id": { "type": ["string", "null"] },
+        "title": { "type": ["string", "null"] },
+        "filename": { "type": ["string", "null"] },
+        "priority": { "type": ["string", "null"] },
+        "assignee_user_id": { "type": ["string", "null"] },
+        "decision": { "type": ["string", "null"] },
+        "decision_reason": { "type": ["string", "null"] },
+        "decided_by": { "type": ["string", "null"] },
+        "agent_decision": { "type": ["string", "null"] },
+        "agent_risk_level": { "type": ["string", "null"] },
+        "agent_finding_count": { "type": "integer", "minimum": 0 },
+        "agent_blocking_finding_count": { "type": "integer", "minimum": 0 },
+        "failure_code": { "type": ["string", "null"] },
+        "failure_stage": { "type": ["string", "null"] },
+        "next_action": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "projection_updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "is_stale": { "type": "boolean" },
+        "source": { "type": "string", "enum": ["approval", "projection", "merged"] }
+      },
+      "required": ["ticket_id", "collection_id", "status", "tenant_id", "agent_finding_count", "agent_blocking_finding_count", "is_stale", "source"]
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "doc_id": { "type": ["string", "null"] },
+        "tenant_id": { "type": ["string", "null"] },
+        "collection_id": { "type": ["string", "null"] },
+        "source_file_id": { "type": ["string", "null"] },
+        "parse_snapshot_id": { "type": ["string", "null"] },
+        "published_doc_id": { "type": ["string", "null"] },
+        "upload_id": { "type": ["string", "null"] },
+        "filename": { "type": ["string", "null"] },
+        "mime_type": { "type": ["string", "null"] },
+        "document_state": { "type": ["string", "null"] },
+        "publish_state": { "type": ["string", "null"] },
+        "active_index_version": { "type": ["string", "null"] },
+        "chunk_count": { "type": "integer", "minimum": 0 },
+        "page_count": { "type": "integer", "minimum": 0 },
+        "parser_profile_id": { "type": ["string", "null"] },
+        "parser_profile_name": { "type": ["string", "null"] },
+        "projection_updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "is_stale": { "type": "boolean" },
+        "degraded_reason": { "type": ["string", "null"] },
+        "linkage_source": {
+          "type": "string",
+          "enum": ["document_projection", "ticket_projection", "task_projection", "missing"]
+        }
+      },
+      "required": ["chunk_count", "page_count", "is_stale", "linkage_source"]
+    },
+    "task": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "upload_id": { "type": "string" },
+        "collection_id": { "type": "string" },
+        "status": { "type": "string" },
+        "filename": { "type": ["string", "null"] },
+        "source_file_id": { "type": ["string", "null"] },
+        "intake_job_id": { "type": ["string", "null"] },
+        "parse_snapshot_id": { "type": ["string", "null"] },
+        "ticket_id": { "type": ["string", "null"] },
+        "published_doc_id": { "type": ["string", "null"] },
+        "doc_id": { "type": ["string", "null"] },
+        "progress_pct": { "type": "integer", "minimum": 0 },
+        "source_file_state": { "type": ["string", "null"] },
+        "intake_job_state": { "type": ["string", "null"] },
+        "parse_snapshot_state": { "type": ["string", "null"] },
+        "ticket_state": { "type": ["string", "null"] },
+        "published_document_state": { "type": ["string", "null"] },
+        "index_build_state": { "type": ["string", "null"] },
+        "active_index_version": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "projection_updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "is_stale": { "type": "boolean" }
+      },
+      "required": ["upload_id", "collection_id", "status", "progress_pct", "is_stale"]
+    },
+    "source_file": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "source_file_id": { "type": "string" },
+        "upload_id": { "type": ["string", "null"] },
+        "tenant_id": { "type": ["string", "null"] },
+        "collection_id": { "type": ["string", "null"] },
+        "filename": { "type": ["string", "null"] },
+        "mime_type": { "type": ["string", "null"] },
+        "size_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "state": { "type": ["string", "null"] },
+        "intake_job_id": { "type": ["string", "null"] },
+        "scan_verdict": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": ["source_file_id"]
+    },
+    "parse_snapshot": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "parse_snapshot_id": { "type": "string" },
+        "source_file_id": { "type": ["string", "null"] },
+        "tenant_id": { "type": ["string", "null"] },
+        "collection_id": { "type": ["string", "null"] },
+        "source_filename": { "type": ["string", "null"] },
+        "source_suffix": { "type": ["string", "null"] },
+        "parser_id": { "type": ["string", "null"] },
+        "parser_backend": { "type": ["string", "null"] },
+        "parser_profile_id": { "type": ["string", "null"] },
+        "effective_policy": { "type": ["string", "null"] },
+        "decision_reason": { "type": ["string", "null"] },
+        "preview_text": { "type": ["string", "null"] },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": ["parse_snapshot_id", "warnings"]
+    },
+    "chunks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "evidence_id": { "type": "string" },
+              "doc_id": { "type": "string" },
+              "content": { "type": "string" },
+              "vector_text": { "type": ["string", "null"] },
+              "section_path": { "type": "array", "items": { "type": "string" } },
+              "page_spans": { "type": "array", "items": { "type": "object" } },
+              "chunk_type": { "type": ["string", "null"] },
+              "metadata": { "type": ["object", "null"] }
+            },
+            "required": ["evidence_id", "doc_id", "content", "section_path", "page_spans"]
+          }
+        },
+        "total": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["items", "total"]
+    },
+    "chunk_edits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "chunk_edit_id": { "type": "string" },
+              "tenant_id": { "type": "string" },
+              "collection_id": { "type": "string" },
+              "source_file_id": { "type": ["string", "null"] },
+              "parse_snapshot_id": { "type": ["string", "null"] },
+              "base_evidence_id": { "type": "string" },
+              "edit_scope": { "type": "string" },
+              "operation": { "type": "string" },
+              "content": { "type": ["string", "null"] },
+              "vector_text": { "type": ["string", "null"] },
+              "section_path": { "type": ["array", "null"], "items": { "type": "string" } },
+              "metadata_patch": { "type": ["object", "null"] },
+              "citation_payload": { "type": ["object", "null"] },
+              "source_block_ids": { "type": ["array", "null"], "items": { "type": "string" } },
+              "edit_reason": { "type": ["string", "null"] },
+              "edited_by": { "type": "string" },
+              "status": { "type": "string" },
+              "downstream_revision_id": { "type": ["string", "null"] },
+              "created_at": { "type": ["string", "null"], "format": "date-time" },
+              "updated_at": { "type": ["string", "null"], "format": "date-time" }
+            },
+            "required": ["chunk_edit_id", "tenant_id", "collection_id", "base_evidence_id", "edit_scope", "operation", "edited_by", "status"]
+          }
+        },
+        "total": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["items", "total"]
+    },
+    "agent_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": { "type": "string" },
+        "decision": { "type": ["string", "null"] },
+        "source_file_id": { "type": ["string", "null"] },
+        "parse_snapshot_id": { "type": ["string", "null"] },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "finding_id": { "type": "string" },
+              "severity": { "type": "string" },
+              "category": { "type": "string" },
+              "problem_summary": { "type": "string" },
+              "source_quote": { "type": ["string", "null"] },
+              "evidence_id": { "type": ["string", "null"] },
+              "doc_id": { "type": ["string", "null"] },
+              "source_file_id": { "type": ["string", "null"] },
+              "parse_snapshot_id": { "type": ["string", "null"] },
+              "page_from": { "type": ["integer", "null"] },
+              "page_to": { "type": ["integer", "null"] },
+              "state": { "type": "string" },
+              "confidence": { "type": ["number", "null"] },
+              "chunk_quote": { "type": ["string", "null"] },
+              "why_wrong": { "type": ["string", "null"] },
+              "suggested_fix": { "type": ["string", "null"] },
+              "suggested_operation": { "type": ["string", "null"] }
+            },
+            "required": ["finding_id", "severity", "category", "problem_summary", "state"]
+          }
+        },
+        "matched_count": { "type": "integer", "minimum": 0 },
+        "unmatched_count": { "type": "integer", "minimum": 0 },
+        "source": { "type": "string", "enum": ["projection", "approval", "missing"] }
+      },
+      "required": ["ticket_id", "findings", "matched_count", "unmatched_count", "source"]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "can_view_source": { "type": "boolean" },
+        "can_view_parsed_text": { "type": "boolean" },
+        "can_search_in_document": { "type": "boolean" },
+        "can_edit_drafts": { "type": "boolean" },
+        "can_jump_to_chunk": { "type": "boolean" },
+        "can_decide_ticket": { "type": "boolean" },
+        "can_approve": { "type": "boolean" },
+        "can_reject": { "type": "boolean" },
+        "can_upload": { "type": "boolean" },
+        "can_archive": { "type": "boolean" },
+        "can_retract": { "type": "boolean" },
+        "can_reindex": { "type": "boolean" }
+      },
+      "required": ["can_view_source", "can_view_parsed_text", "can_search_in_document", "can_edit_drafts", "can_jump_to_chunk", "can_decide_ticket", "can_approve", "can_reject", "can_upload", "can_archive", "can_retract", "can_reindex"]
+    },
+    "projection_freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticket_projection_updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "ticket_is_stale": { "type": "boolean" },
+        "document_projection_updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "document_is_stale": { "type": "boolean" }
+      },
+      "required": ["ticket_is_stale", "document_is_stale"]
+    },
+    "degraded_parts": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "trace_id": { "type": "string", "minLength": 1 }
+  },
+  "required": ["ticket_id", "document", "chunks", "chunk_edits", "agent_review", "capabilities", "projection_freshness", "degraded_parts", "trace_id"]
+}

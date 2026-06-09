@@ -10,6 +10,12 @@ import type {
   ChunkView,
   ParseSnapshotView,
   SourceFilePreviewView,
+  WorkspaceDetailView,
+  DocumentWorkspaceDetailView,
+  DocumentLifecycleActionRequest,
+  DocumentLifecycleActionResult,
+  BatchDocumentActionRequest,
+  BatchDocumentActionResult,
 } from "./types";
 import { ApiClientError, BackendGapError } from "./errors";
 import { useAppStore } from "@/lib/store";
@@ -118,15 +124,24 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    let body: { code?: string; message?: string; detail?: string } = {};
+    let body: {
+      code?: string;
+      message?: string;
+      detail?: string | { error_code?: string; message?: string };
+    } = {};
     try {
       body = await res.json();
     } catch {
       /* ignore */
     }
+    const nestedDetail =
+      body.detail && typeof body.detail === "object" ? body.detail : undefined;
     throw new ApiClientError(
-      body.code || `HTTP_${res.status}`,
-      body.message || body.detail || `HTTP ${res.status}`,
+      body.code || nestedDetail?.error_code || `HTTP_${res.status}`,
+      body.message ||
+        nestedDetail?.message ||
+        (typeof body.detail === "string" ? body.detail : undefined) ||
+        `HTTP ${res.status}`,
       res.status
     );
   }
@@ -248,15 +263,24 @@ export const workbenchApi = {
       );
     }
     if (!res.ok) {
-      let body: { code?: string; message?: string; detail?: string } = {};
+      let body: {
+        code?: string;
+        message?: string;
+        detail?: string | { error_code?: string; message?: string };
+      } = {};
       try {
         body = await res.json();
       } catch {
         /* ignore */
       }
+      const nestedDetail =
+        body.detail && typeof body.detail === "object" ? body.detail : undefined;
       throw new ApiClientError(
-        body.code || `HTTP_${res.status}`,
-        body.message || body.detail || `HTTP ${res.status}`,
+        body.code || nestedDetail?.error_code || `HTTP_${res.status}`,
+        body.message ||
+          nestedDetail?.message ||
+          (typeof body.detail === "string" ? body.detail : undefined) ||
+          `HTTP ${res.status}`,
         res.status
       );
     }
@@ -296,11 +320,22 @@ export const workbenchApi = {
       WORKBENCH_BASE,
       `/workbench/tasks/${upload_id}`
     ),
-  listTickets: (opts?: { collection_id?: string; status?: string }) =>
+  listTickets: (opts?: {
+    collection_id?: string;
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }) =>
     request<{ items: TicketItem[]; total: number }>(
       WORKBENCH_BASE,
       "/workbench/tickets",
-      { query: opts }
+      {
+        query: opts
+          ? Object.fromEntries(
+              Object.entries(opts).map(([key, value]) => [key, value == null ? undefined : String(value)])
+            )
+          : undefined,
+      }
     ),
   getTicket: (ticket_id: string) =>
     request<TicketDetail>(
@@ -355,16 +390,71 @@ export const workbenchApi = {
       `/workbench/chunk-edits`,
       { query: { parse_snapshot_id } }
     ),
-  listDocuments: (opts?: { collection_id?: string; document_state?: string }) =>
+  listDocuments: (opts?: {
+    collection_id?: string;
+    document_state?: string;
+    status?: string;
+    offset?: number;
+    limit?: number;
+    order_by?: string;
+    order_dir?: string;
+  }) =>
     request<{ items: DocumentProjectionItem[]; total: number }>(
       WORKBENCH_BASE,
       "/workbench/documents",
-      { query: opts }
+      {
+        query: opts
+          ? Object.fromEntries(
+              Object.entries(opts).map(([key, value]) => [key, value == null ? undefined : String(value)])
+            )
+          : undefined,
+      }
     ),
   getDocument: (doc_id: string) =>
     request<DocumentProjectionItem>(
       WORKBENCH_BASE,
       `/workbench/documents/${doc_id}`
+    ),
+  getDocumentWorkspace: (doc_id: string) =>
+    request<DocumentWorkspaceDetailView>(
+      WORKBENCH_BASE,
+      `/workbench/documents/${doc_id}/workspace`
+    ),
+  archiveDocument: (doc_id: string, payload: DocumentLifecycleActionRequest) =>
+    request<DocumentLifecycleActionResult>(
+      WORKBENCH_BASE,
+      `/workbench/documents/${doc_id}/archive`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  retractDocument: (doc_id: string, payload: DocumentLifecycleActionRequest) =>
+    request<DocumentLifecycleActionResult>(
+      WORKBENCH_BASE,
+      `/workbench/documents/${doc_id}/retract`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  reindexDocument: (doc_id: string, payload: DocumentLifecycleActionRequest) =>
+    request<DocumentLifecycleActionResult>(
+      WORKBENCH_BASE,
+      `/workbench/documents/${doc_id}/reindex`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  batchArchiveDocuments: (payload: BatchDocumentActionRequest) =>
+    request<BatchDocumentActionResult>(
+      WORKBENCH_BASE,
+      "/workbench/documents/batch/archive",
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  batchRetractDocuments: (payload: BatchDocumentActionRequest) =>
+    request<BatchDocumentActionResult>(
+      WORKBENCH_BASE,
+      "/workbench/documents/batch/retract",
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  batchReindexDocuments: (payload: BatchDocumentActionRequest) =>
+    request<BatchDocumentActionResult>(
+      WORKBENCH_BASE,
+      "/workbench/documents/batch/reindex",
+      { method: "POST", body: JSON.stringify(payload) }
     ),
   getSourceFilePreview: (source_file_id: string) =>
     request<SourceFilePreviewView>(
@@ -446,7 +536,7 @@ export const workbenchApi = {
     return { blob, contentType };
   },
   getWorkspaceDetail: (ticket_id: string) =>
-    request<Record<string, unknown>>(
+    request<WorkspaceDetailView>(
       WORKBENCH_BASE,
       `/workbench/tickets/${ticket_id}/workspace`
     ),

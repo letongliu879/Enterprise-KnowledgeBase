@@ -96,6 +96,54 @@ class AdminClient(BaseHttpClient):
         params = {"state": state} if state else {}
         return await self._request("get", "/admin/retrieval-profiles", params=params, headers=headers)
 
+    async def _request_document_op(self, method: str, path: str, *, headers: dict | None = None, json: dict | None = None) -> dict:
+        url = f"{self._base_url}{path}"
+        request_headers = headers or {}
+        try:
+            response = await getattr(self._http_client, method)(url, headers=request_headers, json=json)
+        except httpx.ConnectError as e:
+            raise DownstreamError.unavailable(f"{self._service_name} service unreachable: {e}")
+        except httpx.TimeoutException as e:
+            raise DownstreamError.unavailable(f"{self._service_name} service timeout: {e}")
+
+        if response.status_code == 501:
+            raise DownstreamError.not_implemented(f"{self._service_name} endpoint not implemented: {url}")
+        if response.status_code == 404:
+            raise DownstreamError("NOT_FOUND", f"{self._service_name} resource not found: {url}", 404)
+        if response.status_code == 409:
+            raise DownstreamError.conflict(f"{self._service_name} conflict: {response.text}")
+        if response.status_code >= 400:
+            raise DownstreamError(
+                "DOWNSTREAM_ERROR",
+                f"{self._service_name} service returned {response.status_code}: {response.text}",
+                response.status_code,
+            )
+        return response.json()
+
+    async def archive_document(self, final_doc_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request_document_op(
+            "post",
+            f"/admin/documents/{final_doc_id}/archive",
+            headers=headers,
+            json=payload,
+        )
+
+    async def retract_document(self, final_doc_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request_document_op(
+            "post",
+            f"/admin/documents/{final_doc_id}/retract",
+            headers=headers,
+            json=payload,
+        )
+
+    async def reindex_document(self, final_doc_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request_document_op(
+            "post",
+            f"/admin/documents/{final_doc_id}/reindex",
+            headers=headers,
+            json=payload,
+        )
+
 
 class DocumentServiceClient(BaseHttpClient):
     def __init__(self, base_url: str | None = None):

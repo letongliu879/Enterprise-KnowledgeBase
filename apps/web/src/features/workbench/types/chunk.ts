@@ -1,19 +1,10 @@
 // features/workbench/types/chunk.ts
 
-export interface PageSpan {
-  page_from: number;
-  page_to: number;
-}
+import type { ChunkView as ApiChunkView, PageSpan } from "@/lib/api/types";
 
-export interface ChunkView {
-  evidence_id: string;
-  doc_id: string;
-  content: string;
-  vector_text?: string;
-  section_path?: string[];
-  page_spans?: PageSpan[];
-  chunk_type?: string;
-  metadata?: Record<string, unknown>;
+export type { PageSpan };
+
+export interface ChunkView extends ApiChunkView {
   status?: "active" | "draft" | "superseded";
 }
 

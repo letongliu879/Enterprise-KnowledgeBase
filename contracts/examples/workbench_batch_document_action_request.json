@@ -1,0 +1,8 @@
+{
+  "doc_ids": [
+    "doc-aop-finance-report-v1",
+    "doc-aop-finance-report-v2"
+  ],
+  "reason": "Refresh after parser upgrade",
+  "index_profile_id": "ragflow"
+}

@@ -245,6 +245,57 @@ class TestWorkbenchTaskViewSchema:
         assert "published_document_state" in props
 
 
+class TestWorkbenchWorkspaceDetailSchema:
+    def test_example_validates(self):
+        schema = _load_schema("WorkbenchWorkspaceDetail.schema.json")
+        example = _load_json(EXAMPLES_DIR / "workbench_workspace_detail.json")
+        resolver = _build_resolver()
+        jsonschema.validate(instance=example, schema=schema, resolver=resolver)
+
+    def test_has_task_and_lifecycle_capabilities(self):
+        schema = _load_schema("WorkbenchWorkspaceDetail.schema.json")
+        props = schema["properties"]
+        assert "task" in props
+        capability_props = props["capabilities"]["properties"]
+        assert "can_archive" in capability_props
+        assert "can_retract" in capability_props
+        assert "can_reindex" in capability_props
+
+
+class TestWorkbenchDocumentWorkspaceDetailSchema:
+    def test_example_validates(self):
+        schema = _load_schema("WorkbenchDocumentWorkspaceDetail.schema.json")
+        example = _load_json(EXAMPLES_DIR / "workbench_document_workspace_detail.json")
+        resolver = _build_resolver()
+        jsonschema.validate(instance=example, schema=schema, resolver=resolver)
+
+
+class TestWorkbenchDocumentLifecycleSchemas:
+    def test_action_request_example_validates(self):
+        schema = _load_schema("WorkbenchDocumentLifecycleActionRequest.schema.json")
+        example = _load_json(EXAMPLES_DIR / "workbench_document_lifecycle_action_request.json")
+        resolver = _build_resolver()
+        jsonschema.validate(instance=example, schema=schema, resolver=resolver)
+
+    def test_action_result_example_validates(self):
+        schema = _load_schema("WorkbenchDocumentLifecycleActionResult.schema.json")
+        example = _load_json(EXAMPLES_DIR / "workbench_document_lifecycle_action_result.json")
+        resolver = _build_resolver()
+        jsonschema.validate(instance=example, schema=schema, resolver=resolver)
+
+    def test_batch_action_request_example_validates(self):
+        schema = _load_schema("WorkbenchBatchDocumentActionRequest.schema.json")
+        example = _load_json(EXAMPLES_DIR / "workbench_batch_document_action_request.json")
+        resolver = _build_resolver()
+        jsonschema.validate(instance=example, schema=schema, resolver=resolver)
+
+    def test_batch_action_result_example_validates(self):
+        schema = _load_schema("WorkbenchBatchDocumentActionResult.schema.json")
+        example = _load_json(EXAMPLES_DIR / "workbench_batch_document_action_result.json")
+        resolver = _build_resolver()
+        jsonschema.validate(instance=example, schema=schema, resolver=resolver)
+
+
 # ── Schema drift guard: workbench schemas ────────────────────────────────
 
 

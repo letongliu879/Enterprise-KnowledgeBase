@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchDocumentLifecycleActionResult.schema.json",
+  "title": "WorkbenchDocumentLifecycleActionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "success": { "type": "boolean" },
+    "final_doc_id": { "type": "string", "minLength": 1 },
+    "previous_state": { "type": ["string", "null"] },
+    "new_state": { "type": ["string", "null"] },
+    "job_id": { "type": ["string", "null"] }
+  },
+  "required": ["success", "final_doc_id"]
+}

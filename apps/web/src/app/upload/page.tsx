@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useInfiniteQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -76,6 +81,22 @@ const TYPE_CONFIG: Record<
 type FileStatus = UploadStatus | "queued";
 
 const S_UPLOADING: FileStatus = "uploading";
+const KNOWN_UPLOAD_STATUSES = new Set<FileStatus>([
+  "queued",
+  "uploading",
+  "ready",
+  "uploaded",
+  "duplicate",
+  "parsing",
+  "reviewing",
+  "approved",
+  "published",
+  "indexing",
+  "archived",
+  "retracted",
+  "rejected",
+  "failed",
+]);
 
 interface FileItem {
   id: string;
@@ -83,6 +104,14 @@ interface FileItem {
   status: FileStatus;
   error?: string;
   uploadId?: string;
+}
+
+function normalizeUploadStatus(status?: string | null): FileStatus {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (KNOWN_UPLOAD_STATUSES.has(normalized as FileStatus)) {
+    return normalized as FileStatus;
+  }
+  return "uploaded";
 }
 
 function getFileTypeConfig(file: File) {
@@ -211,6 +240,7 @@ const MAX_CONCURRENT_UPLOADS = 3;
 
 export default function UploadPage() {
   const { currentCollectionId, accessScope } = useAppStore();
+  const queryClient = useQueryClient();
   const [files, setFiles] = useState<FileItem[]>([]);
   const filesRef = useRef<FileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -337,12 +367,21 @@ export default function UploadPage() {
       );
       return res;
     },
-    onSuccess: (_data, item) => {
+    onSuccess: (data, item) => {
+      const nextStatus = normalizeUploadStatus(data.status);
       setFiles((prev) =>
         prev.map((f) =>
-          f.id === item.id ? { ...f, status: S_UPLOADING } : f
+          f.id === item.id
+            ? {
+                ...f,
+                status: nextStatus,
+                error: data.error_message || undefined,
+              }
+            : f
         )
       );
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-tasks"] });
       activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
       processUploadQueue();
       toast.success(`已上传: ${item.file.name}`);

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchBatchDocumentActionRequest.schema.json",
+  "title": "WorkbenchBatchDocumentActionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "doc_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "reason": { "type": "string" },
+    "index_profile_id": { "type": "string" }
+  },
+  "required": ["doc_ids", "reason"]
+}

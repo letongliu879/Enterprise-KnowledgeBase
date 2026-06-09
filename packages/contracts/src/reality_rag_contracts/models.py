@@ -1580,6 +1580,52 @@ class WorkbenchTaskView(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class WorkbenchDocumentLifecycleActionRequest(BaseModel):
+    """Workbench-facing lifecycle action request for a single document."""
+
+    reason: str = ""
+    index_profile_id: Optional[str] = None
+
+
+class WorkbenchDocumentLifecycleActionResult(BaseModel):
+    """Result of a single lifecycle action proxied through workbench."""
+
+    success: bool = True
+    final_doc_id: str
+    previous_state: Optional[str] = None
+    new_state: Optional[str] = None
+    job_id: Optional[str] = None
+
+
+class WorkbenchBatchDocumentActionRequest(BaseModel):
+    """Batch lifecycle action request over document projections."""
+
+    doc_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
+    index_profile_id: Optional[str] = None
+
+
+class WorkbenchBatchDocumentActionItemResult(BaseModel):
+    """Per-document result for batch lifecycle actions."""
+
+    doc_id: str
+    success: bool
+    previous_state: Optional[str] = None
+    new_state: Optional[str] = None
+    job_id: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+class WorkbenchBatchDocumentActionResult(BaseModel):
+    """Aggregate result for a batch lifecycle action."""
+
+    total: int = Field(default=0, ge=0)
+    succeeded: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    items: list[WorkbenchBatchDocumentActionItemResult] = Field(default_factory=list)
+
+
 class WorkbenchParsePreviewRequest(BaseModel):
     """Request to trigger a parse preview via indexing."""
 

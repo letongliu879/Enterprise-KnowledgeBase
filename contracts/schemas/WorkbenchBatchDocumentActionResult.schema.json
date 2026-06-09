@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-rag/contracts/schemas/WorkbenchBatchDocumentActionResult.schema.json",
+  "title": "WorkbenchBatchDocumentActionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "total": { "type": "integer", "minimum": 0 },
+    "succeeded": { "type": "integer", "minimum": 0 },
+    "failed": { "type": "integer", "minimum": 0 },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": { "type": "string", "minLength": 1 },
+          "success": { "type": "boolean" },
+          "previous_state": { "type": ["string", "null"] },
+          "new_state": { "type": ["string", "null"] },
+          "job_id": { "type": ["string", "null"] },
+          "error_code": { "type": ["string", "null"] },
+          "error_message": { "type": ["string", "null"] }
+        },
+        "required": ["doc_id", "success"]
+      }
+    }
+  },
+  "required": ["total", "succeeded", "failed", "items"]
+}

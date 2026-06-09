@@ -129,8 +129,16 @@ export interface DocumentProjectionItem {
   parser_profile_name: string | null;
   projection_updated_at: string | null;
   is_stale: boolean;
+  degraded_reason?: string | null;
   created_at: string | null;
   updated_at: string | null;
+  ticket_id?: string | null;
+  ticket_status?: string | null;
+  task_status?: string | null;
+  has_source_file?: boolean;
+  has_parse_snapshot?: boolean;
+  has_active_index?: boolean;
+  latest_updated_at?: string | null;
 }
 
 export interface TicketItem {
@@ -197,13 +205,18 @@ export interface AgentReviewView {
   source?: "projection" | "approval";
 }
 
+export interface PageSpan {
+  page_from: number;
+  page_to: number;
+}
+
 export interface ChunkView {
   evidence_id: string;
   doc_id: string;
   content: string;
   vector_text?: string;
   section_path?: string[];
-  page_spans?: Record<string, unknown>[];
+  page_spans?: PageSpan[];
   chunk_type?: string;
   metadata?: Record<string, unknown>;
 }
@@ -308,6 +321,31 @@ export interface WorkspaceDocumentView {
     | "missing";
 }
 
+export interface WorkspaceTaskView {
+  upload_id: string;
+  collection_id: string;
+  status: string;
+  filename?: string | null;
+  source_file_id?: string | null;
+  intake_job_id?: string | null;
+  parse_snapshot_id?: string | null;
+  ticket_id?: string | null;
+  published_doc_id?: string | null;
+  doc_id?: string | null;
+  progress_pct: number;
+  source_file_state?: string | null;
+  intake_job_state?: string | null;
+  parse_snapshot_state?: string | null;
+  ticket_state?: string | null;
+  published_document_state?: string | null;
+  index_build_state?: string | null;
+  active_index_version?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  projection_updated_at?: string | null;
+  is_stale: boolean;
+}
+
 export interface WorkspaceSourceFileView {
   source_file_id: string;
   upload_id?: string | null;
@@ -402,6 +440,9 @@ export interface WorkspaceCapabilitiesView {
   can_approve: boolean;
   can_reject: boolean;
   can_upload: boolean;
+  can_archive: boolean;
+  can_retract: boolean;
+  can_reindex: boolean;
 }
 
 export interface WorkspaceProjectionFreshnessView {
@@ -415,6 +456,7 @@ export interface WorkspaceDetailView {
   ticket_id: string;
   ticket?: WorkspaceTicketView | null;
   document: WorkspaceDocumentView;
+  task?: WorkspaceTaskView | null;
   source_file?: WorkspaceSourceFileView | null;
   parse_snapshot?: WorkspaceParseSnapshotView | null;
   chunks: {
@@ -431,6 +473,44 @@ export interface WorkspaceDetailView {
   degraded_parts: string[];
   trace_id: string;
 }
+
+export interface DocumentLifecycleActionRequest {
+  reason: string;
+  index_profile_id?: string;
+}
+
+export interface DocumentLifecycleActionResult {
+  success: boolean;
+  final_doc_id: string;
+  previous_state?: string | null;
+  new_state?: string | null;
+  job_id?: string | null;
+}
+
+export interface BatchDocumentActionRequest {
+  doc_ids: string[];
+  reason: string;
+  index_profile_id?: string;
+}
+
+export interface BatchDocumentActionItemResult {
+  doc_id: string;
+  success: boolean;
+  previous_state?: string | null;
+  new_state?: string | null;
+  job_id?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
+export interface BatchDocumentActionResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: BatchDocumentActionItemResult[];
+}
+
+export type DocumentWorkspaceDetailView = WorkspaceDetailView;
 
 // ── Access / Retrieval ─────────────────────────────────────────────────
 

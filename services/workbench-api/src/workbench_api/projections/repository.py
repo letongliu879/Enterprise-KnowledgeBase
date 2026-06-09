@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import asc, desc, func
+from sqlalchemy import asc, desc, func, or_
 from sqlalchemy.orm import Session
 
 from reality_rag_persistence.models import (
@@ -117,6 +117,55 @@ class TaskProjectionRepository:
     def get_by_upload_id(self, upload_id: str) -> WorkbenchTaskProjectionModel | None:
         return self._session.query(WorkbenchTaskProjectionModel).filter_by(upload_id=upload_id).first()
 
+    def get_by_doc_id(
+        self,
+        doc_id: str,
+        tenant_id: str,
+    ) -> WorkbenchTaskProjectionModel | None:
+        return (
+            self._session.query(WorkbenchTaskProjectionModel)
+            .filter_by(doc_id=doc_id, tenant_id=tenant_id)
+            .order_by(desc(WorkbenchTaskProjectionModel.projection_updated_at))
+            .first()
+        )
+
+    def get_by_source_file_id(
+        self,
+        source_file_id: str,
+        tenant_id: str,
+    ) -> WorkbenchTaskProjectionModel | None:
+        return (
+            self._session.query(WorkbenchTaskProjectionModel)
+            .filter_by(source_file_id=source_file_id, tenant_id=tenant_id)
+            .order_by(desc(WorkbenchTaskProjectionModel.projection_updated_at))
+            .first()
+        )
+
+    def list_by_document_context(
+        self,
+        *,
+        tenant_id: str,
+        doc_ids: list[str] | None = None,
+        source_file_ids: list[str] | None = None,
+        upload_ids: list[str] | None = None,
+    ) -> list[WorkbenchTaskProjectionModel]:
+        filters = []
+        if doc_ids:
+            filters.append(WorkbenchTaskProjectionModel.doc_id.in_(doc_ids))
+        if source_file_ids:
+            filters.append(WorkbenchTaskProjectionModel.source_file_id.in_(source_file_ids))
+        if upload_ids:
+            filters.append(WorkbenchTaskProjectionModel.upload_id.in_(upload_ids))
+        if not filters:
+            return []
+        return (
+            self._session.query(WorkbenchTaskProjectionModel)
+            .filter(WorkbenchTaskProjectionModel.tenant_id == tenant_id)
+            .filter(or_(*filters))
+            .order_by(desc(WorkbenchTaskProjectionModel.projection_updated_at))
+            .all()
+        )
+
     def list(
         self,
         tenant_id: str,
@@ -187,6 +236,79 @@ class TicketProjectionRepository:
 
     def get(self, ticket_id: str) -> WorkbenchTicketProjectionModel | None:
         return self._session.query(WorkbenchTicketProjectionModel).filter_by(ticket_id=ticket_id).first()
+
+    def get_latest_by_doc_id(
+        self,
+        doc_id: str,
+        tenant_id: str,
+    ) -> WorkbenchTicketProjectionModel | None:
+        return (
+            self._session.query(WorkbenchTicketProjectionModel)
+            .filter_by(doc_id=doc_id, tenant_id=tenant_id)
+            .order_by(desc(WorkbenchTicketProjectionModel.updated_at), desc(WorkbenchTicketProjectionModel.projection_updated_at))
+            .first()
+        )
+
+    def get_latest_by_source_file_id(
+        self,
+        source_file_id: str,
+        tenant_id: str,
+    ) -> WorkbenchTicketProjectionModel | None:
+        return (
+            self._session.query(WorkbenchTicketProjectionModel)
+            .filter_by(source_file_id=source_file_id, tenant_id=tenant_id)
+            .order_by(desc(WorkbenchTicketProjectionModel.updated_at), desc(WorkbenchTicketProjectionModel.projection_updated_at))
+            .first()
+        )
+
+    def get_pending_by_doc_id(
+        self,
+        doc_id: str,
+        tenant_id: str,
+    ) -> WorkbenchTicketProjectionModel | None:
+        return (
+            self._session.query(WorkbenchTicketProjectionModel)
+            .filter_by(doc_id=doc_id, tenant_id=tenant_id, state="pending")
+            .order_by(desc(WorkbenchTicketProjectionModel.updated_at), desc(WorkbenchTicketProjectionModel.projection_updated_at))
+            .first()
+        )
+
+    def get_pending_by_source_file_id(
+        self,
+        source_file_id: str,
+        tenant_id: str,
+    ) -> WorkbenchTicketProjectionModel | None:
+        return (
+            self._session.query(WorkbenchTicketProjectionModel)
+            .filter_by(source_file_id=source_file_id, tenant_id=tenant_id, state="pending")
+            .order_by(desc(WorkbenchTicketProjectionModel.updated_at), desc(WorkbenchTicketProjectionModel.projection_updated_at))
+            .first()
+        )
+
+    def list_by_document_context(
+        self,
+        *,
+        tenant_id: str,
+        doc_ids: list[str] | None = None,
+        source_file_ids: list[str] | None = None,
+    ) -> list[WorkbenchTicketProjectionModel]:
+        filters = []
+        if doc_ids:
+            filters.append(WorkbenchTicketProjectionModel.doc_id.in_(doc_ids))
+        if source_file_ids:
+            filters.append(WorkbenchTicketProjectionModel.source_file_id.in_(source_file_ids))
+        if not filters:
+            return []
+        return (
+            self._session.query(WorkbenchTicketProjectionModel)
+            .filter(WorkbenchTicketProjectionModel.tenant_id == tenant_id)
+            .filter(or_(*filters))
+            .order_by(
+                desc(WorkbenchTicketProjectionModel.updated_at),
+                desc(WorkbenchTicketProjectionModel.projection_updated_at),
+            )
+            .all()
+        )
 
     def list(
         self,
