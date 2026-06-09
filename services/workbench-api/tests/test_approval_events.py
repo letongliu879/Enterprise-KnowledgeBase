@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from workbench_api.events import SERVICE_KEYS
+from workbench_api.config import config
+from workbench_api.events.adapters.intake_adapter import IntakeEventAdapter
 from workbench_api.events.adapters.approval_adapter import ApprovalEventAdapter
 from workbench_api.projections.repository import AgentReviewProjectionRepository, TicketProjectionRepository
 
 
 class TestApprovalEventIngestion:
     def test_approval_pending_ingests_ticket_and_findings(self, client, db_session, monkeypatch):
-        monkeypatch.setitem(SERVICE_KEYS, "approval", "approval-test-key")
+        monkeypatch.setattr(config, "workbench_event_key_approval", "approval-test-key")
         response = client.post(
             "/internal/events/approval",
             headers={"X-Service-Key": "approval-test-key"},
@@ -84,3 +85,20 @@ class TestApprovalEventIngestion:
         )
         finding_event = next(event for event in events if event.aggregate_type == "agent_review")
         assert len(finding_event.event_id) <= 64
+
+    def test_intake_adapter_falls_back_to_default_tenant(self):
+        adapter = IntakeEventAdapter()
+        events = adapter.adapt(
+            {
+                "event_id": "evt_intake_001",
+                "event_type": "StageCompleted",
+                "tenant_id": "",
+                "collection_id": "col_default",
+                "occurred_at": datetime(2026, 6, 9, 12, 0, 0, tzinfo=timezone.utc).isoformat(),
+                "payload": {
+                    "upload_id": "upload_001",
+                },
+            }
+        )
+        assert len(events) == 1
+        assert events[0].tenant_id == "default"

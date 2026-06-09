@@ -32,26 +32,12 @@ os.environ["ADMIN_JWT_ALGORITHM"] = "HS256"
 os.environ["JWT_SECRET"] = "smoke-test-secret"
 os.environ["JWT_ALGORITHM"] = "HS256"
 
-# Base URLs for cross-service routing (must match combined app mounts)
-os.environ["INDEXING_BASE_URL"] = "http://testserver/indexing"
-os.environ["INTAKE_BASE_URL"] = "http://testserver/intake"
-os.environ["APPROVAL_BASE_URL"] = "http://testserver/approval"
-os.environ["ADMIN_BASE_URL"] = "http://testserver/admin"
-os.environ["RETRIEVAL_BASE_URL"] = "http://testserver/retrieval"
-os.environ["PUBLISHING_WORKER_BASE_URL"] = "http://testserver/publishing"
-os.environ["REALITY_RAG_INDEXING_BASE_URL"] = "http://testserver/indexing"
 os.environ["REALITY_RAG_INTAKE_RUNTIME_DIR"] = str(ROOT / ".verify" / "runtime" / "intake-smoke")
 os.environ["REALITY_RAG_SIDECAR_DIR"] = str(ROOT / ".verify" / "runtime" / "sidecar-smoke")
 
 os.environ["ALLOW_LOCAL_FALLBACK_FOR_TESTS"] = "true"
-os.environ["DOCUMENT_SERVICE_BASE_URL"] = "http://testserver/documents"
-os.environ["DOCUMENT_SERVICE_URL"] = "http://testserver/documents"
-os.environ["APPROVAL_SERVICE_URL"] = "http://testserver/approval"
-os.environ["INDEXING_SERVICE_URL"] = "http://testserver/indexing"
-os.environ["WORKBENCH_BASE_URL"] = "http://testserver/workbench"
-os.environ["WORKBENCH_EVENT_KEY_INTAKE"] = "smoke-intake-key"
-os.environ["WORKBENCH_EVENT_KEY_APPROVAL"] = "smoke-approval-key"
-os.environ["WORKBENCH_EVENT_KEY_INDEXING"] = "smoke-indexing-key"
+
+
 
 # Disable live model calls
 for key in (
@@ -81,6 +67,13 @@ combined_app = FastAPI(title="Reality-RAG Combined Smoke App")
 
 _original_async_init = httpx.AsyncClient.__init__
 _original_sync_init = httpx.Client.__init__
+
+# NOTE: Service-URL env vars (INDEXING_BASE_URL, etc.) are NOT set at module
+# level. They are set inside _apply_smoke_patches so that service modules
+# imported during collection (see below) create config singletons with
+# default (non-testserver) values. The fixture overrides them before any test
+# runs and restores them afterward.
+
 
 
 class _AsyncClientWrapper:
@@ -198,7 +191,7 @@ def _patched_workbench_events_url(service: str) -> str | None:
     return f"http://testserver/internal/events/{service}"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def _apply_smoke_patches():
     """Apply httpx patches only when running smoke tests."""
     def _patched_async_init(self: httpx.AsyncClient, *args: Any, **kwargs: Any) -> None:
@@ -227,7 +220,77 @@ def _apply_smoke_patches():
     # Patch _workbench_events_url
     _outbox_deliver_mod._workbench_events_url = _patched_workbench_events_url  # type: ignore[misc]
 
+    # Set cross-service routing env vars for the combined app
+    _smoke_env = {
+        "INDEXING_BASE_URL": "http://testserver/indexing",
+        "INTAKE_BASE_URL": "http://testserver/intake",
+        "APPROVAL_BASE_URL": "http://testserver/approval",
+        "ADMIN_BASE_URL": "http://testserver/admin",
+        "RETRIEVAL_BASE_URL": "http://testserver/retrieval",
+        "PUBLISHING_WORKER_BASE_URL": "http://testserver/publishing",
+        "PUBLISHING_BASE_URL": "http://testserver/publishing",
+        "REALITY_RAG_INDEXING_BASE_URL": "http://testserver/indexing",
+        "DOCUMENT_SERVICE_BASE_URL": "http://testserver/documents",
+        "DOCUMENT_SERVICE_URL": "http://testserver/documents",
+        "APPROVAL_SERVICE_URL": "http://testserver/approval",
+        "INDEXING_SERVICE_URL": "http://testserver/indexing",
+        "WORKBENCH_BASE_URL": "http://testserver/workbench",
+        "WORKBENCH_EVENT_KEY_INTAKE": "smoke-intake-key",
+        "WORKBENCH_EVENT_KEY_APPROVAL": "smoke-approval-key",
+        "WORKBENCH_EVENT_KEY_INDEXING": "smoke-indexing-key",
+    }
+    _old_env = {}
+    for _key, _val in _smoke_env.items():
+        _old_env[_key] = os.environ.get(_key)
+        os.environ[_key] = _val
+
+    # Force-override service configs to match the combined in-process app
+    # regardless of import order from other test modules.
+    from admin_service.config import config as _admin_config
+    _orig_admin_config = {
+        "jwt_secret": _admin_config.jwt_secret,
+        "indexing_base_url": _admin_config.indexing_base_url,
+        "retrieval_base_url": _admin_config.retrieval_base_url,
+        "access_base_url": _admin_config.access_base_url,
+        "publishing_worker_base_url": _admin_config.publishing_worker_base_url,
+    }
+    _admin_config.jwt_secret = "smoke-test-secret"
+    _admin_config.indexing_base_url = "http://testserver/indexing"
+    _admin_config.retrieval_base_url = "http://testserver/retrieval"
+    _admin_config.access_base_url = "http://testserver/access"
+    _admin_config.publishing_worker_base_url = "http://testserver/publishing"
+
+    from workbench_api.config import config as _workbench_config
+    _orig_workbench_config = {
+        "indexing_base_url": _workbench_config.indexing_base_url,
+        "ingestion_worker_url": _workbench_config.ingestion_worker_url,
+        "approval_base_url": _workbench_config.approval_base_url,
+        "admin_base_url": _workbench_config.admin_base_url,
+        "access_base_url": _workbench_config.access_base_url,
+        "document_service_base_url": _workbench_config.document_service_base_url,
+        "publishing_base_url": _workbench_config.publishing_base_url,
+        "workbench_event_key_intake": _workbench_config.workbench_event_key_intake,
+        "workbench_event_key_approval": _workbench_config.workbench_event_key_approval,
+        "workbench_event_key_indexing": _workbench_config.workbench_event_key_indexing,
+    }
+    _workbench_config.indexing_base_url = "http://testserver/indexing"
+    _workbench_config.ingestion_worker_url = "http://testserver/intake"
+    _workbench_config.approval_base_url = "http://testserver/approval"
+    _workbench_config.admin_base_url = "http://testserver/admin"
+    _workbench_config.access_base_url = "http://testserver/access"
+    _workbench_config.document_service_base_url = "http://testserver/documents"
+    _workbench_config.publishing_base_url = "http://testserver/publishing"
+    _workbench_config.workbench_event_key_intake = "smoke-intake-key"
+    _workbench_config.workbench_event_key_approval = "smoke-approval-key"
+    _workbench_config.workbench_event_key_indexing = "smoke-indexing-key"
+
     yield
+
+    # Teardown: restore original config values
+    for _attr, _val in _orig_admin_config.items():
+        setattr(_admin_config, _attr, _val)
+    for _attr, _val in _orig_workbench_config.items():
+        setattr(_workbench_config, _attr, _val)
 
     # Teardown: restore original httpx functions
     httpx.AsyncClient.__init__ = _original_async_init  # type: ignore[assignment]
@@ -237,6 +300,13 @@ def _apply_smoke_patches():
     httpx.patch = _httpx_api.patch
     httpx.delete = _httpx_api.delete
     httpx.request = _httpx_api.request
+
+    # Restore env vars (captured at fixture setup, before smoke overrides)
+    for _key, _old_val in _old_env.items():
+        if _old_val is None:
+            os.environ.pop(_key, None)
+        else:
+            os.environ[_key] = _old_val
 
 # ---------------------------------------------------------------------------
 # Import and mount service apps
@@ -308,8 +378,12 @@ def _make_token(
     roles: list[str] | None = None,
     tenant_id: str = "tenant_smoke",
     allowed_collections: list[str] | None = None,
-    secret: str = "smoke-test-secret",
 ) -> str:
+    # Read secret from the actual admin config at call time to avoid
+    # import-order races with other test modules that may import
+    # admin_service.config before ADMIN_JWT_SECRET is set in the env.
+    from admin_service.config import config as _admin_config
+    secret = _admin_config.jwt_secret
     return jwt.encode(
         {
             "sub": user_id,

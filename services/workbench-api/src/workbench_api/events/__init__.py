@@ -41,11 +41,18 @@ from .adapters import get_adapter
 
 # -- Authentication --
 
-SERVICE_KEYS: dict[str, str] = {
-    "intake": config.workbench_event_key_intake,
-    "approval": config.workbench_event_key_approval,
-    "indexing": config.workbench_event_key_indexing,
-}
+def _get_service_keys() -> dict[str, str]:
+    """Read service keys from config lazily at call time.
+
+    The config singleton may be overridden after this module is imported
+    (e.g. by smoke test fixtures), so a module-level dict would capture
+    stale values.  Reading at call time ensures overrides are respected.
+    """
+    return {
+        "intake": config.workbench_event_key_intake,
+        "approval": config.workbench_event_key_approval,
+        "indexing": config.workbench_event_key_indexing,
+    }
 
 
 def _verify_key(provided_key: str | None, expected_key: str) -> bool:
@@ -59,7 +66,7 @@ async def verify_service_key(
     x_service_key: str | None = Header(None, alias="X-Service-Key"),
 ) -> Literal["intake", "approval", "indexing"]:
     """Verify X-Service-Key and return the matched service name."""
-    for service, expected in SERVICE_KEYS.items():
+    for service, expected in _get_service_keys().items():
         if _verify_key(x_service_key, expected):
             path_service = request.path_params.get("service")
             if path_service and path_service != service:

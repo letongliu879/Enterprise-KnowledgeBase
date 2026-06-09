@@ -60,6 +60,15 @@ def _clear_workbench_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _ensure_workbench_api_deps(monkeypatch):
+    """workbench_api.config requires JWT_SECRET when its module is imported
+    (e.g. by test_repo_guardrails.py). Set a dummy value so the import
+    succeeds; individual tests needing real JWT auth should override."""
+    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("JWT_ALGORITHM", "HS256")
+
+
+@pytest.fixture(autouse=True)
 def _setup_sidecar_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", tmp)

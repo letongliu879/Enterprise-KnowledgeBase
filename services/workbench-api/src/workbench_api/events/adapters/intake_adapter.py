@@ -17,13 +17,28 @@ class IntakeEventAdapter(EventAdapter):
     def service_name(self) -> str:
         return "intake"
 
+    @staticmethod
+    def _tenant_id(native_event: dict[str, Any], payload: dict[str, Any]) -> str:
+        return (
+            str(native_event.get("tenant_id") or "").strip()
+            or str(payload.get("tenant_id") or "").strip()
+            or "default"
+        )
+
+    @staticmethod
+    def _collection_id(native_event: dict[str, Any], payload: dict[str, Any]) -> str | None:
+        collection_id = native_event.get("collection_id")
+        if collection_id is None or str(collection_id).strip() == "":
+            collection_id = payload.get("collection_id")
+        return str(collection_id).strip() or None
+
     def adapt(self, native_event: dict[str, Any]) -> list["ProjectionEvent"]:
         event_type = native_event.get("event_type")
-        tenant_id = native_event.get("tenant_id", "")
-        collection_id = native_event.get("collection_id")
         occurred_at = native_event.get("occurred_at")
         trace_id = native_event.get("trace_id")
         payload = native_event.get("payload", {})
+        tenant_id = self._tenant_id(native_event, payload)
+        collection_id = self._collection_id(native_event, payload)
         version = native_event.get("aggregate_version", 1)
 
         events: list["ProjectionEvent"] = []
@@ -63,7 +78,7 @@ class IntakeEventAdapter(EventAdapter):
         elif event_type == "IntakeJobStateChanged":
             # Update task projection with job state
             job_payload = {
-                "tenant_id": tenant_id or "default",
+                "tenant_id": tenant_id,
                 "collection_id": collection_id,
                 "upload_id": payload.get("upload_id", ""),
                 "intake_job_id": payload.get("intake_job_id"),
@@ -135,7 +150,7 @@ class IntakeEventAdapter(EventAdapter):
                     aggregate_version=30,
                     occurred_at=occurred_at,
                     payload={
-                        "tenant_id": tenant_id or "default",
+                        "tenant_id": tenant_id,
                         "collection_id": collection_id,
                         "upload_id": upload_id,
                         "intake_job_state": "processing",
@@ -179,7 +194,7 @@ class IntakeEventAdapter(EventAdapter):
                     aggregate_version=40,
                     occurred_at=occurred_at,
                     payload={
-                        "tenant_id": tenant_id or "default",
+                        "tenant_id": tenant_id,
                         "collection_id": collection_id,
                         "upload_id": upload_id,
                         "published_document_state": payload.get("state", "published"),

@@ -137,6 +137,10 @@ export interface TicketItem {
   ticket_id: string;
   collection_id: string;
   status: string;
+  title?: string | null;
+  filename?: string | null;
+  priority?: string | null;
+  assignee_user_id?: string | null;
   doc_id: string | null;
   source_file_id: string | null;
   created_at: string;
@@ -199,7 +203,7 @@ export interface ChunkView {
   content: string;
   vector_text?: string;
   section_path?: string[];
-  page_spans?: Array<{ page_from: number; page_to: number }>;
+  page_spans?: Record<string, unknown>[];
   chunk_type?: string;
   metadata?: Record<string, unknown>;
 }
@@ -245,6 +249,187 @@ export interface SourceFilePreviewView {
   preview_mime_type?: string | null;
   preview_url?: string | null;
   thumbnail_url?: string | null;
+}
+
+export interface WorkspaceTicketView {
+  ticket_id: string;
+  collection_id: string;
+  status: string;
+  tenant_id: string;
+  doc_id?: string | null;
+  source_file_id?: string | null;
+  parse_snapshot_id?: string | null;
+  upload_id?: string | null;
+  title?: string | null;
+  filename?: string | null;
+  priority?: string | null;
+  assignee_user_id?: string | null;
+  decision?: string | null;
+  decision_reason?: string | null;
+  decided_by?: string | null;
+  agent_decision?: string | null;
+  agent_risk_level?: string | null;
+  agent_finding_count: number;
+  agent_blocking_finding_count: number;
+  failure_code?: string | null;
+  failure_stage?: string | null;
+  next_action?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  projection_updated_at?: string | null;
+  is_stale: boolean;
+  source: "approval" | "projection" | "merged";
+}
+
+export interface WorkspaceDocumentView {
+  doc_id?: string | null;
+  tenant_id?: string | null;
+  collection_id?: string | null;
+  source_file_id?: string | null;
+  parse_snapshot_id?: string | null;
+  published_doc_id?: string | null;
+  upload_id?: string | null;
+  filename?: string | null;
+  mime_type?: string | null;
+  document_state?: string | null;
+  publish_state?: string | null;
+  active_index_version?: string | null;
+  chunk_count: number;
+  page_count: number;
+  parser_profile_id?: string | null;
+  parser_profile_name?: string | null;
+  projection_updated_at?: string | null;
+  is_stale: boolean;
+  degraded_reason?: string | null;
+  linkage_source:
+    | "document_projection"
+    | "ticket_projection"
+    | "task_projection"
+    | "missing";
+}
+
+export interface WorkspaceSourceFileView {
+  source_file_id: string;
+  upload_id?: string | null;
+  tenant_id?: string | null;
+  collection_id?: string | null;
+  filename?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  state?: string | null;
+  intake_job_id?: string | null;
+  scan_verdict?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface WorkspaceParseSnapshotView {
+  parse_snapshot_id: string;
+  source_file_id?: string | null;
+  tenant_id?: string | null;
+  collection_id?: string | null;
+  source_filename?: string | null;
+  source_suffix?: string | null;
+  parser_id?: string | null;
+  parser_backend?: string | null;
+  parser_profile_id?: string | null;
+  effective_policy?: string | null;
+  decision_reason?: string | null;
+  preview_text?: string | null;
+  warnings: string[];
+  created_at?: string | null;
+}
+
+export interface WorkspaceChunkEditView {
+  chunk_edit_id: string;
+  tenant_id: string;
+  collection_id: string;
+  source_file_id?: string | null;
+  parse_snapshot_id?: string | null;
+  base_evidence_id: string;
+  edit_scope: string;
+  operation: string;
+  content?: string | null;
+  vector_text?: string | null;
+  section_path?: string[] | null;
+  metadata_patch?: Record<string, unknown> | null;
+  citation_payload?: Record<string, unknown> | null;
+  source_block_ids?: string[] | null;
+  edit_reason?: string | null;
+  edited_by: string;
+  status: string;
+  downstream_revision_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface WorkspaceAgentReviewView {
+  ticket_id: string;
+  decision?: string | null;
+  source_file_id?: string | null;
+  parse_snapshot_id?: string | null;
+  findings: Array<{
+    finding_id: string;
+    severity: "critical" | "high" | "medium" | "low" | "info";
+    category: string;
+    problem_summary: string;
+    source_quote?: string | null;
+    evidence_id?: string | null;
+    doc_id?: string | null;
+    source_file_id?: string | null;
+    parse_snapshot_id?: string | null;
+    page_from?: number | null;
+    page_to?: number | null;
+    state: "open" | "resolved";
+    confidence?: number | null;
+    chunk_quote?: string | null;
+    why_wrong?: string | null;
+    suggested_fix?: string | null;
+    suggested_operation?: string | null;
+  }>;
+  matched_count: number;
+  unmatched_count: number;
+  source: "projection" | "approval" | "missing";
+}
+
+export interface WorkspaceCapabilitiesView {
+  can_view_source: boolean;
+  can_view_parsed_text: boolean;
+  can_search_in_document: boolean;
+  can_edit_drafts: boolean;
+  can_jump_to_chunk: boolean;
+  can_decide_ticket: boolean;
+  can_approve: boolean;
+  can_reject: boolean;
+  can_upload: boolean;
+}
+
+export interface WorkspaceProjectionFreshnessView {
+  ticket_projection_updated_at?: string | null;
+  ticket_is_stale: boolean;
+  document_projection_updated_at?: string | null;
+  document_is_stale: boolean;
+}
+
+export interface WorkspaceDetailView {
+  ticket_id: string;
+  ticket?: WorkspaceTicketView | null;
+  document: WorkspaceDocumentView;
+  source_file?: WorkspaceSourceFileView | null;
+  parse_snapshot?: WorkspaceParseSnapshotView | null;
+  chunks: {
+    items: ChunkView[];
+    total: number;
+  };
+  chunk_edits: {
+    items: WorkspaceChunkEditView[];
+    total: number;
+  };
+  agent_review: WorkspaceAgentReviewView;
+  capabilities: WorkspaceCapabilitiesView;
+  projection_freshness: WorkspaceProjectionFreshnessView;
+  degraded_parts: string[];
+  trace_id: string;
 }
 
 // ── Access / Retrieval ─────────────────────────────────────────────────

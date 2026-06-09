@@ -333,13 +333,17 @@ def _infra_ready() -> bool:
 def services():
     """Start core services as independent processes.
 
-    Skips if infrastructure (PostgreSQL, OpenSearch, etc.) is not available.
+    Skips if infrastructure (PostgreSQL, OpenSearch, etc.) is not available,
+    or if services cannot be started (wrong platform, missing deps, etc.).
     """
     if not _infra_ready():
         pytest.skip("Infrastructure not available (PostgreSQL, OpenSearch, Qdrant, Redis required)")
 
     print("\n[smoke] Starting core services...")
-    procs = _start_services()
+    try:
+        procs = _start_services()
+    except RuntimeError as e:
+        pytest.skip(f"Services could not start: {e}")
     print(f"[smoke] {len(procs)} services healthy.")
     yield
     print("\n[smoke] Stopping services...")

@@ -3,10 +3,13 @@ for projections stuck in terminal upload states due to missed events."""
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
+from reality_rag_persistence.database import get_session
 
 from ..deps import get_db, require_auth, CurrentUser
 from ..downstream_clients import IntakeClient
@@ -19,9 +22,35 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workbench/tasks")
 
-# Tasks stuck in these states for longer than this are auto-recovered on read.
-_STUCK_STATUSES = frozenset({"uploading", "uploaded", "ready"})
+# Tasks in these non-terminal states are eligible for read-time recovery if
+# their projection is stale. Terminal states are intentionally excluded.
+_STUCK_STATUSES = frozenset(
+    {
+        "uploading",
+        "uploaded",
+        "ready",
+        "parsing",
+        "reviewing",
+        "approved",
+        "publishing",
+        "indexing",
+    }
+)
 _AUTO_RECOVER_STALE_SECONDS = 30
+
+
+@dataclass(frozen=True)
+class _RecoveryTarget:
+    upload_id: str
+    tenant_id: str
+    user_id: str
+    collection_id: str
+    filename: str | None
+    mime_type: str | None
+    size_bytes: int | None
+    source_file_id: str
+    intake_job_id: str | None
+    version: int
 
 
 def _correct_status(item) -> str:
@@ -96,32 +125,63 @@ def _needs_recovery(proj) -> bool:
     """Check whether a task projection needs recovery (stale or missing data)."""
     if not proj.source_file_id:
         return False
+    if _correct_status(proj) not in _STUCK_STATUSES:
+        return False
     threshold = datetime.now(timezone.utc) - timedelta(seconds=_AUTO_RECOVER_STALE_SECONDS)
-    updated = proj.projection_updated_at
+    updated = proj.projection_updated_at.replace(tzinfo=timezone.utc) if proj.projection_updated_at else None
     if updated is not None and updated > threshold:
         return False
     return True
 
 
-async def _try_recover(db: Session, proj) -> bool:
+def _to_recovery_target(proj) -> _RecoveryTarget:
+    return _RecoveryTarget(
+        upload_id=proj.upload_id,
+        tenant_id=proj.tenant_id,
+        user_id=proj.user_id,
+        collection_id=proj.collection_id,
+        filename=proj.filename,
+        mime_type=proj.mime_type,
+        size_bytes=proj.size_bytes,
+        source_file_id=proj.source_file_id,
+        intake_job_id=proj.intake_job_id,
+        version=proj.version,
+    )
+
+
+def _mark_recovery_checked(target: _RecoveryTarget) -> None:
+    session = get_session()
+    try:
+        repo = TaskProjectionRepository(session)
+        proj = repo.get_by_upload_id(target.upload_id)
+        if proj is not None:
+            proj.projection_updated_at = datetime.now(timezone.utc)
+            session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+async def _try_recover(target: _RecoveryTarget) -> bool:
     """Query downstream services for fresh state and fix the projection."""
     intake_client = IntakeClient()
     now = datetime.now(timezone.utc)
 
-    source_file_state = proj.source_file_state
-    intake_job_id = proj.intake_job_id
-    intake_job_state = proj.intake_job_state
+    source_file_state = None
+    intake_job_id = target.intake_job_id
+    intake_job_state = None
 
     # Query document-service for source file state.
     try:
-        sf = await intake_client.get_source_file(proj.source_file_id)
+        sf = await intake_client.get_source_file(target.source_file_id)
         source_file_state = sf.get("state") or source_file_state
         if not intake_job_id:
             intake_job_id = sf.get("claimed_by") or sf.get("intake_job_id")
     except DownstreamError:
-        logger.debug("auto-recovery: source file fetch failed for %s", proj.upload_id)
-        proj.projection_updated_at = datetime.now(timezone.utc)
-        db.flush()
+        logger.debug("auto-recovery: source file fetch failed for %s", target.upload_id)
+        _mark_recovery_checked(target)
         return False
 
     # Query ingestion-worker for intake job state.
@@ -130,39 +190,47 @@ async def _try_recover(db: Session, proj) -> bool:
             job = await intake_client.get_intake_job(intake_job_id)
             intake_job_state = job.get("state") or intake_job_state
         except DownstreamError:
-            logger.debug("auto-recovery: intake job fetch failed for %s", proj.upload_id)
+            logger.debug("auto-recovery: intake job fetch failed for %s", target.upload_id)
 
     # Apply everything in one event.
-    projector = ProjectionProjector(db)
-    event = {
-        "event_id": f"autorec_{proj.upload_id}_{uuid.uuid4().hex[:8]}",
-        "event_type": "AUTO_RECOVERY",
-        "tenant_id": proj.tenant_id,
-        "collection_id": proj.collection_id,
-        "aggregate_type": "task",
-        "aggregate_id": proj.upload_id,
-        "aggregate_version": proj.version + 1,
-        "occurred_at": now,
-        "payload": {
-            "projection_id": proj.upload_id,
-            "tenant_id": proj.tenant_id,
-            "user_id": proj.user_id,
-            "collection_id": proj.collection_id,
-            "upload_id": proj.upload_id,
-            "filename": proj.filename,
-            "mime_type": proj.mime_type,
-            "size_bytes": proj.size_bytes,
-            "source_file_id": proj.source_file_id,
-            "intake_job_id": intake_job_id,
-            "source_file_state": source_file_state,
-            "intake_job_state": intake_job_state,
-        },
-        "trace_id": proj.upload_id,
-    }
-    result = projector.record_and_apply(event)
-    if result["applied"]:
-        logger.info("auto-recovery: fixed %s", proj.upload_id)
-    return result["applied"]
+    session = get_session()
+    try:
+        projector = ProjectionProjector(session)
+        event = {
+            "event_id": f"autorec_{target.upload_id}_{uuid.uuid4().hex[:8]}",
+            "event_type": "AUTO_RECOVERY",
+            "tenant_id": target.tenant_id,
+            "collection_id": target.collection_id,
+            "aggregate_type": "task",
+            "aggregate_id": target.upload_id,
+            "aggregate_version": target.version + 1,
+            "occurred_at": now,
+            "payload": {
+                "projection_id": target.upload_id,
+                "tenant_id": target.tenant_id,
+                "user_id": target.user_id,
+                "collection_id": target.collection_id,
+                "upload_id": target.upload_id,
+                "filename": target.filename,
+                "mime_type": target.mime_type,
+                "size_bytes": target.size_bytes,
+                "source_file_id": target.source_file_id,
+                "intake_job_id": intake_job_id,
+                "source_file_state": source_file_state,
+                "intake_job_state": intake_job_state,
+            },
+            "trace_id": target.upload_id,
+        }
+        result = projector.record_and_apply(event)
+        session.commit()
+        if result["applied"]:
+            logger.info("auto-recovery: fixed %s", target.upload_id)
+        return result["applied"]
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 @router.get("")
@@ -188,12 +256,14 @@ async def list_tasks(
         order_dir=sort_order,
     )
 
-    # Auto-recover stale projections (max 3 per call).
-    stale = [i for i in items if _needs_recovery(i)]
-    for proj in stale[:3]:
-        await _try_recover(db, proj)
+    stale_targets = [_to_recovery_target(i) for i in items if _needs_recovery(i)]
+    db.rollback()
 
-    if stale:
+    # Auto-recover stale projections (max 3 per call).
+    for target in stale_targets[:3]:
+        await _try_recover(target)
+
+    if stale_targets:
         items, total = repo.list(
             tenant_id=user.tenant_id,
             user_id=user.user_id,
@@ -219,8 +289,11 @@ async def get_task(
     if proj.tenant_id != user.tenant_id or proj.user_id != user.user_id:
         raise not_found("Task not found")
 
-    if _needs_recovery(proj):
-        await _try_recover(db, proj)
+    recovery_target = _to_recovery_target(proj) if _needs_recovery(proj) else None
+    db.rollback()
+
+    if recovery_target is not None:
+        await _try_recover(recovery_target)
         proj = repo.get_by_upload_id(upload_id)
 
     return _task_proj_to_dict(proj)
@@ -250,10 +323,14 @@ async def recover_task(
             "reason": f"Task status '{proj.overall_status}' does not need recovery",
         }
 
-    ok = await _try_recover(db, proj)
+    previous_status = proj.overall_status
+    recovery_target = _to_recovery_target(proj)
+    db.rollback()
+
+    ok = await _try_recover(recovery_target)
     updated = repo.get_by_upload_id(upload_id)
     return {
         "recovered": ok,
-        "previous_status": proj.overall_status,
-        "current_status": updated.overall_status if updated else proj.overall_status,
+        "previous_status": previous_status,
+        "current_status": updated.overall_status if updated else previous_status,
     }
