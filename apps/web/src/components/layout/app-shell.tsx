@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -199,7 +199,13 @@ function CollectionSelector() {
   );
 }
 
-function SidebarContent({ pathname }: { pathname: string }) {
+function SidebarContent({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string;
+  onNavigate?: () => void;
+}) {
   return (
     <>
       {/* Logo */}
@@ -218,7 +224,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
         {navItems.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
-            <Link key={item.href} href={item.href}>
+            <Link key={item.href} href={item.href} onClick={onNavigate}>
               <div
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm transition-all duration-200 cursor-pointer group",
@@ -260,17 +266,26 @@ function SidebarContent({ pathname }: { pathname: string }) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const pathname = usePathname();
   const isMobile = useIsMobile();
+  const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
 
-  useEffect(() => {
+  const closeSidebar = () => {
     if (isMobile) {
-      setSidebarOpen(false);
-    } else {
-      setSidebarOpen(true);
+      setMobileSidebarOpen(false);
     }
-  }, [isMobile]);
+  };
+
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setMobileSidebarOpen((open) => !open);
+      return;
+    }
+
+    setDesktopSidebarOpen((open) => !open);
+  };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
@@ -301,7 +316,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               animate="visible"
               exit="exit"
               className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
-              onClick={() => setSidebarOpen(false)}
+              onClick={closeSidebar}
             />
             <motion.aside
               variants={slideInFromLeft}
@@ -310,7 +325,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               exit="exit"
               className="fixed left-0 top-0 bottom-0 z-50 w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden shadow-xl"
             >
-              <SidebarContent pathname={pathname} />
+              <SidebarContent pathname={pathname} onNavigate={closeSidebar} />
             </motion.aside>
           </>
         )}
@@ -325,7 +340,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-xl hover:bg-accent transition-colors"
-              onClick={() => setSidebarOpen((o) => !o)}
+              onClick={toggleSidebar}
               aria-label={sidebarOpen ? "关闭侧边栏" : "打开侧边栏"}
             >
               <AnimatePresence mode="wait" initial={false}>

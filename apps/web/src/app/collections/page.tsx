@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Database, Plus, AlertCircle, FolderOpen, Check } from "lucide-react";
@@ -43,17 +43,10 @@ export default function CollectionsPage() {
 
   const [form, setForm] = useState({
     collection_id: "",
-    tenant_id: userTenantId,
     name: "",
     description: "",
     lifecycle_state: "active" as const,
   });
-
-  useEffect(() => {
-    if (me?.tenant_id) {
-      setForm((f) => ({ ...f, tenant_id: me.tenant_id }));
-    }
-  }, [me?.tenant_id]);
 
   const [gap, setGap] = useState<{ feature: string; endpoint: string } | null>(
     null
@@ -74,7 +67,6 @@ export default function CollectionsPage() {
       queryClient.invalidateQueries({ queryKey: ["workbench-collections"] });
       setForm({
         collection_id: "",
-        tenant_id: me?.tenant_id ?? "",
         name: "",
         description: "",
         lifecycle_state: "active",
@@ -272,9 +264,14 @@ export default function CollectionsPage() {
                 createCollection.isPending ||
                 !form.collection_id ||
                 !form.name ||
-                !form.tenant_id
+                !userTenantId
               }
-              onClick={() => createCollection.mutate(form)}
+              onClick={() =>
+                createCollection.mutate({
+                  ...form,
+                  tenant_id: userTenantId,
+                })
+              }
             >
               {createCollection.isPending ? "创建中..." : "创建"}
             </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Braces, FileText, Info, Layers3, PencilLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +37,33 @@ export function ChunkEditModal({
   onCancel,
   isSubmitting = false,
 }: ChunkEditModalProps) {
+  if (!chunk) return null;
+
+  return (
+    <ChunkEditModalBody
+      key={`${mode}:${chunk.evidence_id}`}
+      open={open}
+      mode={mode}
+      chunk={chunk}
+      onSaveDraft={onSaveDraft}
+      onSubmit={onSubmit}
+      onSave={onSave}
+      onCancel={onCancel}
+      isSubmitting={isSubmitting}
+    />
+  );
+}
+
+function ChunkEditModalBody({
+  open,
+  mode,
+  chunk,
+  onSaveDraft,
+  onSubmit,
+  onSave,
+  onCancel,
+  isSubmitting = false,
+}: ChunkEditModalProps & { chunk: ChunkView }) {
   const [content, setContent] = useState(chunk?.content || "");
   const [sectionPath, setSectionPath] = useState(
     JSON.stringify(chunk?.section_path || [], null, 2)
@@ -45,18 +72,6 @@ export function ChunkEditModal({
     JSON.stringify(chunk?.metadata || {}, null, 2)
   );
   const [editReason, setEditReason] = useState("");
-
-  // Reset form when chunk changes
-  useEffect(() => {
-    if (chunk) {
-      setContent(chunk.content || "");
-      setSectionPath(JSON.stringify(chunk.section_path || [], null, 2));
-      setMetadata(JSON.stringify(chunk.metadata || {}, null, 2));
-      setEditReason("");
-    }
-  }, [chunk]);
-
-  if (!chunk) return null;
 
   const titleColor =
     mode === "pre-publish" ? "text-orange-600" : "text-blue-600";

@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  PDFRenderTask,
+} from "pdfjs-dist/webpack.mjs";
 import {
   ChevronLeft,
   ChevronRight,
@@ -25,6 +30,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type PreviewMode = "pdf" | "image" | "html" | "text";
+
+interface DocumentViewerProps {
+  sourceFileId?: string | null;
+  filename?: string | null;
+  previewText?: string | null;
+  parserId?: string | null;
+  parserBackend?: string | null;
+  warnings?: string[];
+  chunks?: ChunkView[];
+  searchText?: string;
+  onSearchComplete?: (found: boolean) => void;
+}
+
+interface DocumentViewerContentProps extends DocumentViewerProps {
+  anchoredPages: number[];
+  effectiveWarnings: string[];
+  extension: string;
+}
 
 function extOf(name?: string | null) {
   const raw = String(name || "").trim().toLowerCase();
@@ -89,20 +112,20 @@ function PdfCanvasPreview({
   title: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const documentRef = useRef<any>(null);
-  const renderTaskRef = useRef<any>(null);
+  const documentRef = useRef<PDFDocumentProxy | null>(null);
+  const renderTaskRef = useRef<PDFRenderTask | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [documentEpoch, setDocumentEpoch] = useState(0);
 
   useEffect(() => {
     let active = true;
-    let loadingTask: any = null;
-
-    setLoading(true);
-    setError("");
+    let loadingTask: PDFDocumentLoadingTask | null = null;
 
     void (async () => {
+      setLoading(true);
+      setError("");
+
       try {
         const pdfjs = await import("pdfjs-dist/webpack.mjs");
         loadingTask = pdfjs.getDocument({ url, withCredentials: true });
@@ -111,6 +134,7 @@ function PdfCanvasPreview({
           await pdfDocument.destroy();
           return;
         }
+
         documentRef.current = pdfDocument;
         setDocumentEpoch((value) => value + 1);
         setLoading(false);
@@ -123,10 +147,10 @@ function PdfCanvasPreview({
 
     return () => {
       active = false;
-      renderTaskRef.current?.cancel?.();
+      renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
-      void loadingTask?.destroy?.();
-      void documentRef.current?.destroy?.();
+      void loadingTask?.destroy();
+      void documentRef.current?.destroy();
       documentRef.current = null;
     };
   }, [url]);
@@ -145,6 +169,7 @@ function PdfCanvasPreview({
         const pdfPage = await pdfDocument.getPage(safePage);
         const viewport = pdfPage.getViewport({ scale: zoom / 100 });
         const context = canvas.getContext("2d");
+
         if (!context) {
           setError("Canvas 2D context unavailable");
           return;
@@ -155,7 +180,7 @@ function PdfCanvasPreview({
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
 
-        renderTaskRef.current?.cancel?.();
+        renderTaskRef.current?.cancel();
         const renderTask = pdfPage.render({ canvasContext: context, viewport });
         renderTaskRef.current = renderTask;
         await renderTask.promise;
@@ -167,10 +192,10 @@ function PdfCanvasPreview({
 
     return () => {
       active = false;
-      renderTaskRef.current?.cancel?.();
+      renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
     };
-  }, [documentEpoch, page, zoom, url]);
+  }, [documentEpoch, page, zoom]);
 
   if (loading) {
     return <Skeleton className="h-[780px] rounded-lg" />;
@@ -198,41 +223,50 @@ function PdfCanvasPreview({
 }
 
 export function DocumentViewer({
+  warnings = [],
+  chunks = [],
+  ...props
+}: DocumentViewerProps) {
+  const extension = useMemo(() => extOf(props.filename), [props.filename]);
+  const anchoredPages = useMemo(() => collectAnchoredPages(chunks), [chunks]);
+  const effectiveWarnings = useMemo(
+    () => warnings.filter((item) => String(item || "").trim().length > 0),
+    [warnings]
+  );
+
+  return (
+    <DocumentViewerContent
+      key={`${props.sourceFileId ?? "none"}:${anchoredPages.join(",")}`}
+      {...props}
+      chunks={chunks}
+      warnings={warnings}
+      anchoredPages={anchoredPages}
+      effectiveWarnings={effectiveWarnings}
+      extension={extension}
+    />
+  );
+}
+
+function DocumentViewerContent({
   sourceFileId,
   filename,
   previewText,
   parserId,
   parserBackend,
-  warnings = [],
   chunks = [],
   searchText,
   onSearchComplete,
-}: {
-  sourceFileId?: string | null;
-  filename?: string | null;
-  previewText?: string | null;
-  parserId?: string | null;
-  parserBackend?: string | null;
-  warnings?: string[];
-  chunks?: ChunkView[];
-  searchText?: string;
-  onSearchComplete?: (found: boolean) => void;
-}) {
-  const extension = useMemo(() => extOf(filename), [filename]);
-  const anchoredPages = useMemo(() => collectAnchoredPages(chunks), [chunks]);
-  const [currentPage, setCurrentPage] = useState(anchoredPages[0] || 1);
-  const [pageInput, setPageInput] = useState(String(anchoredPages[0] || 1));
+  anchoredPages,
+  effectiveWarnings,
+  extension,
+}: DocumentViewerContentProps) {
+  const initialPage = anchoredPages[0] || 1;
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageInput, setPageInput] = useState(String(initialPage));
   const [zoom, setZoom] = useState(100);
-  const [sourceText, setSourceText] = useState("");
-  const [searchHighlight, setSearchHighlight] = useState("");
 
-  const pageCount = anchoredPages.length > 0 ? anchoredPages[anchoredPages.length - 1] : null;
-
-  useEffect(() => {
-    const firstPage = anchoredPages[0] || 1;
-    setCurrentPage(firstPage);
-    setPageInput(String(firstPage));
-  }, [sourceFileId, anchoredPages]);
+  const pageCount =
+    anchoredPages.length > 0 ? anchoredPages[anchoredPages.length - 1] : null;
 
   const {
     data: sourcePreview,
@@ -245,63 +279,59 @@ export function DocumentViewer({
     retry: 0,
   });
 
+  const mode = useMemo(
+    () =>
+      inferMode(
+        extension,
+        sourcePreview?.preview_mime_type || ""
+      ),
+    [extension, sourcePreview?.preview_mime_type]
+  );
+
   const {
     data: sourceBlob,
     error: sourceBlobError,
     isLoading: sourceBlobLoading,
   } = useQuery({
-    queryKey: ["document-viewer-source-preview-content", sourceFileId],
+    queryKey: ["document-viewer-source-preview-content", sourceFileId, mode],
     queryFn: () => workbenchApi.getSourceFilePreviewBlob(sourceFileId as string),
     enabled: Boolean(
       sourceFileId &&
         sourcePreview?.preview_available &&
-        (sourcePreview?.preview_kind === "text" ||
-          sourcePreview?.preview_mime_type?.startsWith("text/"))
+        mode === "text"
     ),
     retry: 0,
   });
 
-  const sourceError = sourcePreviewError || sourceBlobError;
-  const isLoading = sourcePreviewLoading || sourceBlobLoading;
+  const {
+    data: sourceText = "",
+    error: sourceTextError,
+    isLoading: sourceTextLoading,
+  } = useQuery({
+    queryKey: ["document-viewer-source-preview-text", sourceFileId],
+    queryFn: () => sourceBlob!.blob.text(),
+    enabled: mode === "text" && Boolean(sourceBlob?.blob),
+    retry: 0,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 
-  const mode = useMemo(
-    () => inferMode(extension, sourcePreview?.preview_mime_type || sourceBlob?.contentType || ""),
-    [extension, sourceBlob?.contentType, sourcePreview?.preview_mime_type]
-  );
+  const sourceError = sourcePreviewError || sourceBlobError || sourceTextError;
+  const isLoading =
+    sourcePreviewLoading || sourceBlobLoading || sourceTextLoading;
 
   const directPreviewUrl = useMemo(() => {
     if (!sourceFileId || !sourcePreview?.preview_available) return "";
     return workbenchApi.getSourceFilePreviewContentUrl(sourceFileId);
   }, [sourceFileId, sourcePreview?.preview_available]);
 
-  const effectiveWarnings = useMemo(
-    () => warnings.filter((item) => String(item || "").trim().length > 0),
-    [warnings]
-  );
+  const searchHighlight = searchText?.trim() ?? "";
 
   useEffect(() => {
-    if (!sourceBlob?.blob || mode !== "text") {
-      setSourceText("");
+    if (!searchHighlight) {
+      onSearchComplete?.(false);
       return;
     }
 
-    let active = true;
-    void sourceBlob.blob.text().then((text) => {
-      if (active) setSourceText(text);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [sourceBlob?.blob, mode]);
-
-  useEffect(() => {
-    if (!searchText?.trim()) {
-      setSearchHighlight("");
-      return;
-    }
-
-    setSearchHighlight(searchText);
     if (!previewText?.trim()) {
       onSearchComplete?.(false);
       return;
@@ -314,7 +344,7 @@ export function DocumentViewer({
     }
 
     const text = container.textContent || "";
-    const index = text.toLowerCase().indexOf(searchText.toLowerCase());
+    const index = text.toLowerCase().indexOf(searchHighlight.toLowerCase());
     if (index < 0) {
       onSearchComplete?.(false);
       return;
@@ -336,20 +366,27 @@ export function DocumentViewer({
       currentIndex += nodeText.length;
     }
 
-    if (foundNode) {
-      const range = document.createRange();
-      range.setStart(foundNode, foundOffset);
-      range.setEnd(foundNode, Math.min(foundOffset + searchText.length, foundNode.length));
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      foundNode.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
-      onSearchComplete?.(true);
+    if (!foundNode) {
+      onSearchComplete?.(false);
       return;
     }
 
-    onSearchComplete?.(false);
-  }, [searchText, previewText, onSearchComplete]);
+    const range = document.createRange();
+    range.setStart(foundNode, foundOffset);
+    range.setEnd(
+      foundNode,
+      Math.min(foundOffset + searchHighlight.length, foundNode.length)
+    );
+
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    foundNode.parentElement?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    onSearchComplete?.(true);
+  }, [onSearchComplete, previewText, searchHighlight]);
 
   const copyParsedText = async () => {
     if (!previewText?.trim()) return;
@@ -374,15 +411,29 @@ export function DocumentViewer({
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate text-sm font-semibold">{filename || "Source preview"}</p>
-              <Badge variant="outline">{extension ? extension.toUpperCase() : "FILE"}</Badge>
-              {parserId ? <Badge variant="secondary">Parser: {parserId}</Badge> : null}
-              {parserBackend ? <Badge variant="outline">Backend: {parserBackend}</Badge> : null}
+              <p className="truncate text-sm font-semibold">
+                {filename || "Source preview"}
+              </p>
+              <Badge variant="outline">
+                {extension ? extension.toUpperCase() : "FILE"}
+              </Badge>
+              {parserId ? (
+                <Badge variant="secondary">Parser: {parserId}</Badge>
+              ) : null}
+              {parserBackend ? (
+                <Badge variant="outline">Backend: {parserBackend}</Badge>
+              ) : null}
             </div>
             <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <span>{pageCount ? `Anchored pages: ${pageCount}` : "No page anchors"}</span>
-              <span>{chunks.length} parsed chunk{chunks.length === 1 ? "" : "s"}</span>
-              {effectiveWarnings.length > 0 ? <span>{effectiveWarnings.length} warning(s)</span> : null}
+              <span>
+                {pageCount ? `Anchored pages: ${pageCount}` : "No page anchors"}
+              </span>
+              <span>
+                {chunks.length} parsed chunk{chunks.length === 1 ? "" : "s"}
+              </span>
+              {effectiveWarnings.length > 0 ? (
+                <span>{effectiveWarnings.length} warning(s)</span>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -398,7 +449,11 @@ export function DocumentViewer({
               Zoom in
             </Button>
             {previewText ? (
-              <Button variant="outline" size="sm" onClick={() => void copyParsedText()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void copyParsedText()}
+              >
                 <Copy className="mr-1 h-3.5 w-3.5" />
                 Copy text
               </Button>
@@ -437,7 +492,9 @@ export function DocumentViewer({
               }}
               className="h-8 w-20 bg-background"
             />
-            <span className="text-xs text-muted-foreground">/ {pageCount || "-"}</span>
+            <span className="text-xs text-muted-foreground">
+              / {pageCount || "-"}
+            </span>
           </div>
           <Button
             variant="outline"
@@ -478,7 +535,9 @@ export function DocumentViewer({
             <Alert variant="destructive">
               <FileText className="h-4 w-4" />
               <AlertDescription>
-                {isApiError(sourceError) ? sourceError.message : getErrorMessage(sourceError)}
+                {isApiError(sourceError)
+                  ? sourceError.message
+                  : getErrorMessage(sourceError)}
               </AlertDescription>
             </Alert>
           ) : !sourceFileId ? (

@@ -319,7 +319,7 @@ JAVA_SERVICES: list[dict[str, Any]] = [  # each must include "language": "java"
         "port": 18082,
         "cwd": ROOT / "services" / "retrieval",
         "jar_pattern": "target/retrieval-*.jar",
-        "jvm_args": ["-Dserver.port=18082"],
+        "jvm_args": ["-Xmx512m", "-Dserver.port=18082"],
         "build_cmd": [MAVEN_CMD or "mvn", "package", "-DskipTests"],
         "depends_on": [],
         "health_path": "/health",
@@ -332,6 +332,7 @@ JAVA_SERVICES: list[dict[str, Any]] = [  # each must include "language": "java"
         "cwd": ROOT / "services" / "access",
         "jar_pattern": "target/access-*.jar",
         "jvm_args": [
+            "-Xmx512m",
             "-Dserver.port=18081",
             "-Daccess.retrieval.base-url=http://127.0.0.1:18082",
         ],
@@ -384,6 +385,21 @@ def _ensure_dirs() -> None:
 
 def _log_path(name: str, stream: str) -> Path:
     return LOG_DIR / f"{name}.{stream}.log"
+
+
+def _supervisor_log_path() -> Path:
+    return LOG_DIR / "supervisor.log"
+
+
+def _log_supervisor(msg: str) -> None:
+    """Write a line to the supervisor log file (append)."""
+    try:
+        path = _supervisor_log_path()
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {msg}\n")
+    except Exception:
+        pass
 
 
 def _pid_path(name: str) -> Path:
@@ -700,12 +716,17 @@ def _start_service(svc: dict[str, Any], reload: bool = False, job: _WinJobObject
     _remove_pid(name)
 
     # Kill any process on port (last resort)
-    if _is_port_open(port):
-        print(_color("yellow", _tag(name)), f"Port {port} in use, attempting cleanup...")
-        time.sleep(1)
+    for attempt in range(3):
         if _is_port_open(port):
-            print(_color("red", _tag(name)), f"Port {port} still in use, cannot start")
-            return None
+            print(_color("yellow", _tag(name)), f"Port {port} in use (attempt {attempt + 1}/3), attempting cleanup...")
+            _kill_process_on_port(port)
+            time.sleep(2)
+        else:
+            break
+    if _is_port_open(port):
+        print(_color("red", _tag(name)), f"Port {port} still in use after 3 attempts, cannot start")
+        _log_supervisor(f"[{name}] Port {port} still in use, giving up")
+        return None
 
     # Rotate logs
     out_log = _log_path(name, "out")
@@ -857,6 +878,12 @@ class Supervisor:
             self.restart_counts[name] = 0
             return True
         print(_color("red", _tag(name)), f"Health check failed: {msg}")
+        # Kill the unhealthy process so it doesn't become an orphan
+        _kill_process(handle.proc.pid)
+        handle.out_f.close()
+        handle.err_f.close()
+        self.procs[name] = None
+        _remove_pid(name)
         out_log = _log_path(name, "out")
         err_log = _log_path(name, "err")
         for label, path in [("stdout", out_log), ("stderr", err_log)]:
@@ -872,12 +899,25 @@ class Supervisor:
         print(_color("green", "  All services started. Supervisor running."))
         print(_color("green", "  Press Ctrl+C to stop gracefully."))
         print(_color("green", "=" * 60))
+        _log_supervisor("Supervisor started")
         try:
             while not self.shutdown_event.is_set():
-                self._check_services()
+                try:
+                    self._check_services()
+                except Exception as e:
+                    import traceback
+                    tb = traceback.format_exc()
+                    _log_supervisor(f"Supervisor loop error: {e}\n{tb}")
+                    print(_color("red", "[supervisor]"), f"Unexpected error in check loop: {e}")
                 time.sleep(CHECK_INTERVAL)
         except KeyboardInterrupt:
+            _log_supervisor("Supervisor received Ctrl+C")
             pass
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            _log_supervisor(f"Supervisor fatal error: {e}\n{tb}")
+            print(_color("red", "[supervisor]"), f"Fatal error: {e}")
         finally:
             self.shutdown()
 
@@ -888,28 +928,45 @@ class Supervisor:
                 return
             handle = self.procs.get(name)
             if handle is None:
-                # Might have been started by a previous layer but marked None (already running)
                 pid = _read_pid(name)
                 if pid is None or not _is_process_alive(pid):
                     # Process died without us knowing
                     if now < self.backoff_until.get(name, 0):
                         continue
                     if self.restart_counts[name] >= RESTART_MAX_RETRIES:
-                        print(_color("red", _tag(name)), f"Exceeded max restarts ({RESTART_MAX_RETRIES}), giving up.")
+                        msg = f"Exceeded max restarts ({RESTART_MAX_RETRIES}), giving up."
+                        print(_color("red", _tag(name)), msg)
+                        _log_supervisor(f"[{name}] {msg}")
                         continue
                     self.restart_counts[name] += 1
                     backoff = RESTART_BACKOFF_BASE * (2 ** (self.restart_counts[name] - 1))
                     print(_color("yellow", _tag(name)), f"Process missing, restarting (attempt {self.restart_counts[name]}, backoff {backoff:.0f}s)...")
+                    _log_supervisor(f"[{name}] Process missing, restart attempt {self.restart_counts[name]}")
                     self.backoff_until[name] = now + backoff
                     ok = self._start_and_health(svc)
                     if not ok:
                         print(_color("red", _tag(name)), "Restart failed")
+                        _log_supervisor(f"[{name}] Restart failed")
+                else:
+                    # Orphan: handle is None but PID alive — verify health
+                    ok, msg = _health_check(svc["port"], svc["health_path"], timeout=5.0)
+                    if not ok:
+                        print(_color("yellow", _tag(name)), f"Orphan process (pid {pid}) unhealthy, killing and restarting...")
+                        _log_supervisor(f"[{name}] Orphan pid {pid} unhealthy: {msg}")
+                        _kill_process(pid)
+                        _remove_pid(name)
+                        if self.restart_counts[name] < RESTART_MAX_RETRIES:
+                            self.restart_counts[name] += 1
+                            backoff = RESTART_BACKOFF_BASE * (2 ** (self.restart_counts[name] - 1))
+                            self.backoff_until[name] = now + backoff
+                            ok = self._start_and_health(svc)
                 continue
 
             # Check if process exited
             ret = handle.proc.poll()
             if ret is not None:
                 print(_color("red", _tag(name)), f"Exited with code {ret}")
+                _log_supervisor(f"[{name}] Exited with code {ret}")
                 handle.out_f.close()
                 handle.err_f.close()
                 self.procs[name] = None
@@ -917,21 +974,26 @@ class Supervisor:
                 if now < self.backoff_until.get(name, 0):
                     continue
                 if self.restart_counts[name] >= RESTART_MAX_RETRIES:
-                    print(_color("red", _tag(name)), f"Exceeded max restarts ({RESTART_MAX_RETRIES}), giving up.")
+                    msg = f"Exceeded max restarts ({RESTART_MAX_RETRIES}), giving up."
+                    print(_color("red", _tag(name)), msg)
+                    _log_supervisor(f"[{name}] {msg}")
                     continue
                 self.restart_counts[name] += 1
                 backoff = RESTART_BACKOFF_BASE * (2 ** (self.restart_counts[name] - 1))
                 print(_color("yellow", _tag(name)), f"Restarting in {backoff:.0f}s (attempt {self.restart_counts[name]})...")
+                _log_supervisor(f"[{name}] Restarting (attempt {self.restart_counts[name]})")
                 self.backoff_until[name] = now + backoff
                 ok = self._start_and_health(svc)
                 if not ok:
                     print(_color("red", _tag(name)), "Restart failed")
+                    _log_supervisor(f"[{name}] Restart failed")
 
     def shutdown(self) -> None:
         if self.shutdown_event.is_set():
             return
         self.shutdown_event.set()
         print(_color("yellow", "\nShutting down all services..."))
+        _log_supervisor("Supervisor shutting down")
         # Close file handles first
         for handle in self.procs.values():
             if handle is not None:

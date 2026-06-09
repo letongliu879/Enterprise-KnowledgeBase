@@ -18,8 +18,44 @@ const WORKBENCH_BASE =
   process.env.NEXT_PUBLIC_WORKBENCH_API_BASE_URL ||
   process.env.NEXT_PUBLIC_WORKBENCH_API_URL ||
   "/api/workbench";
-const REQUEST_TIMEOUT_MS = 15000;
+const DEFAULT_REQUEST_TIMEOUT_MS = Number(
+  process.env.NEXT_PUBLIC_WORKBENCH_REQUEST_TIMEOUT_MS || "15000"
+);
+const UPLOAD_REQUEST_TIMEOUT_MS = Number(
+  process.env.NEXT_PUBLIC_WORKBENCH_UPLOAD_TIMEOUT_MS || "120000"
+);
 const WORKBENCH_AUTH_COOKIE = "ekb_workbench_token";
+
+function buildTimeoutError(timeoutMs: number) {
+  return new ApiClientError(
+    "REQUEST_TIMEOUT",
+    `Request timed out after ${timeoutMs / 1000}s`,
+    408
+  );
+}
+
+async function fetchWithTimeout(
+  input: URL | string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw buildTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function syncWorkbenchAuthCookie(token?: string) {
   if (typeof document === "undefined") return;
@@ -42,53 +78,40 @@ function getToken(): string | undefined {
   return token;
 }
 
-function getApiKey(): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  const storeKey = useAppStore.getState().demoApiKey;
-  if (storeKey) return storeKey;
-  return process.env.NEXT_PUBLIC_DEMO_API_KEY || undefined;
-}
-
 async function request<T>(
   base: string,
   path: string,
-  options: RequestInit & { query?: Record<string, string | undefined> } = {}
+  options: RequestInit & {
+    query?: Record<string, string | undefined>;
+    timeoutMs?: number;
+  } = {}
 ): Promise<T> {
+  const { query, timeoutMs, ...requestInit } = options;
   const url = resolveUrl(base, path);
-  if (options.query) {
-    Object.entries(options.query).forEach(([k, v]) => {
+  if (query) {
+    Object.entries(query).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
     });
   }
 
-  const headers = new Headers(options.headers);
+  const headers = new Headers(requestInit.headers);
   headers.set("Content-Type", "application/json");
 
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const res = await fetch(url.toString(), {
-    ...options,
-    headers,
-    signal: controller.signal,
-  }).catch((error: unknown) => {
-    clearTimeout(timeout);
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiClientError(
-        "REQUEST_TIMEOUT",
-        `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
-        408
-      );
-    }
-    throw error;
-  });
-  clearTimeout(timeout);
+  const res = await fetchWithTimeout(
+    url.toString(),
+    {
+      ...requestInit,
+      headers,
+    },
+    timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  );
 
   if (res.status === 501) {
     throw new BackendGapError(
-      `${options.method || "GET"} ${path}`,
+      `${requestInit.method || "GET"} ${path}`,
       `${base}${path}`,
       "Backend API returns 501 — not implemented"
     );
@@ -190,6 +213,7 @@ export const workbenchApi = {
     request<Record<string, unknown>>(WORKBENCH_BASE, "/workbench/uploads", {
       method: "POST",
       body: JSON.stringify(payload),
+      timeoutMs: UPLOAD_REQUEST_TIMEOUT_MS,
     }),
   uploadFileContent: async (
     upload_id: string,
@@ -206,25 +230,15 @@ export const workbenchApi = {
     const token = getToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const res = await fetch(url.toString(), {
-      method: "POST",
-      body: formData,
-      headers,
-      signal: controller.signal,
-    }).catch((error: unknown) => {
-      clearTimeout(timeout);
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiClientError(
-          "REQUEST_TIMEOUT",
-          `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
-          408
-        );
-      }
-      throw error;
-    });
-    clearTimeout(timeout);
+    const res = await fetchWithTimeout(
+      url.toString(),
+      {
+        method: "POST",
+        body: formData,
+        headers,
+      },
+      UPLOAD_REQUEST_TIMEOUT_MS
+    );
 
     if (res.status === 501) {
       throw new BackendGapError(
@@ -374,23 +388,11 @@ export const workbenchApi = {
     const token = getToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const res = await fetch(url.toString(), {
-      headers,
-      signal: controller.signal,
-    }).catch((error: unknown) => {
-      clearTimeout(timeout);
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiClientError(
-          "REQUEST_TIMEOUT",
-          `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
-          408
-        );
-      }
-      throw error;
-    });
-    clearTimeout(timeout);
+    const res = await fetchWithTimeout(
+      url.toString(),
+      { headers },
+      DEFAULT_REQUEST_TIMEOUT_MS
+    );
 
     if (!res.ok) {
       let body: { code?: string; message?: string; detail?: string } = {};
@@ -419,23 +421,11 @@ export const workbenchApi = {
     const token = getToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const res = await fetch(url.toString(), {
-      headers,
-      signal: controller.signal,
-    }).catch((error: unknown) => {
-      clearTimeout(timeout);
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiClientError(
-          "REQUEST_TIMEOUT",
-          `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`,
-          408
-        );
-      }
-      throw error;
-    });
-    clearTimeout(timeout);
+    const res = await fetchWithTimeout(
+      url.toString(),
+      { headers },
+      DEFAULT_REQUEST_TIMEOUT_MS
+    );
 
     if (!res.ok) {
       let body: { code?: string; message?: string; detail?: string } = {};

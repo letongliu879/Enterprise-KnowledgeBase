@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,7 +15,6 @@ import {
   Clock,
   Loader2,
   XCircle,
-  FileCheck,
   Trash2,
   RotateCcw,
   Database,
@@ -223,32 +222,41 @@ export default function UploadPage() {
     filesRef.current = files;
   }, [files]);
 
-  // Poll active file statuses (only when files are in progress).
-  const hasActiveFiles = files.some((f) =>
-    ["queued", "uploading", "ready", "uploaded", "parsing", "reviewing", "approved", "publishing", "indexing"].includes(f.status)
-  );
-
   const { data: tasks } = useQuery({
     queryKey: ["tasks"],
     queryFn: () => workbenchApi.listTasks({ sort_by: "created_at", sort_order: "desc" }),
-    refetchInterval: hasActiveFiles ? 5000 : 30000,
+    refetchInterval: files.some((file) =>
+      ["queued", "uploading", "ready", "uploaded", "parsing", "reviewing", "approved", "publishing", "indexing"].includes(file.status)
+    )
+      ? 5000
+      : 30000,
   });
 
-  useEffect(() => {
-    if (!tasks?.items?.length) return;
-    const taskMap = new Map(tasks.items.map((t) => [t.upload_id, t]));
-    setFiles((prev) =>
-      prev.map((f) => {
-        if (!f.uploadId || f.status === "failed" || f.status === "rejected")
-          return f;
-        const task = taskMap.get(f.uploadId);
-        if (!task) return f;
-        const statusChanged = task.status !== f.status;
-        if (!statusChanged) return f;
-        return { ...f, status: task.status };
-      })
-    );
-  }, [tasks]);
+  const taskMap = useMemo(
+    () => new Map((tasks?.items ?? []).map((task) => [String(task.upload_id), task])),
+    [tasks?.items]
+  );
+
+  const displayFiles = useMemo(
+    () =>
+      files.map((file) => {
+        if (
+          !file.uploadId ||
+          file.status === "failed" ||
+          file.status === "rejected"
+        ) {
+          return file;
+        }
+
+        const task = taskMap.get(file.uploadId);
+        if (!task || task.status === file.status) {
+          return file;
+        }
+
+        return { ...file, status: task.status as FileStatus };
+      }),
+    [files, taskMap]
+  );
 
   // Recent tasks with infinite scroll.
   const {
@@ -352,15 +360,15 @@ export default function UploadPage() {
     },
   });
 
-  const startUpload = (item: FileItem) => {
+  const startUpload = useCallback((item: FileItem) => {
     activeUploadsRef.current += 1;
     setFiles((prev) =>
       prev.map((f) => (f.id === item.id ? { ...f, status: "uploading" } : f))
     );
     createUpload.mutate(item);
-  };
+  }, [createUpload]);
 
-  const processUploadQueue = () => {
+  const processUploadQueue = useCallback(() => {
     const activeCount = activeUploadsRef.current;
     if (activeCount >= MAX_CONCURRENT_UPLOADS) return;
 
@@ -371,14 +379,14 @@ export default function UploadPage() {
       const item = filesRef.current.find((f) => f.id === id);
       if (item) startUpload(item);
     });
-  };
+  }, [startUpload]);
 
-  const enqueueUploads = (items: FileItem[]) => {
+  const enqueueUploads = useCallback((items: FileItem[]) => {
     filesRef.current = [...filesRef.current, ...items];
     setFiles((prev) => [...prev, ...items]);
     items.forEach((item) => uploadQueueRef.current.push(item.id));
     processUploadQueue();
-  };
+  }, [processUploadQueue]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -399,7 +407,7 @@ export default function UploadPage() {
       }));
       enqueueUploads(newItems);
     },
-    [currentCollectionId, accessScope]
+    [currentCollectionId, accessScope, enqueueUploads]
   );
 
   const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -442,17 +450,17 @@ export default function UploadPage() {
   };
 
   const stats = {
-    total: files.length,
-    active: files.filter((f) =>
+    total: displayFiles.length,
+    active: displayFiles.filter((f) =>
       ["uploading", "parsing", "reviewing", "approved", "published"].includes(
         f.status
       )
     ).length,
-    approved: files.filter(
+    approved: displayFiles.filter(
       (f) => f.status === "approved" || f.status === "published"
     ).length,
-    reviewing: files.filter((f) => f.status === "reviewing").length,
-    failed: files.filter(
+    reviewing: displayFiles.filter((f) => f.status === "reviewing").length,
+    failed: displayFiles.filter(
       (f) => f.status === "failed" || f.status === "rejected"
     ).length,
   };
@@ -575,7 +583,7 @@ export default function UploadPage() {
 
       {/* Batch Stats — Dashboard Metrics */}
       <AnimatePresence>
-        {files.length > 0 && (
+        {displayFiles.length > 0 && (
           <motion.div
             variants={staggerItem}
             initial={{ opacity: 0, y: 20 }}
@@ -644,7 +652,7 @@ export default function UploadPage() {
 
       {/* File List */}
       <AnimatePresence>
-        {files.length > 0 && (
+        {displayFiles.length > 0 && (
           <motion.div
             variants={staggerItem}
             initial={{ opacity: 0 }}
@@ -652,11 +660,11 @@ export default function UploadPage() {
             className="space-y-3"
           >
             <h3 className="text-sm font-medium text-muted-foreground/80">
-              当前上传 ({files.length})
+              当前上传 ({displayFiles.length})
             </h3>
             <div className="space-y-2">
               <AnimatePresence>
-                {files.map((item, index) => {
+                {displayFiles.map((item, index) => {
                   const config = getStatusConfig(item.status);
                   const fileType = getFileTypeConfig(item.file);
                   const StatusIcon = config.icon;
