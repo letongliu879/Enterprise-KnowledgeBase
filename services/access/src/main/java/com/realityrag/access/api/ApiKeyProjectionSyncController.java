@@ -103,40 +103,28 @@ public class ApiKeyProjectionSyncController {
     }
 
     private void mergeIdempotency(String idempotencyKey) {
-        jdbcTemplate.update(
-            """
-                INSERT INTO api_key_projection_idempotency (idempotency_key, processed_at)
-                VALUES (?, ?)
-                ON CONFLICT (idempotency_key) DO UPDATE SET processed_at = EXCLUDED.processed_at
-                """,
-            idempotencyKey, ts(Instant.now())
+        int updated = jdbcTemplate.update(
+            "UPDATE api_key_projection_idempotency SET processed_at = ? WHERE idempotency_key = ?",
+            ts(Instant.now()), idempotencyKey
         );
+        if (updated == 0) {
+            jdbcTemplate.update(
+                "INSERT INTO api_key_projection_idempotency (idempotency_key, processed_at) VALUES (?, ?)",
+                idempotencyKey, ts(Instant.now())
+            );
+        }
     }
 
     private void mergeProjection(ApiKeyProjectionSyncRequest request) {
         var payload = request.payload();
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
             """
-                INSERT INTO api_key_projection (
-                    api_key_id, tenant_id, agent_type_id, knowledge_scopes, roles,
-                    debug_permission, token_budget_limit, state, expires_at,
-                    projection_version, last_updated_at, synced_at, runtime_synced
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (api_key_id) DO UPDATE SET
-                    tenant_id = EXCLUDED.tenant_id,
-                    agent_type_id = EXCLUDED.agent_type_id,
-                    knowledge_scopes = EXCLUDED.knowledge_scopes,
-                    roles = EXCLUDED.roles,
-                    debug_permission = EXCLUDED.debug_permission,
-                    token_budget_limit = EXCLUDED.token_budget_limit,
-                    state = EXCLUDED.state,
-                    expires_at = EXCLUDED.expires_at,
-                    projection_version = EXCLUDED.projection_version,
-                    last_updated_at = EXCLUDED.last_updated_at,
-                    synced_at = EXCLUDED.synced_at,
-                    runtime_synced = EXCLUDED.runtime_synced
+                UPDATE api_key_projection SET
+                    tenant_id = ?, agent_type_id = ?, knowledge_scopes = ?, roles = ?,
+                    debug_permission = ?, token_budget_limit = ?, state = ?, expires_at = ?,
+                    projection_version = ?, last_updated_at = ?, synced_at = ?, runtime_synced = ?
+                WHERE api_key_id = ?
                 """,
-            payload.apiKeyId(),
             payload.tenantId(),
             payload.agentTypeId(),
             json(payload.knowledgeScopes()),
@@ -148,8 +136,33 @@ public class ApiKeyProjectionSyncController {
             payload.projectionVersion(),
             ts(payload.lastUpdatedAt()),
             ts(Instant.now()),
-            true
+            true,
+            payload.apiKeyId()
         );
+        if (updated == 0) {
+            jdbcTemplate.update(
+                """
+                    INSERT INTO api_key_projection (
+                        api_key_id, tenant_id, agent_type_id, knowledge_scopes, roles,
+                        debug_permission, token_budget_limit, state, expires_at,
+                        projection_version, last_updated_at, synced_at, runtime_synced
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                payload.apiKeyId(),
+                payload.tenantId(),
+                payload.agentTypeId(),
+                json(payload.knowledgeScopes()),
+                json(payload.roles()),
+                payload.debugPermission(),
+                payload.tokenBudgetLimit(),
+                payload.state(),
+                ts(payload.expiresAt()),
+                payload.projectionVersion(),
+                ts(payload.lastUpdatedAt()),
+                ts(Instant.now()),
+                true
+            );
+        }
     }
 
     private String json(List<String> list) {

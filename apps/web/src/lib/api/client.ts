@@ -259,12 +259,24 @@ export const workbenchApi = {
       WORKBENCH_BASE,
       `/workbench/uploads/${upload_id}`
     ),
-  listTasks: (opts?: { collection_id?: string; status?: string }) =>
-    request<{ items: WorkbenchTaskView[]; total: number }>(
+  listTasks: (opts?: {
+    collection_id?: string; status?: string;
+    offset?: number; limit?: number;
+    sort_by?: string; sort_order?: string;
+  }) => {
+    const query: Record<string, string | undefined> = {};
+    if (opts?.collection_id) query.collection_id = opts.collection_id;
+    if (opts?.status) query.status = opts.status;
+    if (opts?.offset !== undefined) query.offset = String(opts.offset);
+    if (opts?.limit !== undefined) query.limit = String(opts.limit);
+    if (opts?.sort_by) query.sort_by = opts.sort_by;
+    if (opts?.sort_order) query.sort_order = opts.sort_order;
+    return request<{ items: WorkbenchTaskView[]; total: number }>(
       WORKBENCH_BASE,
       "/workbench/tasks",
-      { query: opts }
-    ),
+      { query }
+    );
+  },
   getTask: (upload_id: string) =>
     request<WorkbenchTaskView>(
       WORKBENCH_BASE,

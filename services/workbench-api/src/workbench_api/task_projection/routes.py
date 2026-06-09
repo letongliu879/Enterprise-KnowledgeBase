@@ -169,6 +169,10 @@ async def _try_recover(db: Session, proj) -> bool:
 async def list_tasks(
     collection_id: str | None = None,
     status: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(require_auth),
 ):
@@ -178,8 +182,10 @@ async def list_tasks(
         user_id=user.user_id,
         collection_id=collection_id,
         status=status,
-        offset=0,
-        limit=1000,
+        offset=offset,
+        limit=limit,
+        order_by=sort_by,
+        order_dir=sort_order,
     )
 
     # Auto-recover stale projections (max 3 per call).

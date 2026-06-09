@@ -16,7 +16,7 @@ public class ApiKeyRegistry {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     /** Maximum staleness for a projection before it is considered invalid.
      * Set to 0 to disable staleness checks (development/smoke mode). */
-    private static final int MAX_PROJECTION_STALENESS_MINUTES = 0;
+    private static final int MAX_PROJECTION_STALENESS_MINUTES = 60;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;

@@ -58,8 +58,8 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgre
 | indexing | Python | 18080 | `GET /health` | `Dockerfile.python` |
 | intake-pipeline | Python | 18085 | `GET /health` | `Dockerfile.python` |
 | publishing-worker | Python | 18086 | `GET /health` | `Dockerfile.python` |
-| retrieval | Java | 18182 | `GET /health` | `Dockerfile.java` |
-| access | Java | 18181 | `GET /health` | `Dockerfile.java` |
+| retrieval | Java | 18082 | `GET /health` | `Dockerfile.java` |
+| access | Java | 18081 | `GET /health` | `Dockerfile.java` |
 
 Service blocks in `docker-compose.yml` are commented out. To build and deploy:
 

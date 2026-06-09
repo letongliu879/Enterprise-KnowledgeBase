@@ -2,6 +2,11 @@ Metadata-Version: 2.4
 Name: reality-rag-contracts
 Version: 0.1.0
 Summary: Shared contracts and schemas for Reality-RAG V2
+Author: Enterprise KnowledgeBase Contributors
+License: MIT
+Keywords: contracts,knowledge-base,rag
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.12
 Requires-Python: >=3.12
 Requires-Dist: pydantic>=2.0
 Provides-Extra: dev

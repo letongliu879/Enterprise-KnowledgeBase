@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -223,10 +223,15 @@ export default function UploadPage() {
     filesRef.current = files;
   }, [files]);
 
-  const { data: tasks, isLoading: tasksLoading } = useQuery({
+  // Poll active file statuses (only when files are in progress).
+  const hasActiveFiles = files.some((f) =>
+    ["queued", "uploading", "ready", "uploaded", "parsing", "reviewing", "approved", "publishing", "indexing"].includes(f.status)
+  );
+
+  const { data: tasks } = useQuery({
     queryKey: ["tasks"],
-    queryFn: () => workbenchApi.listTasks(),
-    refetchInterval: 5000,
+    queryFn: () => workbenchApi.listTasks({ sort_by: "created_at", sort_order: "desc" }),
+    refetchInterval: hasActiveFiles ? 5000 : 30000,
   });
 
   useEffect(() => {
@@ -244,6 +249,41 @@ export default function UploadPage() {
       })
     );
   }, [tasks]);
+
+  // Recent tasks with infinite scroll.
+  const {
+    data: recentTasksData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: recentTasksLoading,
+  } = useInfiniteQuery({
+    queryKey: ["recent-tasks"],
+    queryFn: ({ pageParam = 0 }) =>
+      workbenchApi.listTasks({
+        sort_by: "created_at",
+        sort_order: "desc",
+        offset: pageParam,
+        limit: 20,
+      }),
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((s, p) => s + p.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
+    initialPageParam: 0,
+  });
+  const recentTasks = recentTasksData?.pages.flatMap((p) => p.items) ?? [];
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage(); },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const createUpload = useMutation({
     mutationFn: async (item: FileItem) => {
@@ -746,38 +786,37 @@ export default function UploadPage() {
         )}
       </AnimatePresence>
 
-      {/* Recent Tasks */}
+      {/* Recent Tasks — infinite scroll, newest first */}
       <motion.div variants={staggerItem} className="pt-4">
-        <h3 className="text-sm font-medium text-muted-foreground mb-3">
-          最近任务
-        </h3>
-        {tasksLoading ? (
-            <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            最近任务
+          </h3>
+          <span className="text-[11px] text-muted-foreground/60">
+            按上传时间倒序
+          </span>
+        </div>
+
+        {recentTasksLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
                 className="h-14 rounded-xl border border-border bg-muted animate-shimmer"
               />
             ))}
           </div>
-        ) : tasks && tasks.items.length > 0 ? (
-          <div className="relative">
-            {/* Timeline line */}
-            <div className="absolute left-[19px] top-2 bottom-2 w-px bg-border" />
-            <div className="space-y-1">
-              {tasks.items.slice(0, 5).map((task, index) => {
+        ) : recentTasks.length > 0 ? (
+          <>
+            <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
+              {recentTasks.map((task) => {
                 const config = getStatusConfig(task.status as FileStatus);
                 const StatusIcon = config.icon;
-
                 return (
-                  <motion.div
+                  <div
                     key={String(task.upload_id)}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
                     className="flex items-start gap-3 py-2 group"
                   >
-                    {/* Timeline dot */}
                     <div className="relative shrink-0 mt-1">
                       <div
                         className={cn(
@@ -787,8 +826,6 @@ export default function UploadPage() {
                         )}
                       />
                     </div>
-
-                    {/* Content */}
                     <div className="flex-1 min-w-0 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">
@@ -799,7 +836,6 @@ export default function UploadPage() {
                           {getStatusLabel(task.status as FileStatus)}
                         </p>
                       </div>
-
                       <Badge
                         variant="outline"
                         className={cn(
@@ -820,11 +856,23 @@ export default function UploadPage() {
                         </span>
                       </Badge>
                     </div>
-                  </motion.div>
+                  </div>
                 );
               })}
+              {/* Sentinel for intersection observer */}
+              <div ref={sentinelRef} className="h-4" />
+              {isFetchingNextPage && (
+                <div className="flex justify-center py-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {!hasNextPage && recentTasks.length > 0 && (
+                <p className="text-[11px] text-center text-muted-foreground/50 pt-2">
+                  共 {recentTasksData?.pages[0]?.total ?? 0} 条记录
+                </p>
+              )}
             </div>
-          </div>
+          </>
         ) : (
           <EmptyState
             icon={Upload}

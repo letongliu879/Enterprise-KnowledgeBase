@@ -142,6 +142,32 @@ def _find_maven() -> str | None:
 
 
 MAVEN_CMD = _find_maven()
+
+
+def _find_java_home() -> str | None:
+    """Find JDK 21+ installation, preferring JAVA_HOME if valid, else search common locations."""
+    for candidate in (
+        os.environ.get("JAVA_HOME"),
+        r"C:\Program Files\Microsoft\jdk-21.0.11.10-hotspot",
+        r"C:\Program Files\Java\jdk-21",
+        r"C:\Program Files\Eclipse Adoptium\jdk-21",
+    ):
+        if candidate:
+            java = Path(candidate) / "bin" / "java.exe"
+            if java.exists():
+                return candidate
+    # Try to detect from PATH
+    path_java = shutil.which("java")
+    if path_java:
+        resolved = Path(path_java).resolve()
+        # Navigate up from bin/java.exe to get JAVA_HOME
+        java_home = resolved.parent.parent
+        if (java_home / "bin" / "java.exe").exists() and (java_home / "lib").exists():
+            return str(java_home)
+    return None
+
+
+JAVA_HOME = _find_java_home()
 LOG_DIR = ROOT / "tmp" / "services"
 MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_LOG_BACKUPS = 3
@@ -290,10 +316,10 @@ JAVA_SERVICES: list[dict[str, Any]] = [  # each must include "language": "java"
     {
         "language": "java",
         "name": "retrieval",
-        "port": 18182,
+        "port": 18082,
         "cwd": ROOT / "services" / "retrieval",
         "jar_pattern": "target/retrieval-*.jar",
-        "jvm_args": ["-Dspring.profiles.active=smoke", "-Dserver.port=18182"],
+        "jvm_args": ["-Dserver.port=18082"],
         "build_cmd": [MAVEN_CMD or "mvn", "package", "-DskipTests"],
         "depends_on": [],
         "health_path": "/health",
@@ -302,13 +328,12 @@ JAVA_SERVICES: list[dict[str, Any]] = [  # each must include "language": "java"
     {
         "language": "java",
         "name": "access",
-        "port": 18181,
+        "port": 18081,
         "cwd": ROOT / "services" / "access",
         "jar_pattern": "target/access-*.jar",
         "jvm_args": [
-            "-Dspring.profiles.active=smoke",
-            "-Dserver.port=18181",
-            "-Daccess.retrieval.base-url=http://127.0.0.1:18182",
+            "-Dserver.port=18081",
+            "-Daccess.retrieval.base-url=http://127.0.0.1:18082",
         ],
         "build_cmd": [MAVEN_CMD or "mvn", "package", "-DskipTests"],
         "depends_on": ["retrieval"],
@@ -498,7 +523,7 @@ def _service_env_overrides(name: str) -> dict[str, str]:
     sidecar = ROOT / ".verify" / "runtime" / "sidecar-smoke"
     if name == "indexing":
         return {
-            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18182",
+            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18082",
         }
     if name == "conversion-worker":
         return {
@@ -621,10 +646,16 @@ def _build_java_service(svc: dict[str, Any]) -> bool:
     _rotate_log(out_log)
     _rotate_log(err_log)
     build_cmd = [MAVEN_CMD or "mvn"] + svc["build_cmd"][1:]
+    env = os.environ.copy()
+    if JAVA_HOME:
+        env["JAVA_HOME"] = JAVA_HOME
+        java_bin = os.path.join(JAVA_HOME, "bin")
+        env["PATH"] = f"{java_bin}{os.pathsep}{env.get('PATH', '')}"
     with open(out_log, "wb") as out_f, open(err_log, "wb") as err_f:
         proc = subprocess.Popen(
             build_cmd,
             cwd=svc["cwd"],
+            env=env,
             stdout=out_f,
             stderr=err_f,
         )
@@ -699,7 +730,14 @@ def _start_service(svc: dict[str, Any], reload: bool = False, job: _WinJobObject
         if jar is None:
             print(_color("red", _tag(name)), "No jar found. Run 'build' first.")
             return None
-        cmd = ["java"] + svc.get("jvm_args", []) + ["-jar", str(jar)]
+        if JAVA_HOME:
+            env["JAVA_HOME"] = JAVA_HOME
+            java_bin = os.path.join(JAVA_HOME, "bin")
+            env["PATH"] = f"{java_bin}{os.pathsep}{env.get('PATH', '')}"
+            java_cmd = os.path.join(java_bin, "java")
+        else:
+            java_cmd = "java"
+        cmd = [java_cmd] + svc.get("jvm_args", []) + ["-jar", str(jar)]
 
     out_f = open(out_log, "ab")
     err_f = open(err_log, "ab")

@@ -1,6 +1,12 @@
 Metadata-Version: 2.4
 Name: reality-rag-persistence
 Version: 0.1.0
+Summary: Shared persistence layer (ORM / repository) for Enterprise KnowledgeBase
+Author: Enterprise KnowledgeBase Contributors
+License: MIT
+Keywords: persistence,sqlalchemy,knowledge-base
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.12
 Requires-Python: >=3.12
 Requires-Dist: sqlalchemy>=2.0
 Requires-Dist: psycopg2-binary>=2.9
