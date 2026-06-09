@@ -14,14 +14,16 @@ sys.path.insert(0, str(ROOT / "packages" / "ragflow_runtime" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "contracts" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "persistence" / "src"))
 
-from reality_rag_contracts import config as config_mod
+from reality_rag_contracts import config as contracts_config_mod
 
 
 @pytest.fixture(autouse=True)
 def _disable_live_model_calls(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     if request.node.get_closest_marker("live_model"):
+        if not os.environ.get("INDEXING_CHAT_API_KEY") and not os.environ.get("INDEXING_EMBEDDING_API_KEY"):
+            pytest.skip("live_model tests require INDEXING_CHAT_API_KEY / INDEXING_EMBEDDING_API_KEY")
         return
-    monkeypatch.setattr(config_mod, "_read_local_env_file", lambda: {})
+    monkeypatch.setattr(contracts_config_mod, "_read_local_env_file", lambda: {})
     for key in (
         "APP_ENV",
         "INDEXING_BACKEND_MODE",

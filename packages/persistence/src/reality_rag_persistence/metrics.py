@@ -37,9 +37,19 @@ class IntakeMetrics:
 
     All counters/histograms use low-cardinality labels only:
     component, stage_name, status, visibility, provider, model_name, prompt_version.
+
+    Singleton — subsequent instantiations reuse the already-registered metrics
+    so that tests and duplicate imports don't raise ``ValueError: Duplicated
+    timeseries`` from the Prometheus default registry.
     """
 
+    _initialized = False
+
     def __init__(self) -> None:
+        if IntakeMetrics._initialized:
+            return
+        IntakeMetrics._initialized = True
+
         if not _PROMETHEUS_AVAILABLE:
             self._noop = _NoOpMetric()
             return

@@ -13,6 +13,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "xpinyin>=0.7.7",
     "beautifulsoup4>=4.13,<5",
     "chardet>=7.0,<8",
     "filelock>=3.18,<4",

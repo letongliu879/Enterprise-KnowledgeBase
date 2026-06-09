@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
@@ -561,12 +562,19 @@ function DocumentViewerContent({
             />
           ) : mode === "image" && directPreviewUrl ? (
             <div className="overflow-auto rounded-lg border bg-muted/10 p-4">
-              <img
-                src={directPreviewUrl}
-                alt={filename || "preview"}
-                className="mx-auto max-w-full"
+              <div
+                className="mx-auto"
                 style={{ maxWidth: `${zoom}%` }}
-              />
+              >
+                <Image
+                  src={directPreviewUrl}
+                  alt={filename || "preview"}
+                  width={1600}
+                  height={1600}
+                  unoptimized
+                  className="h-auto w-full"
+                />
+              </div>
             </div>
           ) : mode === "html" && directPreviewUrl ? (
             <iframe

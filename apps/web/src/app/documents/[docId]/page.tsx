@@ -9,13 +9,11 @@ import {
   Database,
   FileText,
 } from "lucide-react";
-import { toast } from "sonner";
 import { DocumentViewer } from "@/components/document-workbench/document-viewer";
 import { ChunkEditorWorkbench } from "@/features/workbench/components/chunk-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -50,7 +48,6 @@ export default function DocumentDetailPage() {
 
   const {
     data: chunks,
-    isLoading: chunksLoading,
   } = useQuery({
     queryKey: ["document-chunks", parseSnapshotId],
     queryFn: () => workbenchApi.getParseSnapshotChunks(parseSnapshotId, 1, 100),

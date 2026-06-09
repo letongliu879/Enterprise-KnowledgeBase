@@ -116,7 +116,7 @@ class SpringAiMcpServerTest {
                   "jsonrpc": "2.0",
                   "id": 1,
                   "method": "initialize","params": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2025-11-25",
                     "capabilities": {},
                     "clientInfo": {
                       "name": "agent-platform-test",
@@ -129,9 +129,11 @@ class SpringAiMcpServerTest {
 
         assertThat(response.statusCode()).isEqualTo(200);
         JsonNode body = objectMapper.readTree(extractMcpResponseBody(response.body()));
+        System.out.println("=== INIT RESPONSE ===");
+        System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(body));
         assertThat(body.get("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(body.get("id").asInt()).isEqualTo(1);
-        assertThat(body.get("result").get("protocolVersion").asText()).isEqualTo("2024-11-05");
+        assertThat(body.get("result").get("protocolVersion").asText()).isEqualTo("2025-11-25");
     }
 
     @Test
@@ -146,7 +148,7 @@ class SpringAiMcpServerTest {
                   "id": 1,
                   "method": "initialize",
                   "params": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2025-11-25",
                     "capabilities": {},
                     "clientInfo": {
                       "name": "agent-platform-test",
@@ -205,7 +207,7 @@ class SpringAiMcpServerTest {
                   "id": 1,
                   "method": "initialize",
                   "params": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2025-11-25",
                     "capabilities": {},
                     "clientInfo": {
                       "name": "agent-platform-test",
@@ -325,7 +327,7 @@ class SpringAiMcpServerTest {
                   "id": 1,
                   "method": "initialize",
                   "params": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2025-11-25",
                     "capabilities": {},
                     "clientInfo": {
                       "name": "agent-platform-test",

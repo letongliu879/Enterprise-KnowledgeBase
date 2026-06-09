@@ -4,6 +4,8 @@ import uuid
 import pytest
 from reality_rag_contracts import IndexAssetBundle, OpenSearchIndexRecord, QdrantPointRecord
 
+from reality_rag_contracts import config as contracts_config_mod
+
 from indexing_service import config as config_mod
 from indexing_service import backends as mod
 
@@ -34,7 +36,7 @@ def _bundle() -> IndexAssetBundle:
 
 @pytest.fixture(autouse=True)
 def _isolate_backend_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config_mod, "_read_local_env_file", lambda: {})
+    monkeypatch.setattr(contracts_config_mod, "_read_local_env_file", lambda: {})
     for name in (
         "APP_ENV",
         "INDEXING_BACKEND_MODE",

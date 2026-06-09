@@ -133,7 +133,8 @@ class TestOutboxDeliverCallbacks:
         evt.event_type = "unknown_event"
         assert deliver(evt) is True
 
-    def test_approval_event_remote_mode_forwards_http(self):
+    def test_approval_event_remote_mode_forwards_http(self, monkeypatch):
+        monkeypatch.setenv("APPROVAL_SERVICE_URL", "http://approval:8000")
         deliver = make_deliver_callback()
         evt = self._make_event(
             EventType.APPROVAL_REQUESTED,
@@ -147,23 +148,22 @@ class TestOutboxDeliverCallbacks:
                 "confirmed_tags": [],
             },
         )
-        with patch("ingestion_worker.domains.approval_domain._get_remote_url", return_value="http://approval:8000"):
-            with patch("httpx.post") as mock_post:
-                mock_post.return_value.status_code = 200
-                assert deliver(evt) is True
-                mock_post.assert_called_once_with(
-                    "http://approval:8000/internal/approval/auto-approve",
-                    json=evt.payload_json,
-                    timeout=30.0,
-                )
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            assert deliver(evt) is True
+            mock_post.assert_called_once_with(
+                "http://approval:8000/internal/approval/auto-approve",
+                json=evt.payload_json,
+                timeout=30.0,
+            )
 
-    def test_approval_event_remote_mode_failure_returns_false(self):
+    def test_approval_event_remote_mode_failure_returns_false(self, monkeypatch):
+        monkeypatch.setenv("APPROVAL_SERVICE_URL", "http://approval:8000")
         deliver = make_deliver_callback()
         evt = self._make_event(EventType.APPROVAL_DECIDED)
-        with patch("ingestion_worker.domains.approval_domain._get_remote_url", return_value="http://approval:8000"):
-            with patch("httpx.post") as mock_post:
-                mock_post.return_value.status_code = 503
-                assert deliver(evt) is False
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 503
+            assert deliver(evt) is False
 
     def test_approval_pending_moves_job_to_awaiting_approval(self):
         deliver = make_deliver_callback()

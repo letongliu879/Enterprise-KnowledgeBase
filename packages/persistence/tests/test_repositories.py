@@ -678,7 +678,7 @@ class TestSeed:
         assert len(PrincipalProfileRepository(session).list_by_tenant("default")) >= 3
         assert len(IngestionRepository(session).list_all()) >= 3
         assert len(IndexRegistryRepository(session).list_all()) >= 2
-        assert len(DocumentPolicyRepository(session).list_by_collection("col-1")) >= 1
+        assert len(DocumentPolicyRepository(session).list_by_collection("col_policy")) >= 1
 
     def test_seed_is_repeatable(self, session):
         from reality_rag_persistence.seed import seed

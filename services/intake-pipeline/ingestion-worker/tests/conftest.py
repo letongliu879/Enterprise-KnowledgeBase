@@ -54,6 +54,12 @@ def dev_seeded_session(dev_seeded_db):
 
 
 @pytest.fixture(autouse=True)
+def _clear_workbench_env(monkeypatch):
+    monkeypatch.delenv("WORKBENCH_API_BASE_URL", raising=False)
+    monkeypatch.delenv("WORKBENCH_BASE_URL", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _setup_sidecar_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         monkeypatch.setenv("REALITY_RAG_SIDECAR_DIR", tmp)

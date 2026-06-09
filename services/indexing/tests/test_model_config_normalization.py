@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from reality_rag_contracts import config as contracts_config_mod
 from indexing_service import config as config_mod
 from indexing_service.config import load_indexing_config, normalize_chat_model, normalize_embedding_model
 
@@ -14,7 +15,7 @@ def test_normalize_embedding_model_for_siliconflow() -> None:
 
 def test_load_indexing_config_prefers_explicit_env_over_local_env(monkeypatch) -> None:
     monkeypatch.setattr(
-        config_mod,
+        contracts_config_mod,
         "_read_local_env_file",
         lambda: {
             "INDEXING_BACKEND_MODE": "hybrid",

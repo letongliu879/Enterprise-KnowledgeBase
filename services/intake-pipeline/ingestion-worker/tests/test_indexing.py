@@ -238,13 +238,15 @@ def test_activate_and_rollback_use_remote_owner(monkeypatch):
     monkeypatch.setenv("INDEXING_SERVICE_URL", "http://indexing-owner:18080")
     monkeypatch.setattr(mod, "_REMOTE_URL", None)
     monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-    monkeypatch.setattr(mod._RemoteIndexingService, "_active_index_version", staticmethod(lambda collection_id: "ver-active"))
-    monkeypatch.setattr(mod._RemoteIndexingService, "_latest_index_version", staticmethod(lambda collection_id: "ver-latest"))
-    monkeypatch.setattr(mod._RemoteIndexingService, "_previous_index_version", staticmethod(lambda index_version_id: "ver-previous"))
+    monkeypatch.setattr(mod.IndexingService, "_active_index_version", staticmethod(lambda collection_id: "ver-active"))
+    monkeypatch.setattr(mod.IndexingService, "_latest_index_version", staticmethod(lambda collection_id: "ver-latest"))
+    monkeypatch.setattr(mod.IndexingService, "_previous_index_version", staticmethod(lambda index_version_id: "ver-previous"))
+
+    import asyncio
 
     service = mod.IndexingService()
-    activated = service.activate("col-1")
-    rolled_back = service.rollback("col-1", "ver-active")
+    activated = asyncio.run(service.activate("col-1"))
+    rolled_back = asyncio.run(service.rollback("col-1", "ver-active"))
 
     assert activated.active_index_version == "ver-latest"
     assert activated.previous_index_version == "ver-active"
