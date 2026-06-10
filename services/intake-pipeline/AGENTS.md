@@ -114,6 +114,9 @@ idempotency_key = "{intake_job_id}:{stage_name}:{schema_version}:{input_hash}"
 - telemetry 禁止保存文档正文、PII 原值、完整 prompt/response 明文
 - `active_index_version` 只能由 publishing domain 在消费匹配的 `IndexReady` 后条件更新
 - 不允许通过 admin 旁路直接写 `published_documents`、`documents`、`index_build_jobs`
+- `outbox_deliver` 对 conversion 阶段 `StageCompleted` 先向 workbench 转发 enriched 事件，成功后再记录幂等并提交；转发失败时回滚，由 poller 重试
+- 孤儿任务判定使用 `OrphanedIntakeJobError` / `OrphanedStageTaskError`；`_ack_orphaned_task` 校验 `stage_task.intake_job_id` 与事件声明一致后才标记失败
+- `source_preview` 解析 PDF 时限制文件大小与解析超时；manifest 先写 `.tmp` 再通过 `os.replace` 原子落盘；生产环境必须设置 `REALITY_RAG_INTAKE_RUNTIME_DIR`
 
 ## 关键事件契约
 | 事件 | 方向 | 语义 |

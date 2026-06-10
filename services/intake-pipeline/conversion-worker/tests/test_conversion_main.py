@@ -1,9 +1,13 @@
 """Smoke tests for conversion-worker FastAPI app."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 
 
 @pytest.fixture
@@ -56,7 +60,12 @@ def test_render_source_preview_uses_cache(client: TestClient, monkeypatch, tmp_p
         assert "PowerPoint.Application" in script
         preview_path = tmp_path / "source-preview" / "src-preview-1" / "preview.pdf"
         preview_path.parent.mkdir(parents=True, exist_ok=True)
-        preview_path.write_bytes(b"%PDF-1.4 fake preview")
+        writer = PdfWriter()
+        writer.add_blank_page(width=200, height=200)
+        writer.add_blank_page(width=200, height=200)
+        writer.add_blank_page(width=200, height=200)
+        with preview_path.open("wb") as fh:
+            writer.write(fh)
 
     monkeypatch.setattr("conversion_worker.source_preview._run_powershell", fake_run)
 
@@ -77,6 +86,7 @@ def test_render_source_preview_uses_cache(client: TestClient, monkeypatch, tmp_p
     assert payload["preview_status"] == "ready"
     assert payload["preview_kind"] == "pdf"
     assert payload["preview_url"] == "/internal/source-previews/src-preview-1/content"
+    assert payload["page_count"] == 3
 
     cached = client.post(
         "/internal/source-previews/render",
@@ -91,6 +101,7 @@ def test_render_source_preview_uses_cache(client: TestClient, monkeypatch, tmp_p
 
     assert cached.status_code == 200
     assert cached.json()["preview_status"] == "ready"
+    assert cached.json()["page_count"] == 3
 
 
 def test_render_source_preview_returns_unsupported_for_native_unknown(client: TestClient, tmp_path: Path):
@@ -113,3 +124,84 @@ def test_render_source_preview_returns_unsupported_for_native_unknown(client: Te
     assert payload["preview_available"] is False
     assert payload["preview_status"] == "unsupported"
     assert payload["preview_url"] is None
+
+
+def test_runtime_dir_requires_env_var_outside_pytest(tmp_path: Path):
+    """Production must set REALITY_RAG_INTAKE_RUNTIME_DIR; fallback is only allowed under pytest."""
+    env = os.environ.copy()
+    env.pop("REALITY_RAG_INTAKE_RUNTIME_DIR", None)
+    env.pop("PYTEST_CURRENT_TEST", None)
+    code = (
+        "import sys\n"
+        "sys.path.insert(0, r'E:\\AI\\My-Project\\Enterprise KnowledgeBase')\n"
+        "from conversion_worker.source_preview import _runtime_dir\n"
+        "try:\n"
+        "    _runtime_dir()\n"
+        "    print('NO_ERROR')\n"
+        "except RuntimeError as exc:\n"
+        "    print('RuntimeError:', exc)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0
+    assert "RuntimeError:" in result.stdout
+
+
+def test_count_pdf_pages_rejects_oversized_file(tmp_path: Path, monkeypatch):
+    from conversion_worker.source_preview import _count_pdf_pages
+
+    preview_path = tmp_path / "huge.pdf"
+    # Create a file larger than the 100 MB limit without actually allocating all bytes in memory
+    preview_path.write_bytes(b"%PDF-1.4\n")
+    with preview_path.open("ab") as fh:
+        fh.seek(100 * 1024 * 1024 + 1)
+        fh.write(b"\n")
+
+    assert _count_pdf_pages(preview_path) is None
+
+
+def test_count_pdf_pages_handles_malformed_pdf(tmp_path: Path):
+    from conversion_worker.source_preview import _count_pdf_pages
+
+    preview_path = tmp_path / "broken.pdf"
+    preview_path.write_bytes(b"not a pdf")
+    assert _count_pdf_pages(preview_path) is None
+
+
+def test_manifest_is_written_atomically(client: TestClient, monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("REALITY_RAG_INTAKE_RUNTIME_DIR", str(tmp_path))
+
+    source_path = tmp_path / "slides2.pptx"
+    source_path.write_bytes(b"pptx bytes")
+
+    def fake_run(script: str, *, timeout_seconds: int = 180) -> None:
+        preview_path = tmp_path / "source-preview" / "src-preview-atomic" / "preview.pdf"
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        writer = PdfWriter()
+        writer.add_blank_page(width=200, height=200)
+        with preview_path.open("wb") as fh:
+            writer.write(fh)
+
+    monkeypatch.setattr("conversion_worker.source_preview._run_powershell", fake_run)
+
+    response = client.post(
+        "/internal/source-previews/render",
+        json={
+            "source_file_id": "src-preview-atomic",
+            "collection_id": "col_policy",
+            "source_file_path": str(source_path),
+            "filename": "slides2.pptx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        },
+    )
+
+    assert response.status_code == 200
+    manifest_path = tmp_path / "source-preview" / "src-preview-atomic" / "manifest.json"
+    assert manifest_path.exists()
+    # No temporary file should be left behind
+    assert not manifest_path.with_suffix(".tmp").exists()

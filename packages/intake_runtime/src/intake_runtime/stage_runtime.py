@@ -29,6 +29,7 @@ from reality_rag_persistence.repositories.tenants import TenantRepository
 from .lease_service import StageTaskLeaseService
 from .orchestrator import OrchestratorService
 from .pipeline_utils import build_review_artifact_path, write_json_asset
+from .stage_task_worker import OrphanedIntakeJobError, OrphanedStageTaskError
 from .stages import StageContext
 from .stages.adapters import (
     conversion_output_to_ctx,
@@ -54,7 +55,7 @@ def json_summary(payload: Any) -> dict[str, Any]:
 def build_stage_context(session, intake_job_id: str) -> tuple[Any, Any, Any, Any, Any, StageContext]:
     job = IntakeJobRepository(session).get(intake_job_id)
     if job is None:
-        raise ValueError(f"Intake job not found: {intake_job_id}")
+        raise OrphanedIntakeJobError(f"Intake job not found: {intake_job_id}")
 
     source_file = SourceFileRepository(session).get(job.source_file_id)
     if source_file is None:
@@ -127,11 +128,11 @@ def _start_existing_stage(
 ) -> tuple[Any, Any, bool]:
     task = StageTaskRepository(session).get(stage_task_id)
     if task is None:
-        raise ValueError(f"Stage task not found: {stage_task_id}")
+        raise OrphanedStageTaskError(f"Stage task not found: {stage_task_id}")
     if task.intake_job_id != intake_job_id:
-        raise ValueError(f"Stage task {stage_task_id} does not belong to intake job {intake_job_id}")
+        raise OrphanedStageTaskError(f"Stage task {stage_task_id} does not belong to intake job {intake_job_id}")
     if task.stage_name != stage_name.value:
-        raise ValueError(f"Stage task {stage_task_id} is not {stage_name.value}")
+        raise OrphanedStageTaskError(f"Stage task {stage_task_id} is not {stage_name.value}")
 
     lease_service = StageTaskLeaseService(session)
     if not lease_service.acquire_lease(stage_task_id, worker_id, ttl_seconds=300):

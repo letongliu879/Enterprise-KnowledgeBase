@@ -70,6 +70,21 @@ class TestSourceFileRepository:
         finally:
             session.close()
 
+    def test_mark_consumed_is_idempotent_for_same_job(self):
+        session = get_session()
+        try:
+            repo = SourceFileRepository(session)
+            repo.create("src-005b", "col-1", "obj_sha256_mnob", "sha256:mnob")
+            repo.claim("src-005b", "job-1")
+            assert repo.mark_consumed("src-005b", "job-1") is True
+            assert repo.mark_consumed("src-005b", "job-1") is True
+            assert repo.mark_cleanable("src-005b", "job-1") is True
+            assert repo.mark_consumed("src-005b", "job-1") is True
+            assert repo.mark_cleaned("src-005b") is True
+            assert repo.mark_consumed("src-005b", "job-1") is True
+        finally:
+            session.close()
+
     def test_mark_cleanable_from_claimed(self):
         session = get_session()
         try:

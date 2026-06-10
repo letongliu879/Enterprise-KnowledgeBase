@@ -83,13 +83,13 @@ Event -> POST /internal/events/{service} -> adapter 转换 -> ProjectionProjecto
 
 ## 已知实现细节与潜在问题
 - **硬编码 collection_id**：`chunk_edits/routes.py:28` 创建 edit 时写死 `collection_id="col_default"`，未从 context 或请求中获取真实值
-- **无 DI 容器**：`chunks/routes.py` 每请求 `ChunkService(IndexingClient())`，`tickets/routes.py` 每请求 `TicketService(ApprovalClient())`，未复用 client 实例
+- **无 DI 容器**：`chunks/routes.py` 每请求 `ChunkService(IndexingClient())`，`tickets/routes.py` 每请求 `TicketService(ApprovalClient())`；`workspace/routes.py` 在 lifespan 中初始化模块级 `IntakeClient`/`ApprovalClient`/`IndexingClient` 单例，关闭 lifespan 时 `aclose`，多请求共享同一底层 `httpx.AsyncClient`
 - **tenant ACL 未实现**：`deps.py:29` `CurrentUser.can_access_tenant()` 始终返回 `True`
 - **GET parse-preview 占位**：`parse_preview/routes.py:24-29` 返回硬编码 `{"status": "pending"}`，因 indexing 未提供 GET 端点
 - **幂等性占位**：`upload_sessions/repository.py:37-39` `get_by_idempotency()` 始终返回 `None`
 - **Chunk preview_limit 硬编码**：`events/adapters/indexing_adapter.py:86` 写死 `preview_limit=100`
 - **health 端点重复**：`main.py:61-63` 定义 `/workbench/health`，同时 `health/routes.py:10` 注册了下级路由 `/all`
-- **downstream client 无 connection pooling 复用**：每次创建新 `httpx.AsyncClient`（config 中指定 timeout，但 client 实例未在模块级共享）
+- **downstream client 复用**：`workspace/routes.py` 通过 lifespan 持有带 connection pooling 的 `httpx.AsyncClient`；`chunks/tickets` 等路由仍每请求新建 client
 - **parse_snapshot ACL 回退**：`parse_snapshot/service.py` 先读 snapshot 的 collection_id，找不到则查 upload_session 表补充
 - **task auto-recovery 限制**：`task_projection/routes.py:187` 每次只恢复最多 3 条 stuck projection
 

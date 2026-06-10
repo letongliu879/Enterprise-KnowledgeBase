@@ -265,9 +265,9 @@ function DocumentViewerContent({
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [pageInput, setPageInput] = useState(String(initialPage));
   const [zoom, setZoom] = useState(100);
-
-  const pageCount =
-    anchoredPages.length > 0 ? anchoredPages[anchoredPages.length - 1] : null;
+  const [manualTab, setManualTab] = useState<"source" | "parsed-text">("source");
+  const sourceTextRef = useRef<HTMLDivElement | null>(null);
+  const parsedTextRef = useRef<HTMLDivElement | null>(null);
 
   const {
     data: sourcePreview,
@@ -319,6 +319,15 @@ function DocumentViewerContent({
   const sourceError = sourcePreviewError || sourceBlobError || sourceTextError;
   const isLoading =
     sourcePreviewLoading || sourceBlobLoading || sourceTextLoading;
+  const previewPageCount =
+    typeof sourcePreview?.page_count === "number" &&
+    sourcePreview.page_count > 0
+      ? sourcePreview.page_count
+      : null;
+  const pageCount =
+    anchoredPages.length > 0
+      ? anchoredPages[anchoredPages.length - 1]
+      : previewPageCount;
 
   const directPreviewUrl = useMemo(() => {
     if (!sourceFileId || !sourcePreview?.preview_available) return "";
@@ -326,25 +335,42 @@ function DocumentViewerContent({
   }, [sourceFileId, sourcePreview?.preview_available]);
 
   const searchHighlight = searchText?.trim() ?? "";
+  const parsedTextValue = previewText?.trim() ?? "";
+  const sourceTextValue = sourceText?.trim() ?? "";
+  const hasParsedText = Boolean(parsedTextValue);
+  const searchableTab: "source" | "parsed-text" | null = parsedTextValue
+    ? "parsed-text"
+    : mode === "text" && sourceTextValue
+      ? "source"
+      : null;
+  const effectiveManualTab =
+    manualTab === "parsed-text" && !hasParsedText ? "source" : manualTab;
+  const activeTab =
+    searchHighlight && searchableTab ? searchableTab : effectiveManualTab;
 
   useEffect(() => {
     if (!searchHighlight) {
+      return;
+    }
+
+    if (!searchableTab || activeTab !== searchableTab) {
+      return;
+    }
+
+    const container =
+      activeTab === "parsed-text" ? parsedTextRef.current : sourceTextRef.current;
+    const text =
+      activeTab === "parsed-text"
+        ? parsedTextValue
+        : mode === "text"
+          ? sourceTextValue
+          : "";
+
+    if (!text || !container) {
       onSearchComplete?.(false);
       return;
     }
 
-    if (!previewText?.trim()) {
-      onSearchComplete?.(false);
-      return;
-    }
-
-    const container = document.querySelector("[data-document-viewer-content]");
-    if (!container) {
-      onSearchComplete?.(false);
-      return;
-    }
-
-    const text = container.textContent || "";
     const index = text.toLowerCase().indexOf(searchHighlight.toLowerCase());
     if (index < 0) {
       onSearchComplete?.(false);
@@ -387,7 +413,15 @@ function DocumentViewerContent({
       block: "center",
     });
     onSearchComplete?.(true);
-  }, [onSearchComplete, previewText, searchHighlight]);
+  }, [
+    activeTab,
+    mode,
+    onSearchComplete,
+    parsedTextValue,
+    searchHighlight,
+    searchableTab,
+    sourceTextValue,
+  ]);
 
   const copyParsedText = async () => {
     if (!previewText?.trim()) return;
@@ -427,7 +461,11 @@ function DocumentViewerContent({
             </div>
             <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
               <span>
-                {pageCount ? `Anchored pages: ${pageCount}` : "No page anchors"}
+                {anchoredPages.length > 0
+                  ? `Anchored pages: ${pageCount}`
+                  : pageCount
+                    ? `Pages: ${pageCount}`
+                    : "No page anchors"}
               </span>
               <span>
                 {chunks.length} parsed chunk{chunks.length === 1 ? "" : "s"}
@@ -523,10 +561,16 @@ function DocumentViewerContent({
         </div>
       </div>
 
-      <Tabs defaultValue="source" className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setManualTab(value as "source" | "parsed-text")}
+        className="space-y-4"
+      >
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="source">Source</TabsTrigger>
-          <TabsTrigger value="parsed-text">Parsed text</TabsTrigger>
+          {hasParsedText ? (
+            <TabsTrigger value="parsed-text">Parsed text</TabsTrigger>
+          ) : null}
         </TabsList>
 
         <TabsContent value="source">
@@ -583,8 +627,20 @@ function DocumentViewerContent({
               className="h-[780px] w-full rounded-lg border bg-white"
             />
           ) : mode === "text" ? (
-            <div className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 leading-7">
-              {sourceText || "Source preview text is empty."}
+            <div
+              ref={sourceTextRef}
+              data-document-viewer-source-text
+              className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 leading-7"
+            >
+              {sourceTextValue ? (
+                searchHighlight ? (
+                  <HighlightText text={sourceTextValue} highlight={searchHighlight} />
+                ) : (
+                  sourceTextValue
+                )
+              ) : (
+                "Source preview text is empty."
+              )}
             </div>
           ) : (
             <EmptyState
@@ -595,26 +651,21 @@ function DocumentViewerContent({
           )}
         </TabsContent>
 
-        <TabsContent value="parsed-text">
-          {previewText ? (
+        {hasParsedText ? (
+          <TabsContent value="parsed-text">
             <div
-              data-document-viewer-content
+              ref={parsedTextRef}
+              data-document-viewer-parsed-text
               className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 text-sm leading-7"
             >
               {searchHighlight ? (
-                <HighlightText text={previewText} highlight={searchHighlight} />
+                <HighlightText text={parsedTextValue} highlight={searchHighlight} />
               ) : (
-                previewText
+                parsedTextValue
               )}
             </div>
-          ) : (
-            <EmptyState
-              icon={FileText}
-              title="No parsed preview text"
-              description="This parse snapshot does not currently expose normalized preview text."
-            />
-          )}
-        </TabsContent>
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );

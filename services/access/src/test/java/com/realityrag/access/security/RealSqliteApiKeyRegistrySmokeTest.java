@@ -41,7 +41,9 @@ class RealSqliteApiKeyRegistrySmokeTest {
         );
         assumeTrue(keyCount != null && keyCount > 0, "local api_key_projection dev key is not present");
 
-        var registration = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper())
+        var registration = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(),
+            new com.realityrag.access.config.AccessProperties(),
+            new NoOpApiKeyProjectionCache())
             .resolve("rr-agent-platform-dev");
 
         assertNotNull(registration);

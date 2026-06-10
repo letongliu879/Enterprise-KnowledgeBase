@@ -118,7 +118,15 @@ class SourceFileRepository:
         row = self._session.get(SourceFileModel, source_file_id)
         if row is None:
             return False
-        if row.state != SourceFileState.CLAIMED.value or row.claimed_by_job_id != job_id:
+        if row.claimed_by_job_id != job_id:
+            return False
+        if row.state in (
+            SourceFileState.CONSUMED.value,
+            SourceFileState.CLEANABLE.value,
+            SourceFileState.CLEANED.value,
+        ):
+            return True
+        if row.state != SourceFileState.CLAIMED.value:
             return False
         row.state = SourceFileState.CONSUMED.value
         row.updated_at = datetime.now(timezone.utc)

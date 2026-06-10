@@ -782,6 +782,8 @@ telemetry 表用于排障、SLA、质量优化、成本核算。telemetry 不替
 
 不得在业务事务提交前直接调用远端服务推进状态。
 
+例外：ingestion-worker 处理 conversion 阶段 `StageCompleted` 时，需要先把 enriched 事件同步 POST 到 workbench，成功后再在同一事务中记录幂等并提交；失败则回滚，由 outbox poller 重试。
+
 ### 5.2 outbox_events
 
 | 字段 | 类型 | 约束 |
@@ -1490,6 +1492,12 @@ conversion-worker 不决定：
 
 这些只能由 approval-service 决策。
 
+### 9.6 source preview 运行期约束
+
+- PDF 页数统计限制文件大小并加解析超时，超限或超时返回 `None`，不阻塞后续流程
+- manifest 写临时文件后通过原子 `os.replace` 落盘，避免并发写损坏
+- 生产环境必须设置环境变量 `REALITY_RAG_INTAKE_RUNTIME_DIR`；未设置时启动即抛错
+
 ## 10. agent-review-worker 设计
 
 ### 10.1 输入
@@ -1729,6 +1737,10 @@ system auto approve 输出：
 - final_doc_id 由 approval-service 唯一生成
 - publishing-worker 不得生成或修改 final_doc_id
 - 同一 logical document 新版本发布成功后，旧版本是否 archive 由审批决策携带
+
+### 11.6 决策幂等性
+
+`decision` 接口的幂等键按 `ticket_id` 作用域隔离。同一 `idempotency_key` 只能复用同一 ticket 的决策结果，跨 ticket 不共享缓存。
 
 ## 12. publishing-worker 设计
 

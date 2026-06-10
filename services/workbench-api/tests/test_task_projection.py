@@ -1,5 +1,7 @@
 """Tests for task projection."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 from conftest import _make_token
 from workbench_api.projections.projector import ProjectionProjector
 from workbench_api.projections.repository import TaskProjectionRepository
+from workbench_api.task_projection import routes as task_routes
 
 
 class TestTaskProjection:
@@ -146,6 +149,63 @@ class TestTaskProjectionSQL:
         assert proj is not None
         assert proj.overall_status == "uploaded"
         assert proj.progress_pct == 100
+
+    def test_list_does_not_auto_recover_failed_tasks(
+        self,
+        client: TestClient,
+        uploader_token: str,
+        db_session: Session,
+        monkeypatch,
+    ):
+        upload_id = "upload_failed_stale_001"
+        projector = ProjectionProjector(db_session)
+        event = {
+            "event_id": "ev_failed_stale_001",
+            "event_type": "TASK_FAILED",
+            "tenant_id": "tenant_acme",
+            "collection_id": "col_default",
+            "aggregate_type": "task",
+            "aggregate_id": upload_id,
+            "aggregate_version": 1,
+            "occurred_at": datetime.now(timezone.utc),
+            "payload": {
+                "projection_id": upload_id,
+                "tenant_id": "tenant_acme",
+                "user_id": "user-001",
+                "collection_id": "col_default",
+                "upload_id": upload_id,
+                "filename": "failed.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1024,
+                "source_file_id": "src_failed_001",
+                "intake_job_id": "job_failed_001",
+                "source_file_state": "claimed",
+                "intake_job_state": "failed",
+                "overall_status": "failed",
+                "progress_pct": 100,
+            },
+            "trace_id": "trc_failed_stale_001",
+        }
+        projector.record_and_apply(event)
+        db_session.commit()
+
+        repo = TaskProjectionRepository(db_session)
+        proj = repo.get_by_upload_id(upload_id)
+        proj.projection_updated_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+        db_session.commit()
+
+        called = False
+
+        async def _fail_if_called(self, source_file_id: str):
+            nonlocal called
+            called = True
+            raise AssertionError("auto-recovery should not run for failed tasks")
+
+        monkeypatch.setattr(task_routes.IntakeClient, "get_source_file", _fail_if_called)
+
+        resp = client.get("/workbench/tasks", headers={"Authorization": f"Bearer {uploader_token}"})
+        assert resp.status_code == 200
+        assert called is False
 
 
 class TestProjectionProjector:

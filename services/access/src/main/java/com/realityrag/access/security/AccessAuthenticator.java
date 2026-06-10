@@ -47,9 +47,6 @@ public class AccessAuthenticator {
         if (path != null && path.startsWith("/mcp")) {
             return "mcp_message";
         }
-        if (path != null && path.startsWith("/sse")) {
-            return "mcp_sse";
-        }
         return "rest";
     }
 

@@ -105,6 +105,10 @@ def _ticket_raw_to_payload(raw: dict) -> dict:
     }
 
 
+def _projection_needs_enrichment(item) -> bool:
+    return not str(item.filename or "").strip() and not str(item.title or "").strip()
+
+
 async def _backfill_ticket_projection(
     *,
     repo: TicketProjectionRepository,
@@ -184,7 +188,7 @@ async def list_tickets(
         limit=page_size,
     )
 
-    if total == 0:
+    if total == 0 or any(_projection_needs_enrichment(item) for item in items):
         repaired = await _backfill_ticket_projection(
             repo=repo,
             db=db,
@@ -238,7 +242,7 @@ async def get_ticket(
     repo = TicketProjectionRepository(db)
     projection = repo.get(ticket_id)
 
-    if projection and not projection.is_stale:
+    if projection and not projection.is_stale and not _projection_needs_enrichment(projection):
         # Validate access
         if not user.can_access_collection(projection.collection_id):
             raise not_found("Ticket not found")
@@ -265,6 +269,42 @@ async def get_ticket(
             "is_stale": projection.is_stale,
             "source": "projection",
         }
+
+    if projection and _projection_needs_enrichment(projection):
+        await _backfill_ticket_projection(
+            repo=repo,
+            db=db,
+            user=user,
+            collection_id=projection.collection_id,
+            state=projection.state,
+        )
+        projection = repo.get(ticket_id)
+        if projection and not projection.is_stale and not _projection_needs_enrichment(projection):
+            if not user.can_access_collection(projection.collection_id):
+                raise not_found("Ticket not found")
+            return {
+                "ticket_id": projection.ticket_id,
+                "collection_id": projection.collection_id,
+                "status": projection.state,
+                "priority": projection.priority,
+                "assignee_user_id": projection.assignee_user_id,
+                "title": projection.title,
+                "filename": projection.filename,
+                "upload_id": projection.upload_id,
+                "source_file_id": projection.source_file_id,
+                "parse_snapshot_id": projection.parse_snapshot_id,
+                "doc_id": projection.doc_id,
+                "agent_decision": projection.agent_decision,
+                "agent_risk_level": projection.agent_risk_level,
+                "agent_finding_count": projection.agent_finding_count,
+                "agent_blocking_finding_count": projection.agent_blocking_finding_count,
+                "tenant_id": projection.tenant_id,
+                "created_at": projection.created_at.isoformat() if projection.created_at else None,
+                "updated_at": projection.updated_at.isoformat() if projection.updated_at else None,
+                "projection_updated_at": projection.projection_updated_at.isoformat() if projection.projection_updated_at else None,
+                "is_stale": projection.is_stale,
+                "source": "projection",
+            }
 
     # Fallback to approval service
     service = _get_service()

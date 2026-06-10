@@ -4,11 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.realityrag.access.support.AccessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,7 +49,9 @@ class ApiKeyRegistryProjectionTest {
             )
             """);
         jdbcTemplate.update("DELETE FROM api_key_projection");
-        registry = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper());
+        registry = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(),
+            new com.realityrag.access.config.AccessProperties(),
+            new NoOpApiKeyProjectionCache());
     }
 
     @Test
@@ -141,5 +146,70 @@ class ApiKeyRegistryProjectionTest {
             apiKeyId, "tnt_default", "kb_assistant", "[]", "[]",
             false, budget, state, expiresAt, 1, lastUpdated, true
         );
+    }
+
+    @Test
+    void cachedExpiredRegistrationIsRevalidatedOnResolve() {
+        var cache = new InMemoryApiKeyProjectionCache();
+        var cachingRegistry = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(),
+            new com.realityrag.access.config.AccessProperties(), cache);
+
+        // Pre-populate the cache with a registration whose expires_at is in the past.
+        var expiredReg = new ApiKeyRegistry.AgentRegistration(
+            "key-pre-cached-expired", "tnt_default", "kb_assistant",
+            List.of(), List.of(), false, 4096, "active",
+            Instant.now().minus(1, ChronoUnit.HOURS),
+            1, Instant.now()
+        );
+        cache.set("key-pre-cached-expired", expiredReg);
+
+        // Resolve must re-validate the cached entry and reject it.
+        assertThrows(AccessException.Unauthenticated.class,
+            () -> cachingRegistry.resolve("key-pre-cached-expired"));
+    }
+
+    @Test
+    void cachedStaleRegistrationIsRevalidatedOnResolve() {
+        var cache = new InMemoryApiKeyProjectionCache();
+        var props = new com.realityrag.access.config.AccessProperties();
+        props.setStalenessTtlMinutes(60);
+        var cachingRegistry = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(), props, cache);
+
+        var staleReg = new ApiKeyRegistry.AgentRegistration(
+            "key-pre-cached-stale", "tnt_default", "kb_assistant",
+            List.of(), List.of(), false, 4096, "active",
+            null, 1, Instant.now().minus(2, ChronoUnit.HOURS)
+        );
+        cache.set("key-pre-cached-stale", staleReg);
+
+        assertThrows(AccessException.RegistryUnavailable.class,
+            () -> cachingRegistry.resolve("key-pre-cached-stale"));
+    }
+
+    private static class InMemoryApiKeyProjectionCache implements ApiKeyProjectionCache {
+        private final ConcurrentHashMap<String, ApiKeyRegistry.AgentRegistration> store = new ConcurrentHashMap<>();
+
+        @Override
+        public ApiKeyRegistry.AgentRegistration get(String apiKeyId) {
+            return store.get(apiKeyId);
+        }
+
+        @Override
+        public void set(String apiKeyId, ApiKeyRegistry.AgentRegistration registration) {
+            store.put(apiKeyId, registration);
+        }
+
+        @Override
+        public void evict(String apiKeyId) {
+            store.remove(apiKeyId);
+        }
+
+        public boolean contains(String apiKeyId) {
+            return store.containsKey(apiKeyId);
+        }
+
+        public boolean isEmpty() {
+            return store.isEmpty();
+        }
     }
 }

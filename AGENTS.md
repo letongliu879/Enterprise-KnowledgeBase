@@ -187,7 +187,7 @@ cd services/retrieval && mvn spring-boot:run
   │ POST /v1/retrieve (X-API-Key)
   ▼
 access (18081)
-  │ → 验证 API Key（查 api_key_projection 表）
+  │ → 验证 API Key（先查运行时缓存，命中后再校验 state/expiresAt/TTL；未命中或校验失败则回源 api_key_projection 表）
   │ → 校验 collection_scope ⊆ knowledgeScopes
   │ → 构建 InternalRetrieveRequest（含 principal/traceId/queryId）
   │ POST /internal/retrieve

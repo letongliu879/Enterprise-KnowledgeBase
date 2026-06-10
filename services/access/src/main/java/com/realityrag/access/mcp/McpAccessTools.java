@@ -22,7 +22,19 @@ public class McpAccessTools {
 
     @Tool(
         name = "search_enterprise_knowledge",
-        description = "Use only when you need enterprise-internal knowledge or policy context. Do not use for public facts, casual chat, code generation, or questions already answerable from the current conversation."
+        description = """
+            检索企业内部知识库。用于查询所有项目特定的、团队内部的、非公开通用的信息。
+
+            必须使用的情况：
+            - 用户问题涉及"我们团队/公司/项目是如何做的"
+            - 需要确认企业内部规范、约定、流程、架构决策
+            - 任何你不确定是否属于企业内部特定上下文的问题
+
+            不使用的情况：
+            - 公开的技术事实、通用编程问题
+            - 已能从当前对话中直接回答的问题
+            - 纯闲聊或代码生成任务
+            """
     )
     public KnowledgeContext retrieveKnowledgeContext(
         @ToolParam(description = "User question to search in enterprise knowledge.", required = true) String query,

@@ -72,6 +72,40 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
+
+        boolean isMcpStream = path != null && path.equals("/mcp");
+        if (isMcpStream) {
+            try {
+                AccessRequestContext context = accessAuthenticator.authenticate(request);
+                String mcpSessionId = request.getHeader("Mcp-Session-Id");
+                if (mcpSessionId != null && !mcpSessionId.isBlank()) {
+                    if (!sessionBindingStore.matches(mcpSessionId, context)) {
+                        writeError(response, new AccessException.Forbidden(
+                            "MCP session principal does not match the authenticated identity"
+                        ));
+                        return;
+                    }
+                }
+                AccessRequestContextHolder.set(context);
+                filterChain.doFilter(request, response);
+                String responseSessionId = response.getHeader("Mcp-Session-Id");
+                if (responseSessionId != null) {
+                    sessionBindingStore.bind(responseSessionId, context);
+                }
+            } catch (AccessException error) {
+                log.warn(
+                    "ACCESS_AUDIT event=auth_failure method={} path={} status_code={} error_code={} error_message={} api_key_id={} agent_instance_id={}",
+                    request.getMethod(), request.getRequestURI(),
+                    error.getStatus().value(), error.getErrorCode(), error.getMessage(),
+                    request.getHeader("X-API-Key"), request.getHeader("X-Agent-Instance-Id")
+                );
+                writeError(response, error);
+            } finally {
+                AccessRequestContextHolder.clear();
+            }
+            return;
+        }
+
         ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
         try {
             AccessRequestContext context = accessAuthenticator.authenticate(request);
@@ -97,6 +131,8 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
             if (responseSessionId != null) {
                 sessionBindingStore.bind(responseSessionId, context);
             }
+
+            wrappedResponse.copyBodyToResponse();
         } catch (AccessException error) {
             log.warn(
                 "ACCESS_AUDIT event=auth_failure method={} path={} status_code={} error_code={} error_message={} api_key_id={} agent_instance_id={}",
@@ -111,7 +147,6 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
             writeError(response, error);
         } finally {
             AccessRequestContextHolder.clear();
-            wrappedResponse.copyBodyToResponse();
         }
     }
 

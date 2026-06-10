@@ -129,8 +129,6 @@ class SpringAiMcpServerTest {
 
         assertThat(response.statusCode()).isEqualTo(200);
         JsonNode body = objectMapper.readTree(extractMcpResponseBody(response.body()));
-        System.out.println("=== INIT RESPONSE ===");
-        System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(body));
         assertThat(body.get("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(body.get("id").asInt()).isEqualTo(1);
         assertThat(body.get("result").get("protocolVersion").asText()).isEqualTo("2025-11-25");

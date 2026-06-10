@@ -9,11 +9,20 @@ from datetime import datetime, timezone
 from reality_rag_contracts import EventType, OutboxEvent, StageName, StageTaskState
 from reality_rag_persistence.database import get_session
 from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
 
 logger = logging.getLogger(__name__)
 
 StageExecuteFn = Callable[[object, str, str, str], bool]
+
+
+class OrphanedIntakeJobError(ValueError):
+    """Raised when a stage task event references an intake job that no longer exists."""
+
+
+class OrphanedStageTaskError(ValueError):
+    """Raised when processing cannot locate the stage task referenced by an event."""
 
 
 def make_stage_task_filter(stage_name: StageName) -> Callable[[OutboxEvent], bool]:
@@ -64,6 +73,44 @@ def make_stage_task_deliver(
     worker_id: str,
     execute: StageExecuteFn,
 ) -> Callable[[OutboxEvent], bool]:
+    def _ack_orphaned_task(
+        session,
+        *,
+        consumer_id: str,
+        event: OutboxEvent,
+        stage_task_id: str | None,
+        intake_job_id: str | None,
+    ) -> bool:
+        if stage_task_id:
+            repo = StageTaskRepository(session)
+            task = repo.get(stage_task_id)
+            if task is not None:
+                if task.intake_job_id != intake_job_id:
+                    logger.warning(
+                        "stage worker refusing to ack orphaned %s task=%s: "
+                        "task belongs to intake_job=%s, event claims intake_job=%s",
+                        stage_name.value,
+                        stage_task_id,
+                        task.intake_job_id,
+                        intake_job_id,
+                    )
+                    return False
+                repo.update_state(stage_task_id, StageTaskState.FAILED)
+                repo.clear_lock(stage_task_id)
+                logger.warning(
+                    "stage worker marked orphaned %s task=%s intake_job=%s as failed",
+                    stage_name.value,
+                    stage_task_id,
+                    intake_job_id,
+                )
+        ConsumerIdempotencyRepository(session).record_processed(
+            consumer_id,
+            event.event_id,
+            event.idempotency_key,
+        )
+        session.commit()
+        return True
+
     def deliver(event: OutboxEvent) -> bool:
         session = get_session()
         try:
@@ -74,6 +121,8 @@ def make_stage_task_deliver(
             payload = event.payload_json
             stage_task_id = payload["stage_task_id"]
             intake_job_id = payload["intake_job_id"]
+            if IntakeJobRepository(session).get(intake_job_id) is None:
+                raise OrphanedIntakeJobError(f"Intake job not found: {intake_job_id}")
             if not execute(session, stage_task_id, intake_job_id, worker_id):
                 session.rollback()
                 return False
@@ -91,6 +140,22 @@ def make_stage_task_deliver(
                 intake_job_id,
             )
             return True
+        except (OrphanedIntakeJobError, OrphanedStageTaskError):
+            return _ack_orphaned_task(
+                session,
+                consumer_id=consumer_id,
+                event=event,
+                stage_task_id=event.payload_json.get("stage_task_id"),
+                intake_job_id=event.payload_json.get("intake_job_id"),
+            )
+        except ValueError as exc:
+            session.rollback()
+            logger.exception(
+                "stage worker failed %s task=%s",
+                stage_name.value,
+                event.payload_json.get("stage_task_id"),
+            )
+            return False
         except Exception:
             session.rollback()
             logger.exception(
@@ -103,4 +168,3 @@ def make_stage_task_deliver(
             session.close()
 
     return deliver
-

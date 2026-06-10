@@ -35,7 +35,10 @@ app = FastAPI(title="Reality-RAG Indexing", version="0.1.0")
 
 @app.post("/internal/parse-previews", status_code=202)
 def create_parse_preview(command: ParsePreviewRequestedCommand) -> dict[str, object]:
-    accepted = parse_preview_runner.accept(command)
+    try:
+        accepted = parse_preview_runner.accept(command)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return accepted.model_dump()
 
 

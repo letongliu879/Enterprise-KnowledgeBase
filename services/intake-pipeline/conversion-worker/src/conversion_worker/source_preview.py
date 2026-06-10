@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import mimetypes
 import os
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+
+from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,11 @@ def _runtime_dir() -> Path:
     configured = os.environ.get("REALITY_RAG_INTAKE_RUNTIME_DIR", "").strip()
     if configured:
         return Path(configured)
-    return Path(__file__).resolve().parents[5] / ".verify" / "runtime" / "intake"
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return Path(__file__).resolve().parents[5] / ".verify" / "runtime" / "intake"
+    raise RuntimeError(
+        "REALITY_RAG_INTAKE_RUNTIME_DIR must be set in production"
+    )
 
 
 def _preview_dir(source_file_id: str) -> Path:
@@ -135,6 +143,35 @@ def _ready_descriptor(source_file_id: str, filename: str, mime_type: str) -> Pre
     )
 
 
+_MAX_PDF_PARSE_BYTES = 100 * 1024 * 1024  # 100 MB
+_MAX_PDF_PARSE_SECONDS = 10.0
+
+
+def _count_pdf_pages(preview_path: Path) -> int | None:
+    try:
+        size = preview_path.stat().st_size
+        if size > _MAX_PDF_PARSE_BYTES:
+            logger.warning(
+                "preview PDF exceeds parse size limit (%s > %s bytes): %s",
+                size,
+                _MAX_PDF_PARSE_BYTES,
+                preview_path,
+            )
+            return None
+        data = preview_path.read_bytes()
+
+        def _parse() -> int:
+            reader = PdfReader(io.BytesIO(data))
+            return len(reader.pages)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_parse)
+            return future.result(timeout=_MAX_PDF_PARSE_SECONDS)
+    except Exception:
+        logger.exception("failed to count preview PDF pages for %s", preview_path)
+        return None
+
+
 def _load_cached_descriptor(source_file_id: str) -> PreviewDescriptor | None:
     manifest_path = _manifest_path(source_file_id)
     preview_path = _preview_pdf_path(source_file_id)
@@ -147,7 +184,12 @@ def _load_cached_descriptor(source_file_id: str) -> PreviewDescriptor | None:
         return None
     if payload.get("preview_status") != "ready":
         return None
-    return _build_descriptor(
+    page_count = (
+        int(payload["page_count"])
+        if payload.get("page_count") is not None
+        else _count_pdf_pages(preview_path)
+    )
+    descriptor = _build_descriptor(
         source_file_id=str(payload.get("source_file_id") or source_file_id),
         filename=str(payload.get("filename") or ""),
         mime_type=str(payload.get("mime_type") or "application/octet-stream"),
@@ -161,17 +203,22 @@ def _load_cached_descriptor(source_file_id: str) -> PreviewDescriptor | None:
         ),
         preview_url=f"/internal/source-previews/{source_file_id}/content",
         thumbnail_url=str(payload.get("thumbnail_url")) if payload.get("thumbnail_url") else None,
-        page_count=int(payload["page_count"]) if payload.get("page_count") is not None else None,
+        page_count=page_count,
     )
+    if payload.get("page_count") is None and descriptor.page_count is not None:
+        _write_manifest(source_file_id, descriptor)
+    return descriptor
 
 
 def _write_manifest(source_file_id: str, descriptor: PreviewDescriptor) -> None:
     manifest_path = _manifest_path(source_file_id)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
+    tmp_path = manifest_path.with_suffix(".tmp")
+    tmp_path.write_text(
         json.dumps(descriptor.to_payload(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    os.replace(str(tmp_path), str(manifest_path))
 
 
 def _preview_family(filename: str, mime_type: str) -> str | None:
@@ -320,6 +367,20 @@ def render_source_preview(
         return _failed_descriptor(source_file_id, resolved_filename, resolved_mime_type)
 
     descriptor = _ready_descriptor(source_file_id, resolved_filename, resolved_mime_type)
+    page_count = _count_pdf_pages(preview_path)
+    if page_count is not None:
+        descriptor = _build_descriptor(
+            source_file_id=descriptor.source_file_id,
+            filename=descriptor.filename,
+            mime_type=descriptor.mime_type,
+            preview_available=descriptor.preview_available,
+            preview_status=descriptor.preview_status,
+            preview_kind=descriptor.preview_kind,
+            preview_mime_type=descriptor.preview_mime_type,
+            preview_url=descriptor.preview_url,
+            thumbnail_url=descriptor.thumbnail_url,
+            page_count=page_count,
+        )
     _write_manifest(source_file_id, descriptor)
     return descriptor
 

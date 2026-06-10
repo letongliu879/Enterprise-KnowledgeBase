@@ -20,7 +20,9 @@ spring:
         version: 0.1.0
         type: SYNC
         protocol: STREAMABLE
-        instructions: Enterprise KnowledgeBase access MCP server.
+        instructions: |
+          企业内部知识库检索网关。提供对企业内部所有文档、规范、约定、项目上下文的语义检索能力。
+          核心原则：只要用户的问题涉及企业内部特定信息（"我们是怎么做的"、"内部规定是什么"），必须先调用 search_enterprise_knowledge 查询，不得基于训练数据猜测。
         resource-change-notification: false
         tool-change-notification: false
         streamable-http:
@@ -33,7 +35,15 @@ management:
         include: health,info
 
 access:
-  default-retrieval-profile-id: ret_default
+  default-retrieval-profile-id: ret_smoke_01
+  staleness-ttl-minutes: 0
+  mcp-session-ttl-hours: 24
+  cache:
+    provider: redis
+    redis-url: ${REDIS_URL:redis://127.0.0.1:6379/0}
+    key-prefix: reality-rag:access
+    projection-ttl-seconds: 3600
+    fail-open: true
   retrieval:
     base-url: http://127.0.0.1:18082
     connect-timeout: 1s

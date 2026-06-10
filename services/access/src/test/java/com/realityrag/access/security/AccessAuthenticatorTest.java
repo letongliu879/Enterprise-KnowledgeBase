@@ -191,6 +191,8 @@ class AccessAuthenticatorTest {
             false, 2048, "active", null, 1, now, true
         );
 
-        return new ApiKeyRegistry(jdbcTemplate, new ObjectMapper());
+        return new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(),
+            new com.realityrag.access.config.AccessProperties(),
+            new NoOpApiKeyProjectionCache());
     }
 }

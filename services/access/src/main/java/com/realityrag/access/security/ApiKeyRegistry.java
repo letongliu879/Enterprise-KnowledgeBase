@@ -2,6 +2,7 @@ package com.realityrag.access.security;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.realityrag.access.config.AccessProperties;
 import com.realityrag.access.support.AccessException;
 import java.sql.ResultSet;
 import java.time.Instant;
@@ -14,19 +15,30 @@ import org.springframework.stereotype.Component;
 @Component
 public class ApiKeyRegistry {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
-    /** Maximum staleness for a projection before it is considered invalid.
-     * Set to 0 to disable staleness checks (development/smoke mode). */
-    private static final int MAX_PROJECTION_STALENESS_MINUTES = 60;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final AccessProperties accessProperties;
+    private final ApiKeyProjectionCache cache;
 
-    public ApiKeyRegistry(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public ApiKeyRegistry(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, AccessProperties accessProperties, ApiKeyProjectionCache cache) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.accessProperties = accessProperties;
+        this.cache = cache;
     }
 
     public AgentRegistration resolve(String apiKey) {
+        AgentRegistration cached = cache.get(apiKey);
+        if (cached != null) {
+            try {
+                validateRegistration(cached, apiKey);
+                return cached;
+            } catch (AccessException error) {
+                cache.evict(apiKey);
+                throw error;
+            }
+        }
         try {
             List<AgentRegistration> rows = jdbcTemplate.query(
                 """
@@ -44,6 +56,7 @@ public class ApiKeyRegistry {
             }
             AgentRegistration registration = rows.get(0);
             validateRegistration(registration, apiKey);
+            cache.set(apiKey, registration);
             return registration;
         }
         catch (DataAccessException | IllegalStateException error) {
@@ -51,8 +64,11 @@ public class ApiKeyRegistry {
         }
     }
 
+    public void invalidateCache(String apiKeyId) {
+        cache.evict(apiKeyId);
+    }
+
     private void validateRegistration(AgentRegistration registration, String apiKey) {
-        // State check: fail closed for non-active states
         String state = registration.state();
         if (!"active".equals(state)) {
             throw new AccessException.Unauthenticated(
@@ -60,7 +76,6 @@ public class ApiKeyRegistry {
             );
         }
 
-        // Expiration check
         if (registration.expiresAt() != null
             && registration.expiresAt().isBefore(Instant.now())) {
             throw new AccessException.Unauthenticated(
@@ -68,9 +83,9 @@ public class ApiKeyRegistry {
             );
         }
 
-        // TTL check: projection must not be stale (disabled when limit is 0)
-        if (MAX_PROJECTION_STALENESS_MINUTES > 0 && registration.lastUpdatedAt() != null) {
-            Instant staleThreshold = Instant.now().minus(MAX_PROJECTION_STALENESS_MINUTES, ChronoUnit.MINUTES);
+        int stalenessMinutes = accessProperties.getStalenessTtlMinutes();
+        if (stalenessMinutes > 0 && registration.lastUpdatedAt() != null) {
+            Instant staleThreshold = Instant.now().minus(stalenessMinutes, ChronoUnit.MINUTES);
             if (registration.lastUpdatedAt().isBefore(staleThreshold)) {
                 throw new AccessException.RegistryUnavailable(
                     "API key projection is stale for: " + apiKey

@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,10 +28,12 @@ public class ApiKeyProjectionSyncController {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final com.realityrag.access.security.ApiKeyRegistry apiKeyRegistry;
 
-    public ApiKeyProjectionSyncController(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public ApiKeyProjectionSyncController(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, com.realityrag.access.security.ApiKeyRegistry apiKeyRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.apiKeyRegistry = apiKeyRegistry;
     }
 
     @PostConstruct
@@ -83,6 +87,17 @@ public class ApiKeyProjectionSyncController {
         try {
             mergeProjection(request);
             mergeIdempotency(request.idempotencyKey());
+            String apiKeyId = request.payload().apiKeyId();
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        apiKeyRegistry.invalidateCache(apiKeyId);
+                    }
+                });
+            } else {
+                apiKeyRegistry.invalidateCache(apiKeyId);
+            }
 
             Instant syncedAt = Instant.now();
             return ResponseEntity.ok(new ApiKeyProjectionSyncResponse(syncedAt, true));

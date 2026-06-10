@@ -96,6 +96,8 @@ class ParsePreviewRunner:
             source_metadata=command.metadata,
         )
         binary = _read_bytes(command.source_binary_ref)
+        if len(binary) == 0:
+            raise ValueError(f"source binary is empty: {command.filename}")
         policy = self._policy_resolver.resolve(
             filename=command.filename,
             mime_type=command.mime_type,
@@ -128,14 +130,19 @@ class ParsePreviewRunner:
         )
         self._metrics.incr(f"indexing.parse_preview.profile.{policy.parser_id}.total")
 
-        preview = self._runtime.build_preview(
-            asset_ref=command.source_binary_ref,
-            parser_id=policy.parser_id,
-            parser_config=policy.parser_config,
-            fallback_title=Path(command.filename).stem or command.source_file_id,
-            tenant_id=command.tenant_id,
-            source_file_id=command.source_file_id,
-        )
+        try:
+            preview = self._runtime.build_preview(
+                asset_ref=command.source_binary_ref,
+                parser_id=policy.parser_id,
+                parser_config=policy.parser_config,
+                fallback_title=Path(command.filename).stem or command.source_file_id,
+                tenant_id=command.tenant_id,
+                source_file_id=command.source_file_id,
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"parse preview failed for {command.filename}: {exc}"
+            ) from exc
         progress_events = list(preview.get("progress_events", []))
         self._trace.write_trace_artifact(
             trace_id=command.trace_id,

@@ -134,6 +134,8 @@ class TestTicketsProjection:
                             "tenant_id": "default",
                             "collection_id": "test1",
                             "state": "pending",
+                            "title": "budget.xlsx",
+                            "filename": "budget.xlsx",
                             "preliminary_doc_id": "doc_backfill_v1",
                             "source_file_id": "src_backfill_001",
                             "parse_snapshot_id": "ps_backfill_001",
@@ -153,6 +155,57 @@ class TestTicketsProjection:
         assert data["total"] == 1
         assert data["items"][0]["ticket_id"] == "ticket_backfill_001"
         assert data["items"][0]["status"] == "pending"
+        assert data["items"][0]["filename"] == "budget.xlsx"
+
+    def test_list_tickets_backfills_existing_projection_missing_filename(
+        self,
+        client: TestClient,
+        db_session: Session,
+    ):
+        reviewer_token = _make_token(
+            "user-default",
+            "reviewer-default@example.com",
+            ["reviewer"],
+            tenant_id="default",
+            allowed_collections=["test1"],
+        )
+        self._create_ticket_projection(
+            db_session,
+            "ticket_backfill_002",
+            tenant_id="default",
+            collection_id="test1",
+            title="",
+        )
+        with respx.mock:
+            route = respx.get("http://localhost:8004/internal/tickets").respond(
+                200,
+                json={
+                    "items": [
+                        {
+                            "ticket_id": "ticket_backfill_002",
+                            "tenant_id": "default",
+                            "collection_id": "test1",
+                            "state": "pending",
+                            "title": "forecast.csv",
+                            "filename": "forecast.csv",
+                            "preliminary_doc_id": "doc_backfill_v2",
+                            "source_file_id": "src_backfill_002",
+                            "parse_snapshot_id": "ps_backfill_002",
+                        }
+                    ],
+                    "total": 1,
+                },
+            )
+            resp = client.get(
+                "/workbench/tickets",
+                headers={"Authorization": f"Bearer {reviewer_token}"},
+            )
+
+        assert route.called
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["filename"] == "forecast.csv"
 
     def test_list_tickets_pagination(self, client: TestClient, reviewer_token: str, db_session: Session):
         for i in range(5):

@@ -102,6 +102,33 @@ class TestListTickets:
         assert resp_acme.status_code == 200
         assert resp_acme.json()["total"] == 0
 
+    def test_list_tickets_includes_filename_and_title(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            "approval_service.main.build_ticket_event_payload",
+            lambda session, ticket: {
+                "title": "report.xlsx",
+                "filename": "report.xlsx",
+                "source_file_id": "src-1",
+                "parse_snapshot_id": "pss-1",
+                "agent_review_ref": "C:/tmp/review.json",
+            },
+        )
+        resp = client.post(
+            "/internal/approval/pending",
+            json={
+                "intake_job_id": "job_title_001",
+                "preliminary_doc_id": "doc_title_001",
+                "collection_id": "col_default",
+            },
+        )
+        assert resp.status_code == 200
+
+        listed = client.get("/internal/tickets?tenant_id=tenant_acme")
+        assert listed.status_code == 200
+        item = listed.json()["items"][0]
+        assert item["title"] == "report.xlsx"
+        assert item["filename"] == "report.xlsx"
+
 
 class TestGetTicket:
     def test_get_ticket_not_found(self, client: TestClient):
@@ -158,6 +185,70 @@ class TestDecideTicket:
             },
         )
         assert decide_resp.status_code == 400
+
+    def test_decide_idempotency_is_scoped_to_ticket(self, client: TestClient):
+        # Create two PENDING tickets (auto-approve produces SYSTEM_DECIDED, which cannot be manually approved)
+        resp_a = client.post(
+            "/internal/approval/pending",
+            json={
+                "intake_job_id": "job_idem_a",
+                "preliminary_doc_id": "doc_idem_a",
+                "collection_id": "col_default",
+            },
+        )
+        assert resp_a.status_code == 200
+        ticket_a = resp_a.json()["ticket_id"]
+
+        resp_b = client.post(
+            "/internal/approval/pending",
+            json={
+                "intake_job_id": "job_idem_b",
+                "preliminary_doc_id": "doc_idem_b",
+                "collection_id": "col_default",
+            },
+        )
+        assert resp_b.status_code == 200
+        ticket_b = resp_b.json()["ticket_id"]
+
+        # Decide ticket A with shared idempotency key
+        decide_a = client.post(
+            f"/internal/tickets/{ticket_a}/decide",
+            json={
+                "command_id": "cmd_idem_shared",
+                "trace_id": "trc_idem_shared",
+                "idempotency_key": "idem_shared",
+                "actor": "user-001",
+                "tenant_id": "tenant_acme",
+                "collection_id": "col_default",
+                "target_type": "ticket",
+                "target_id": ticket_a,
+                "payload": {"action": "approve"},
+            },
+        )
+        assert decide_a.status_code == 200
+        result_a = decide_a.json()
+        assert result_a["ticket_id"] == ticket_a
+        assert result_a["decision"] == "approve"
+
+        # Same idempotency key for ticket B must NOT return ticket A's result
+        decide_b = client.post(
+            f"/internal/tickets/{ticket_b}/decide",
+            json={
+                "command_id": "cmd_idem_shared_b",
+                "trace_id": "trc_idem_shared_b",
+                "idempotency_key": "idem_shared",
+                "actor": "user-001",
+                "tenant_id": "tenant_acme",
+                "collection_id": "col_default",
+                "target_type": "ticket",
+                "target_id": ticket_b,
+                "payload": {"action": "approve"},
+            },
+        )
+        assert decide_b.status_code == 200
+        result_b = decide_b.json()
+        assert result_b["ticket_id"] == ticket_b
+        assert result_b["decision"] == "approve"
 
 
 class TestAgentReview:

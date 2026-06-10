@@ -79,6 +79,7 @@ class LoggingAccessTraceRecorderTest {
         );
 
         recorder.recordRequestAccepted("qry_access_01", "trc_access_01", context);
+        recorder.flush();
         recorder.recordResponse("qry_access_01", "trc_access_01", new KnowledgeContext(
             "qry_access_01",
             Map.of(),
@@ -101,6 +102,7 @@ class LoggingAccessTraceRecorderTest {
             100,
             Map.of("debug_ref", "dbg://retrieval/qry_access_01")
         ));
+        recorder.flush();
 
         Integer traceCount = jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM run_traces WHERE run_trace_id = ? AND root_status = ? AND result_count = ?",

@@ -88,59 +88,34 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
 
   const {
-    data: ticket,
-    isLoading: ticketLoading,
-    error: ticketError,
+    data: workspace,
+    isLoading,
+    error,
   } = useQuery({
-    queryKey: ["ticket", ticketId],
-    queryFn: () => workbenchApi.getTicket(ticketId),
+    queryKey: ["workspace", ticketId],
+    queryFn: () => workbenchApi.getWorkspaceDetail(ticketId),
     enabled: Boolean(ticketId),
     retry: 0,
   });
 
-  const {
-    data: agentReview,
-    isLoading: reviewLoading,
-    error: reviewError,
-  } = useQuery({
-    queryKey: ["agent-review", ticketId],
-    queryFn: () => workbenchApi.getAgentReview(ticketId),
-    enabled: Boolean(ticket?.ticket_id),
-    retry: 0,
-  });
+  const ticket = workspace?.ticket ?? null;
+  const document = workspace?.document;
+  const parseSnapshot = workspace?.parse_snapshot ?? null;
+  const chunks = workspace?.chunks;
+  const chunkEdits = workspace?.chunk_edits;
+  const agentReview = workspace?.agent_review;
+  const capabilities = workspace?.capabilities;
+  const degradedParts = workspace?.degraded_parts ?? [];
 
-  const parseSnapshotId = ticket?.parse_snapshot_id ?? "";
-
-  const {
-    data: parseSnapshot,
-    isLoading: snapshotLoading,
-    error: snapshotError,
-  } = useQuery({
-    queryKey: ["parse-snapshot", parseSnapshotId],
-    queryFn: () => workbenchApi.getParseSnapshot(parseSnapshotId),
-    enabled: Boolean(parseSnapshotId),
-    retry: 0,
-  });
-
-  const {
-    data: chunks,
-    error: chunksError,
-  } = useQuery({
-    queryKey: ["review-viewer-chunks", parseSnapshotId],
-    queryFn: () => workbenchApi.getParseSnapshotChunks(parseSnapshotId),
-    enabled: Boolean(parseSnapshotId),
-    retry: 0,
-  });
-
-  const {
-    data: chunkEdits,
-    isLoading: chunkEditsLoading,
-  } = useQuery({
-    queryKey: ["review-viewer-edits", parseSnapshotId],
-    queryFn: () => workbenchApi.listChunkEdits(parseSnapshotId),
-    enabled: Boolean(parseSnapshotId),
-    retry: 0,
-  });
+  const effectiveParseSnapshotId =
+    document?.parse_snapshot_id || parseSnapshot?.parse_snapshot_id || "";
+  const effectiveSourceFileId =
+    document?.source_file_id || parseSnapshot?.source_file_id || null;
+  const effectiveFilename =
+    document?.filename?.trim() ||
+    parseSnapshot?.source_filename?.trim() ||
+    ticket?.filename?.trim() ||
+    "";
 
   const decide = useMutation({
     mutationFn: (action: "APPROVE" | "REJECT" | "RETURN") =>
@@ -153,7 +128,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
       }),
     onSuccess: async () => {
       toast.success("Review decision submitted");
-      await queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      await queryClient.invalidateQueries({ queryKey: ["workspace", ticketId] });
       await queryClient.invalidateQueries({ queryKey: ["tickets"] });
     },
     onError: (err) => {
@@ -161,18 +136,27 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
     },
   });
 
-  const hasParseSnapshot = Boolean(parseSnapshotId);
+  const hasParseSnapshot = Boolean(effectiveParseSnapshotId);
+  const hasSourceFile = Boolean(effectiveSourceFileId);
   const isPending = normalizeStatus(ticket?.status) === "pending";
   const displayTitle =
-    ticket?.filename?.trim() || ticket?.doc_id?.trim() || ticket?.ticket_id || ticketId;
-
-  const editedCount = useMemo(
-    () => chunkEdits?.items.length ?? 0,
-    [chunkEdits?.items.length]
-  );
+    effectiveFilename || ticket?.doc_id?.trim() || ticket?.ticket_id || ticketId;
 
   const reviewFindings = useMemo<Finding[]>(
-    () => agentReview?.findings ?? [],
+    () =>
+      (agentReview?.findings ?? []).map((item) => ({
+        finding_id: item.finding_id,
+        severity: item.severity,
+        category: item.category,
+        problem_summary: item.problem_summary,
+        source_quote: item.source_quote || undefined,
+        evidence_id: item.evidence_id || undefined,
+        doc_id: item.doc_id || undefined,
+        page_from: item.page_from ?? undefined,
+        page_to: item.page_to ?? undefined,
+        state: item.state,
+        confidence: item.confidence ?? undefined,
+      })),
     [agentReview?.findings]
   );
 
@@ -197,7 +181,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
   const parseSnapshotSummary = useMemo(() => {
     if (!parseSnapshot) return null;
     return {
-      sourceFilename: String(parseSnapshot.source_filename || ticket?.filename || "-"),
+      sourceFilename: String(parseSnapshot.source_filename || effectiveFilename || "-"),
       sourceSuffix: String(parseSnapshot.source_suffix || "-"),
       parserId: String(parseSnapshot.parser_id || "-"),
       parserBackend: String(parseSnapshot.parser_backend || "-"),
@@ -206,14 +190,16 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
       ),
       previewText: String(parseSnapshot.preview_text || "").trim(),
       warnings: Array.isArray(parseSnapshot.warnings)
-        ? parseSnapshot.warnings.map((item: unknown) => String(item))
+        ? parseSnapshot.warnings.map((item) => String(item))
         : [],
     };
-  }, [parseSnapshot, ticket?.filename]);
+  }, [effectiveFilename, parseSnapshot]);
 
   const warningCount = parseSnapshotSummary?.warnings.length ?? 0;
+  const editedCount = chunkEdits?.total ?? 0;
+  const chunkCount = chunks?.total ?? 0;
 
-  if (ticketLoading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-10 w-56 rounded-lg" />
@@ -222,24 +208,24 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
     );
   }
 
-  if (ticketError) {
-    if (isBackendGap(ticketError)) {
-      return <BackendGap feature="Review detail" endpoint={ticketError.endpoint} />;
+  if (error) {
+    if (isBackendGap(error)) {
+      return <BackendGap feature="Review detail workspace" endpoint={error.endpoint} />;
     }
     return (
       <Alert variant="destructive">
         <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>{isApiError(ticketError) ? ticketError.message : String(ticketError)}</AlertDescription>
+        <AlertDescription>{isApiError(error) ? error.message : String(error)}</AlertDescription>
       </Alert>
     );
   }
 
-  if (!ticket) {
+  if (!workspace || !ticket || !document) {
     return (
       <EmptyState
         icon={FileText}
-        title="Review ticket not found"
-        description="The review ticket record is unavailable or you no longer have access to it."
+        title="Review workspace not found"
+        description="The aggregated workspace view is unavailable or you no longer have access to this ticket."
       />
     );
   }
@@ -262,13 +248,16 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                   {ticket.next_action ? (
                     <Badge variant="outline">{formatNextActionLabel(ticket.next_action)}</Badge>
                   ) : null}
+                  {document.linkage_source !== "document_projection" ? (
+                    <Badge variant="outline">Linkage: {document.linkage_source}</Badge>
+                  ) : null}
                 </div>
                 <h1 className="mt-3 text-3xl font-semibold tracking-tight xl:text-4xl">
                   {displayTitle}
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Human review writes back to the ticket state. Keep the source, parsed draft, and
-                  agent assessment aligned before you approve publish.
+                  Workspace detail is now aggregated server-side. Ticket approval state and document
+                  linkage are resolved before this page renders.
                 </p>
               </div>
             </div>
@@ -276,11 +265,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[420px]">
               <SummaryMetric label="Findings" value={reviewSummary.findings} tone="text-amber-600" />
               <SummaryMetric label="Risks" value={reviewSummary.risks} tone="text-rose-600" />
-              <SummaryMetric
-                label="Draft edits"
-                value={chunkEditsLoading ? "-" : editedCount}
-                tone="text-sky-600"
-              />
+              <SummaryMetric label="Draft edits" value={editedCount} tone="text-sky-600" />
               <SummaryMetric label="Warnings" value={warningCount} tone="text-violet-600" />
             </div>
           </div>
@@ -288,11 +273,20 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <MetaItem label="Ticket id" value={ticket.ticket_id} mono />
             <MetaItem label="Collection" value={ticket.collection_id} />
-            <MetaItem label="Document id" value={ticket.doc_id} mono />
-            <MetaItem label="Parse snapshot" value={ticket.parse_snapshot_id} mono />
+            <MetaItem label="Document id" value={document.doc_id || ticket.doc_id} mono />
+            <MetaItem label="Parse snapshot" value={effectiveParseSnapshotId} mono />
           </div>
         </div>
       </section>
+
+      {degradedParts.length > 0 ? (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Workspace is partially degraded: {degradedParts.join(", ")}.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
@@ -316,50 +310,47 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
             </TabsList>
 
             <TabsContent value="source" className="space-y-4">
-              {!hasParseSnapshot ? (
+              {!hasSourceFile ? (
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>This ticket does not currently link to a parse snapshot.</AlertDescription>
+                  <AlertDescription>This workspace does not currently link to a source file.</AlertDescription>
                 </Alert>
               ) : (
-                <DocumentViewer
-                  sourceFileId={ticket.source_file_id}
-                  filename={ticket.filename || parseSnapshotSummary?.sourceFilename}
-                  previewText={parseSnapshotSummary?.previewText}
-                  parserId={parseSnapshotSummary?.parserId}
-                  parserBackend={parseSnapshotSummary?.parserBackend}
-                  warnings={parseSnapshotSummary?.warnings}
-                  chunks={chunks?.items ?? []}
-                  searchText={searchText}
-                  onSearchComplete={(found) => {
-                    if (!found) {
-                      toast.info("Text not found in current view");
-                    }
-                  }}
-                />
+                <>
+                  <DocumentViewer
+                    sourceFileId={effectiveSourceFileId}
+                    filename={effectiveFilename || parseSnapshotSummary?.sourceFilename}
+                    previewText={parseSnapshotSummary?.previewText}
+                    parserId={parseSnapshotSummary?.parserId}
+                    parserBackend={parseSnapshotSummary?.parserBackend}
+                    warnings={parseSnapshotSummary?.warnings}
+                    chunks={chunks?.items ?? []}
+                    searchText={searchText}
+                    onSearchComplete={(found) => {
+                      if (searchText.trim() && !found) {
+                        toast.info("Text not found in current view");
+                      }
+                    }}
+                  />
+                  {!hasParseSnapshot ? (
+                    <Alert>
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        This workspace does not currently link to a parse snapshot. Original source preview is still available.
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+                </>
               )}
 
-              {!hasParseSnapshot ? null : snapshotError ? (
-                isBackendGap(snapshotError) ? (
-                  <BackendGap feature="Parse snapshot" endpoint={snapshotError.endpoint} />
-                ) : (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      {isApiError(snapshotError) ? snapshotError.message : String(snapshotError)}
-                    </AlertDescription>
-                  </Alert>
-                )
-              ) : snapshotLoading ? (
-                <Skeleton className="h-32 rounded-2xl" />
-              ) : parseSnapshotSummary ? (
+              {!hasParseSnapshot ? null : parseSnapshotSummary ? (
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
                   <Card className="rounded-2xl">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base">Parse context</CardTitle>
                       <CardDescription>
-                        This is the parser configuration and normalized preview context used for the
-                        review ticket.
+                        This is the parser configuration and normalized preview context used by the
+                        review workspace.
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -389,9 +380,9 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-3">
-                        <SummaryMetric label="Chunks" value={chunks?.items.length ?? 0} tone="text-slate-900" />
+                        <SummaryMetric label="Chunks" value={chunkCount} tone="text-slate-900" />
                         <SummaryMetric label="Warnings" value={warningCount} tone="text-violet-600" />
-                        <SummaryMetric label="Edits" value={chunkEditsLoading ? "-" : editedCount} tone="text-sky-600" />
+                        <SummaryMetric label="Edits" value={editedCount} tone="text-sky-600" />
                       </div>
                       <div className="max-h-52 overflow-auto rounded-2xl border bg-muted/10 p-4 text-sm leading-7">
                         {parseSnapshotSummary.previewText || "No preview text is available for this parse snapshot."}
@@ -399,13 +390,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                     </CardContent>
                   </Card>
                 </div>
-              ) : (
-                <EmptyState
-                  icon={ShieldAlert}
-                  title="Parse summary is not available"
-                  description="The parse snapshot exists, but the summary payload is incomplete."
-                />
-              )}
+              ) : null}
             </TabsContent>
 
             <TabsContent value="drafts" className="space-y-4">
@@ -418,11 +403,16 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                   </CardDescription>
                 </CardHeader>
               </Card>
-              {chunksError && isBackendGap(chunksError) ? (
-                <BackendGap feature="Parse snapshot chunks" endpoint={chunksError.endpoint} />
+              {!capabilities?.can_edit_drafts || !effectiveParseSnapshotId ? (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Draft editing is unavailable because this workspace does not expose a parse snapshot.
+                  </AlertDescription>
+                </Alert>
               ) : (
                 <ChunkEditorWorkbench
-                  parseSnapshotId={parseSnapshotId}
+                  parseSnapshotId={effectiveParseSnapshotId}
                   mode="pre-publish"
                   title="Draft corrections"
                   description="Tighten chunk wording, restore broken structure, and submit governed draft edits before the human decision."
@@ -432,33 +422,26 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
             </TabsContent>
 
             <TabsContent value="agent" className="space-y-4">
-              {reviewError ? (
-                isBackendGap(reviewError) ? (
-                  <BackendGap feature="Agent review" endpoint={reviewError.endpoint} />
-                ) : (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      {isApiError(reviewError) ? reviewError.message : String(reviewError)}
-                    </AlertDescription>
-                  </Alert>
-                )
-              ) : reviewLoading ? (
-                <Skeleton className="h-44 rounded-2xl" />
-              ) : (
-                <AgentReviewPanel
-                  findings={reviewFindings}
-                  onSearchInDocument={(quote) => {
-                    setFocusedEvidenceId(null);
-                    setSearchText(quote);
-                    setActiveTab("source");
-                  }}
-                  onJumpToChunk={(evidenceId) => {
-                    setFocusedEvidenceId(evidenceId);
-                    setActiveTab("drafts");
-                  }}
-                />
-              )}
+              <AgentReviewPanel
+                findings={reviewFindings}
+                onSearchInDocument={
+                  capabilities?.can_search_in_document
+                    ? (quote) => {
+                        setFocusedEvidenceId(null);
+                        setSearchText(quote);
+                        setActiveTab("source");
+                      }
+                    : undefined
+                }
+                onJumpToChunk={
+                  capabilities?.can_jump_to_chunk
+                    ? (evidenceId) => {
+                        setFocusedEvidenceId(evidenceId);
+                        setActiveTab("drafts");
+                      }
+                    : undefined
+                }
+              />
             </TabsContent>
           </Tabs>
         </div>
@@ -486,7 +469,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                 </p>
               </div>
 
-              {isPending ? (
+              {capabilities?.can_decide_ticket ? (
                 <>
                   <Textarea
                     placeholder="Optional decision reason"
@@ -532,12 +515,12 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
             <CardContent className="space-y-3">
               <MetaItem label="Ticket id" value={ticket.ticket_id} mono />
               <MetaItem label="Collection" value={ticket.collection_id} />
-              <MetaItem label="Document id" value={ticket.doc_id} mono />
-              <MetaItem label="Parse snapshot" value={ticket.parse_snapshot_id} mono />
+              <MetaItem label="Document id" value={document.doc_id || ticket.doc_id} mono />
+              <MetaItem label="Parse snapshot" value={effectiveParseSnapshotId} mono />
             </CardContent>
           </Card>
 
-          {systemActionLabel || ticket.decision || ticket.failure_code || ticket.next_action ? (
+          {systemActionLabel || ticket.decision || ticket.failure_code || ticket.next_action || degradedParts.length > 0 ? (
             <Card className="rounded-[24px]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">System and diagnostics</CardTitle>
@@ -574,6 +557,11 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                   {ticket.next_action ? (
                     <span className="rounded-full border bg-muted/20 px-3 py-1.5">
                       Next: {formatNextActionLabel(ticket.next_action)}
+                    </span>
+                  ) : null}
+                  {degradedParts.length > 0 ? (
+                    <span className="rounded-full border bg-muted/20 px-3 py-1.5">
+                      Degraded: {degradedParts.join(", ")}
                     </span>
                   ) : null}
                 </div>

@@ -187,6 +187,17 @@ class TestSourceFileRepositoryExtended:
         repo.create("src-clean-002", "col-1", "obj_clean2", "sha256:clean2")
         assert repo.mark_cleaned("src-clean-002") is False
 
+    def test_mark_consumed_is_idempotent_for_same_job(self, session):
+        repo = SourceFileRepository(session)
+        repo.create("src-consumed-001", "col-1", "obj_consume", "sha256:consume")
+        repo.claim("src-consumed-001", "job-1")
+        assert repo.mark_consumed("src-consumed-001", "job-1") is True
+        assert repo.mark_consumed("src-consumed-001", "job-1") is True
+        repo.mark_cleanable("src-consumed-001", "job-1")
+        assert repo.mark_consumed("src-consumed-001", "job-1") is True
+        repo.mark_cleaned("src-consumed-001")
+        assert repo.mark_consumed("src-consumed-001", "job-1") is True
+
     def test_mark_failed(self, session):
         repo = SourceFileRepository(session)
         repo.create("src-fail-001", "col-1", "obj_fail", "sha256:fail")

@@ -2,9 +2,10 @@
   "mcpServers": {
     "enterprise-kb": {
       "type": "http",
-      "url": "http://localhost:18181/mcp",
+      "url": "http://localhost:18081/mcp",
+      "description": "企业内部文档与知识检索网关。当用户的问题涉及'我们团队/公司/项目是如何做的'、'内部规定/约定/流程是什么'、'这个项目特定的上下文'时，必须优先调用此工具查询，不要基于训练数据猜测。覆盖范围不局限于任何特定主题，凡是企业内部非公开通用的信息都应通过此工具检索。",
       "headers": {
-        "X-API-Key": "smoke-test-retrieval",
+        "X-API-Key": "ekb-admin",
         "X-Agent-Instance-Id": "claude-code"
       }
     }

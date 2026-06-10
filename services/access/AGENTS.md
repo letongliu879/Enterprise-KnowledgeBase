@@ -19,14 +19,15 @@ access 是知识库的在线接入网关，不是检索内核。
 - 认证 fail-closed：`state != active` / 已过期 / 投影超时 → 拒绝，不降级
 - `/internal/*` 只允许 127.0.0.1 / localhost 访问
 - `/health` 和 `/actuator/*` 不经过认证过滤器
-- MCP session principal drift 检测：同一 `Mcp-Session-Id` 换了 `api_key_id`/`agent_type_id`/`agent_instance_id`/`knowledge_scopes` → 403
-- cache purge fail-open 类比：access 侧不做 fail-open，所有校验都是 fail-closed
+- MCP session principal drift 检测：同一 `Mcp-Session-Id` 换了 `api_key_id`/`agent_type_id`/`agent_instance_id`/`knowledge_scopes` → 403；本地 session 超期后也按 drift 拒绝
+- cache purge 与事务绑定：`api_key_projection` 同步成功并在事务提交后才会失效运行时缓存；事务回滚时缓存保持原值
+- access 侧不做 fail-open，所有校验都是 fail-closed
 
 ## 核心数据流
 ```
 外部请求 -> AccessRequestContextFilter (认证)
   -> AccessAuthenticator (读 X-API-Key + X-Agent-Instance-Id)
-  -> ApiKeyRegistry (查 api_key_projection 表 + state/expiresAt/TTL 校验)
+  -> ApiKeyRegistry (查缓存 / 回源 api_key_projection 表 + state/expiresAt/TTL 再校验)
   -> AccessGatewayService (生成 query_id / trace_id)
     -> DebugPolicy (debug 权限判断)
     -> RetrievalProfileSelector (选择/校验 retrieval_profile_id)
@@ -47,11 +48,12 @@ access 是知识库的在线接入网关，不是检索内核。
 
 ## 安全校验逻辑（按顺序）
 ```
-1. state == "active"? 否则 UNAUTHENTICATED (401)
-2. expiresAt == null OR expiresAt > now? 否则 UNAUTHENTICATED (401)
-3. MAX_PROJECTION_STALENESS_MINUTES > 0 时 lastUpdatedAt 在 TTL 内? 否则 RegistryUnavailable (500)
-   （当前生产代码 MAX_PROJECTION_STALENESS_MINUTES = 0，即不检查）
-4. collection_scope ⊆ knowledgeScopes? 否则 FORBIDDEN (403)
+1. 命中缓存时先对缓存条目再做一次 state/expiresAt/TTL 校验；校验失败则驱逐缓存并拒绝
+2. state == "active"? 否则 UNAUTHENTICATED (401)
+3. expiresAt == null OR expiresAt > now? 否则 UNAUTHENTICATED (401)
+4. MAX_PROJECTION_STALENESS_MINUTES > 0 时 lastUpdatedAt 在 TTL 内? 否则 RegistryUnavailable (500)
+   （当前 MAX_PROJECTION_STALENESS_MINUTES = 60，即超过 60 分钟未同步的投影视为过期）
+5. collection_scope ⊆ knowledgeScopes? 否则 FORBIDDEN (403)
 ```
 
 ## Debug 权限逻辑
@@ -74,8 +76,10 @@ access 是知识库的在线接入网关，不是检索内核。
 - Wire format 使用 snake_case，`query_text` → `query`，`max_context_tokens` → `token_budget`
 - `KnowledgeContext.ResultChunk` wire 名：`evidence_items`/`doc_id`/`evidence_id`/`content`
 - 数据库表通过 `@PostConstruct` DDL 自动创建，无需手动建表
-- MCP protocol version = `2024-11-05`（客户端发更高版本时会回退建议到此版本）
+- MCP protocol version = `2025-11-25`（当前稳定版，由 MCP SDK 0.18.2 支持）
+- MCP 本地 session 绑定按实例隔离，不是 JVM 全局共享；绑定记录有 TTL，超期按 principal drift 处理
+- `/mcp` 请求处理结束后会清理 `AccessRequestContextHolder`，防止 ThreadLocal 上下文泄漏到后续请求
 - `run_traces.run_trace_id` 格式：`access_<queryId>`
 - 配置前缀 `access.*`，统一入口 `AccessProperties`（`access.default-retrieval-profile-id`、`access.retrieval.*`）
-- 还没有限流实现、没有 `/sse` 端点（`AccessAuthenticator` 中预留了 clientType 判断）
-- `MAX_PROJECTION_STALENESS_MINUTES` 当前硬编码为 0（开发模式不校验 TTL），上线前需改为 60
+- 还没有限流实现、没有 `/sse` 端点
+- `MAX_PROJECTION_STALENESS_MINUTES = 60`（硬编码，超过 60 分钟未同步的 API Key 投影视为过期）

@@ -19,6 +19,7 @@ from reality_rag_persistence.repositories.documents import DocumentRepository
 from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
 from reality_rag_persistence.repositories.source_files import SourceFileRepository
 from intake_runtime.orchestrator import OrchestratorService
+from intake_runtime.stage_task_worker import OrphanedIntakeJobError
 
 from .job_event_flow import apply_approval_decision, apply_stage_completed
 from .document_service_client import DocumentServiceClient
@@ -191,25 +192,19 @@ def _deliver_stage_completed(event: OutboxEvent) -> bool:
         orch = OrchestratorService(session)
         job = IntakeJobRepository(session).get(intake_job_id)
         if job is None:
-            raise ValueError(f"Intake job not found: {intake_job_id}")
+            raise OrphanedIntakeJobError(f"Intake job not found: {intake_job_id}")
 
         apply_stage_completed(session, orch, job, stage_name)
 
-        idem_repo.record_processed(
-            _STAGE_COMPLETED_CONSUMER_ID,
-            event.event_id,
-            event.idempotency_key,
-        )
-        session.commit()
-
         # After conversion succeeds, emit an enriched IntakeJobStateChanged so
-        # workbench learns the parse_snapshot_id that was produced.
+        # workbench learns the parse_snapshot_id that was produced. Do this
+        # BEFORE recording idempotency so a failed POST can be retried.
         if stage_name == StageName.CONVERSION:
             parse_snapshot_id = _conversion_parse_snapshot_id(session, intake_job_id)
             if parse_snapshot_id:
                 source_file = SourceFileRepository(session).get(job.source_file_id)
                 upload_id = source_file.upload_id if source_file else ""
-                _post_native_events_to_workbench("intake", [{
+                native_event = {
                     "event_id": f"evt_job_conv_{intake_job_id}",
                     "event_type": "IntakeJobStateChanged",
                     "tenant_id": payload.get("tenant_id", "default"),
@@ -229,7 +224,17 @@ def _deliver_stage_completed(event: OutboxEvent) -> bool:
                         "parse_snapshot_id": parse_snapshot_id,
                     },
                     "trace_id": event.trace_id or "",
-                }])
+                }
+                if not _post_native_events_to_workbench("intake", [native_event]):
+                    session.rollback()
+                    return False
+
+        idem_repo.record_processed(
+            _STAGE_COMPLETED_CONSUMER_ID,
+            event.event_id,
+            event.idempotency_key,
+        )
+        session.commit()
 
         return True
     except Exception:

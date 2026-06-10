@@ -88,24 +88,17 @@ class RAGFlowConverter(BaseConverter):
                     if str(chunk.get("content_with_weight", "")).strip()
                 ).strip()
             if not canonical_md:
-                return ConversionResult(
-                    source_file_path=request.source_file_path,
-                    conversion_status=ConversionStatus.FAILED,
-                    error_message="indexing parse returned no canonical preview text",
-                    warnings=[str(item) for item in snapshot.get("warnings", []) if str(item).strip()],
-                    metadata={
-                        "file_size": source_path.stat().st_size,
-                        "extension": ext,
-                        "converter": "indexing_parse",
-                        "parse_snapshot_id": str(accepted.get("parse_snapshot_id") or ""),
-                    },
-                )
+                canonical_md = ""
+
+            warnings = [str(item) for item in snapshot.get("warnings", []) if str(item).strip()]
+            if not canonical_md and source_path.stat().st_size > 0:
+                warnings.append("indexing parse returned no canonical preview text")
 
             return ConversionResult(
                 source_file_path=request.source_file_path,
                 conversion_status=ConversionStatus.SUCCESS,
                 canonical_md=canonical_md,
-                warnings=[str(item) for item in snapshot.get("warnings", []) if str(item).strip()],
+                warnings=warnings,
                 metadata={
                     "file_size": source_path.stat().st_size,
                     "extension": ext,
@@ -126,6 +119,7 @@ class RAGFlowConverter(BaseConverter):
                     "parser_config": dict(snapshot.get("parser_config", {})),
                     "trace_id": trace_id,
                     "source_file_id": source_file_id,
+                    "missing_canonical_preview_text": not bool(canonical_md),
                 },
             )
         except Exception as exc:

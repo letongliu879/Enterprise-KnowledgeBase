@@ -13,7 +13,11 @@ from .chunks.routes import router as chunk_router
 from .tickets.routes import router as ticket_router
 from .chunk_edits.routes import router as chunk_edit_router
 from .task_projection.routes import router as task_router
-from .workspace.routes import router as workspace_router
+from .workspace.routes import (
+    router as workspace_router,
+    close_workspace_clients,
+    init_workspace_clients,
+)
 from .source_files.routes import router as source_file_router
 from .commands.retrieval import router as retrieval_router
 from .events import router as event_router
@@ -30,7 +34,11 @@ async def _build_lifespan():
 
     Projection is the sole read model; no background reconciler needed.
     """
-    yield
+    init_workspace_clients()
+    try:
+        yield
+    finally:
+        await close_workspace_clients()
 
 
 def create_app() -> FastAPI:

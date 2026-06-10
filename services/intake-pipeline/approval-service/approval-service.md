@@ -168,6 +168,10 @@ ingestion-worker / indexing-service（执行入库）
 | **工单生命周期** | ❌ | ✅ approval-service |
 | 实际写库/写索引 | ❌（发指令） | ✅（决策） |
 
+## 决策幂等性
+
+`decision` 接口的幂等缓存按 `ticket_id` 作用域隔离。相同 `idempotency_key` 在不同 ticket 之间互不影响。
+
 ## 关键状态
 
 ```

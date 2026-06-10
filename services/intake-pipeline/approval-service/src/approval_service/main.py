@@ -19,6 +19,7 @@ from reality_rag_persistence.database import get_session
 
 from .approval_domain import ApprovalService, system_decide
 from .review_artifacts import (
+    build_ticket_event_payload,
     load_review_artifact_payload,
     normalize_agent_review_findings,
     resolve_ticket_tenant_id,
@@ -269,6 +270,8 @@ class ApprovalTicketView(BaseModel):
     collection_id: str
     tenant_id: str
     state: str
+    title: str | None = None
+    filename: str | None = None
     preliminary_doc_id: str
     final_doc_id: str | None = None
     source_file_id: str | None = None
@@ -296,49 +299,41 @@ class DecideTicketRequest(BaseModel):
 
 
 # In-memory idempotency store for decisions
-_decision_idempotency: dict[str, dict] = {}  # idempotency_key -> decision result
+# Keyed by ticket_id to prevent cross-ticket replay with the same idempotency_key.
+_decision_idempotency: dict[str, dict[str, dict]] = {}  # ticket_id -> idempotency_key -> decision result
 
 
 def _ticket_to_view(ticket: ApprovalTicket, *, session=None) -> ApprovalTicketView:
-    source_file_id = None
-    parse_snapshot_id = None
-    agent_review_ref = None
     owns_session = session is None
     if session is None:
         session = get_session()
     try:
-        from reality_rag_persistence.repositories.intake_jobs import IntakeJobRepository
-
-        job = IntakeJobRepository(session).get(ticket.intake_job_id)
-        if job is not None:
-            source_file_id = job.source_file_id
-        payload = _load_review_artifact_payload(session, ticket.intake_job_id)
-        if payload is not None:
-            parse_snapshot_id = payload.get("parse_snapshot_id")
-            agent_review_ref = payload.get("agent_review_ref")
+        payload = build_ticket_event_payload(session, ticket)
+        tenant_id = resolve_ticket_tenant_id(session, ticket)
+        return ApprovalTicketView(
+            ticket_id=ticket.ticket_id,
+            intake_job_id=ticket.intake_job_id,
+            collection_id=ticket.collection_id,
+            tenant_id=tenant_id,
+            state=ticket.state.value,
+            title=payload.get("title"),
+            filename=payload.get("filename"),
+            preliminary_doc_id=ticket.preliminary_doc_id,
+            final_doc_id=ticket.final_doc_id,
+            source_file_id=payload.get("source_file_id"),
+            parse_snapshot_id=payload.get("parse_snapshot_id"),
+            agent_review_ref=payload.get("agent_review_ref"),
+            decision=ticket.decision,
+            decision_reason=ticket.decision_reason,
+            decided_by=ticket.decision_actor,
+            confirmed_tags=ticket.confirmed_tags or [],
+            created_at=ticket.created_at.isoformat() if ticket.created_at else _utc_now(),
+            updated_at=ticket.created_at.isoformat() if ticket.created_at else _utc_now(),
+            decided_at=ticket.decided_at.isoformat() if ticket.decided_at else None,
+        )
     finally:
         if owns_session:
             session.close()
-
-    return ApprovalTicketView(
-        ticket_id=ticket.ticket_id,
-        intake_job_id=ticket.intake_job_id,
-        collection_id=ticket.collection_id,
-        tenant_id=resolve_ticket_tenant_id(session, ticket),
-        state=ticket.state.value,
-        preliminary_doc_id=ticket.preliminary_doc_id,
-        final_doc_id=ticket.final_doc_id,
-        source_file_id=source_file_id,
-        parse_snapshot_id=parse_snapshot_id,
-        agent_review_ref=agent_review_ref,
-        decision=ticket.decision,
-        decision_reason=ticket.decision_reason,
-        decided_by=ticket.decision_actor,
-        confirmed_tags=ticket.confirmed_tags or [],
-        created_at=ticket.created_at.isoformat() if ticket.created_at else _utc_now(),
-        updated_at=ticket.created_at.isoformat() if ticket.created_at else _utc_now(),
-        decided_at=ticket.decided_at.isoformat() if ticket.decided_at else None,
-    )
 
 
 def _utc_now() -> str:
@@ -429,9 +424,9 @@ async def get_ticket_internal(ticket_id: str) -> dict:
 @app.post("/internal/tickets/{ticket_id}/decide")
 async def decide_ticket_internal(ticket_id: str, request: DecideTicketRequest) -> dict:
     """Decide an approval ticket. Idempotent by idempotency_key."""
-    # Check idempotency
-    if request.idempotency_key in _decision_idempotency:
-        return _decision_idempotency[request.idempotency_key]
+    # Check idempotency (scoped to ticket_id to prevent cross-ticket replay)
+    if request.idempotency_key in _decision_idempotency.get(ticket_id, {}):
+        return _decision_idempotency[ticket_id][request.idempotency_key]
 
     session = get_session()
     try:
@@ -468,7 +463,7 @@ async def decide_ticket_internal(ticket_id: str, request: DecideTicketRequest) -
         session.commit()
         view = _ticket_to_view(result_ticket, session=session)
         result = view.model_dump(mode="json")
-        _decision_idempotency[request.idempotency_key] = result
+        _decision_idempotency.setdefault(ticket_id, {})[request.idempotency_key] = result
         return result
     except ValueError as exc:
         session.rollback()

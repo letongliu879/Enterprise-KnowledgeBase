@@ -184,6 +184,108 @@ class TestOutboxDeliverCallbacks:
         finally:
             session.close()
 
+    def test_stage_task_deliver_rejects_mismatched_orphan(self):
+        """A stage task whose intake_job_id doesn't match the event must not be marked failed."""
+        deliver = make_stage_task_deliver(
+            stage_name=StageName.CONVERSION,
+            consumer_id="worker-test:conversion-mismatch",
+            worker_id="worker-conversion",
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: True,
+        )
+        session = get_session()
+        try:
+            from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
+
+            repo = StageTaskRepository(session)
+            repo.create(
+                stage_task_id="task-orphan-mismatch",
+                intake_job_id="job-real-001",
+                stage_name=StageName.CONVERSION.value,
+                idempotency_key="orphan:mismatch",
+                schema_version="v1",
+                input_hash="orphan:hash",
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        evt = self._make_event(
+            EventType.STAGE_TASK_REQUESTED,
+            aggregate_id="task-orphan-mismatch",
+            payload={
+                "stage_task_id": "task-orphan-mismatch",
+                "intake_job_id": "job-fake-001",
+                "stage_name": StageName.CONVERSION.value,
+            },
+        )
+        assert deliver(evt) is False
+
+        session = get_session()
+        try:
+            from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+            from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
+
+            task = StageTaskRepository(session).get("task-orphan-mismatch")
+            assert task is not None
+            assert task.state != "failed"
+            assert not ConsumerIdempotencyRepository(session).is_processed(
+                "worker-test:conversion-mismatch",
+                evt.event_id,
+            )
+        finally:
+            session.close()
+
+    def test_stage_task_deliver_generic_valueerror_retries(self):
+        """Non-orphan ValueError must trigger a retry (return False) rather than ack."""
+        deliver = make_stage_task_deliver(
+            stage_name=StageName.CONVERSION,
+            consumer_id="worker-test:conversion-generic",
+            worker_id="worker-conversion",
+            execute=lambda session, stage_task_id, intake_job_id, worker_id: (_ for _ in ()).throw(
+                ValueError("Something unexpected broke")
+            ),
+        )
+        session = get_session()
+        try:
+            from intake_runtime.orchestrator import OrchestratorService
+
+            job = OrchestratorService(session).create_intake_job("src-generic", "obj-generic", "col-1")
+            from reality_rag_persistence.repositories.stage_tasks import StageTaskRepository
+
+            StageTaskRepository(session).create(
+                stage_task_id="task-generic-001",
+                intake_job_id=job.intake_job_id,
+                stage_name=StageName.CONVERSION.value,
+                idempotency_key="generic:key",
+                schema_version="v1",
+                input_hash="generic:hash",
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        evt = self._make_event(
+            EventType.STAGE_TASK_REQUESTED,
+            aggregate_id="task-generic-001",
+            payload={
+                "stage_task_id": "task-generic-001",
+                "intake_job_id": job.intake_job_id,
+                "stage_name": StageName.CONVERSION.value,
+            },
+        )
+        assert deliver(evt) is False
+
+        session = get_session()
+        try:
+            from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+
+            assert not ConsumerIdempotencyRepository(session).is_processed(
+                "worker-test:conversion-generic",
+                evt.event_id,
+            )
+        finally:
+            session.close()
+
     def test_approval_event_remote_mode_forwards_http(self, monkeypatch):
         monkeypatch.setenv("APPROVAL_SERVICE_URL", "http://approval:8000")
         deliver = make_deliver_callback()
@@ -499,6 +601,115 @@ class TestOutboxDeliverCallbacks:
                     )
                 ]
                 assert len(enriched) >= 1, f"Expected IntakeJobStateChanged with parse_snapshot_id in calls: {intakes}"
+
+    def test_stage_completed_conversion_workbench_failure_is_retryable(self, inprocess_document_owner):
+        """If workbench POST fails, deliver() returns False and idempotency is NOT recorded."""
+        deliver = make_deliver_callback()
+        session = get_session()
+        try:
+            from intake_runtime.orchestrator import OrchestratorService
+
+            if TenantRepository(session).get("default") is None:
+                TenantRepository(session).save(Tenant(tenant_id="default", name="Default"))
+            if CollectionRepository(session).get("col-1") is None:
+                CollectionRepository(session).save(
+                    Collection(
+                        collection_id="col-1",
+                        tenant_id="default",
+                        name="Test Collection",
+                        authority_level=5,
+                    )
+                )
+            ObjectBlobRepository(session).create(
+                object_id="obj-stage-complete-retry",
+                content_hash="sha256:stage-complete-retry",
+                storage_key=__file__,
+                size_bytes=1,
+            )
+            SourceFileRepository(session).create(
+                source_file_id="src-stage-complete-retry",
+                collection_id="col-1",
+                object_id="obj-stage-complete-retry",
+                content_hash="sha256:stage-complete-retry",
+                state=SourceFileState.READY,
+            )
+            job = OrchestratorService(session).create_intake_job(
+                "src-stage-complete-retry",
+                "obj-stage-complete-retry",
+                "col-1",
+            )
+            SourceFileRepository(session).claim("src-stage-complete-retry", job.intake_job_id)
+            session.add(
+                StageResultModel(
+                    stage_result_id="res-conv-retry",
+                    stage_task_id="task-conv-retry",
+                    stage_attempt_id="att-conv-retry",
+                    intake_job_id=job.intake_job_id,
+                    stage_name=StageName.CONVERSION.value,
+                    idempotency_key="conv:retry",
+                    result_hash="hash:conv-retry",
+                    summary_json={
+                        "parse_snapshot_id": "ps-retry",
+                        "preliminary_doc_id": "pre-doc-retry",
+                        "logical_document_id": "logical-retry",
+                        "version": 1,
+                        "conversion_result": {
+                            "source_file_path": __file__,
+                            "conversion_status": "success",
+                            "doc_id": "pre-doc-retry",
+                            "canonical_asset_path": "",
+                            "canonical_md": "",
+                            "error_message": "",
+                            "warnings": [],
+                            "metadata": {"parse_snapshot_id": "ps-retry"},
+                        },
+                        "quality_report": {
+                            "doc_id": "pre-doc-retry",
+                            "recommended_review_status": "published",
+                            "blocking_reasons": [],
+                        },
+                    },
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        evt = self._make_event(
+            EventType.STAGE_COMPLETED,
+            aggregate_id=job.intake_job_id,
+            payload={
+                "intake_job_id": job.intake_job_id,
+                "stage_task_id": "task-conv-retry",
+                "stage_attempt_id": "att-conv-retry",
+                "stage_name": StageName.CONVERSION.value,
+                "success": True,
+                "tenant_id": "default",
+            },
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "WORKBENCH_API_BASE_URL": "http://workbench:18083",
+                "WORKBENCH_EVENT_KEY_INTAKE": "intake-secret",
+            },
+            clear=False,
+        ):
+            with patch("httpx.post") as mock_post:
+                mock_post.return_value.status_code = 503
+                mock_post.return_value.text = "unavailable"
+                assert deliver(evt) is False
+
+        session = get_session()
+        try:
+            from reality_rag_persistence.repositories.consumer_idempotency import ConsumerIdempotencyRepository
+
+            assert not ConsumerIdempotencyRepository(session).is_processed(
+                "ingestion-worker:stage-completed",
+                evt.event_id,
+            )
+        finally:
+            session.close()
 
     def test_stage_completed_publishing_marks_job_published_and_cleanable(self, inprocess_document_owner):
         deliver = make_deliver_callback()
