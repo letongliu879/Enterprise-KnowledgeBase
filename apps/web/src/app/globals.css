@@ -319,6 +319,44 @@
   scrollbar-color: rgba(14, 165, 233, 0.25) transparent;
 }
 
+/* ===== Print Styles ===== */
+@media print {
+  header,
+  aside,
+  nav,
+  .no-print,
+  [data-no-print] {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .max-w-7xl {
+    max-width: none !important;
+  }
+
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .glass,
+  .glass-strong,
+  .glass-card {
+    background: white !important;
+    border: 1px solid #ddd !important;
+  }
+}
+
 /* ===== Reduced Motion ===== */
 @media (prefers-reduced-motion: reduce) {
   *,

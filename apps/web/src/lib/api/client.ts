@@ -16,6 +16,14 @@ import type {
   DocumentLifecycleActionResult,
   BatchDocumentActionRequest,
   BatchDocumentActionResult,
+  DashboardResponse,
+  NotificationListResponse,
+  RetrievalProfileDetail,
+  ParserProfileDetail,
+  AuditLogListResponse,
+  ApiKeyItem,
+  ApiKeyDetail,
+  ApiKeyUsage,
 } from "./types";
 import { ApiClientError, BackendGapError } from "./errors";
 import { useAppStore } from "@/lib/store";
@@ -211,11 +219,70 @@ export const workbenchApi = {
       body: JSON.stringify(payload),
     }),
   listRetrievalProfiles: (state?: string) =>
-    request<{ items: Array<Record<string, unknown>>; total: number }>(
+    request<{ items: RetrievalProfileDetail[]; total: number }>(
       WORKBENCH_BASE,
       "/workbench/retrieval-profiles",
       { query: { state } }
     ),
+  getRetrievalProfileDetail: (id: string) =>
+    request<RetrievalProfileDetail>(WORKBENCH_BASE, `/workbench/retrieval-profiles/${id}`),
+  createRetrievalProfile: (payload: {
+    name: string;
+    description?: string;
+    config: Record<string, unknown>;
+  }) =>
+    request<RetrievalProfileDetail>(WORKBENCH_BASE, "/workbench/retrieval-profiles", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateRetrievalProfile: (id: string, payload: {
+    name?: string;
+    description?: string;
+    config?: Record<string, unknown>;
+  }) =>
+    request<RetrievalProfileDetail>(WORKBENCH_BASE, `/workbench/retrieval-profiles/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteRetrievalProfile: (id: string) =>
+    request<void>(WORKBENCH_BASE, `/workbench/retrieval-profiles/${id}`, { method: "DELETE" }),
+  publishRetrievalProfile: (id: string) =>
+    request<RetrievalProfileDetail>(WORKBENCH_BASE, `/workbench/retrieval-profiles/${id}/publish`, { method: "POST" }),
+  cloneRetrievalProfile: (id: string) =>
+    request<RetrievalProfileDetail>(WORKBENCH_BASE, `/workbench/retrieval-profiles/${id}/clone`, { method: "POST" }),
+  listParserProfiles: () =>
+    request<{ items: ParserProfileDetail[]; total: number }>(
+      WORKBENCH_BASE,
+      "/workbench/parser-profiles"
+    ),
+  getParserProfileDetail: (id: string) =>
+    request<ParserProfileDetail>(WORKBENCH_BASE, `/workbench/parser-profiles/${id}`),
+  createParserProfile: (payload: {
+    name: string;
+    description?: string;
+    parser_id?: string;
+    config?: Record<string, unknown>;
+  }) =>
+    request<ParserProfileDetail>(WORKBENCH_BASE, "/workbench/parser-profiles", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateParserProfile: (id: string, payload: {
+    name?: string;
+    description?: string;
+    parser_id?: string;
+    config?: Record<string, unknown>;
+  }) =>
+    request<ParserProfileDetail>(WORKBENCH_BASE, `/workbench/parser-profiles/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteParserProfile: (id: string) =>
+    request<{ parser_profile_id: string; deleted: boolean }>(WORKBENCH_BASE, `/workbench/parser-profiles/${id}`, { method: "DELETE" }),
+  publishParserProfile: (id: string) =>
+    request<ParserProfileDetail>(WORKBENCH_BASE, `/workbench/parser-profiles/${id}/publish`, { method: "POST" }),
+  cloneParserProfile: (id: string) =>
+    request<ParserProfileDetail>(WORKBENCH_BASE, `/workbench/parser-profiles/${id}/clone`, { method: "POST" }),
   createUpload: (payload: {
     collection_id: string;
     filename: string;
@@ -561,6 +628,95 @@ export const workbenchApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  listQueryRuns: (opts?: { limit?: number; offset?: number }) =>
+    request<{
+      items: Array<{
+        query_run_id: string;
+        query: string;
+        collection_id: string;
+        retrieval_profile_id: string;
+        created_at: string;
+        latency_ms?: number;
+      }>;
+      total: number;
+    }>(WORKBENCH_BASE, "/workbench/query-runs", {
+      query: opts
+        ? Object.fromEntries(
+            Object.entries(opts).map(([key, value]) => [
+              key,
+              value == null ? undefined : String(value),
+            ])
+          )
+        : undefined,
+    }),
+  getDashboard: () =>
+    request<DashboardResponse>(WORKBENCH_BASE, "/workbench/dashboard"),
+  getNotifications: () =>
+    request<NotificationListResponse>(WORKBENCH_BASE, "/workbench/notifications"),
+  markNotificationRead: (id: string) =>
+    request<{ notification_id: string; is_read: boolean }>(
+      WORKBENCH_BASE,
+      `/workbench/notifications/${id}/read`,
+      { method: "PATCH" }
+    ),
+  readAllNotifications: () =>
+    request<{ count: number }>(
+      WORKBENCH_BASE,
+      "/workbench/notifications/read-all",
+      { method: "POST" }
+    ),
+  getUnreadCount: () =>
+    request<{ count: number }>(WORKBENCH_BASE, "/workbench/notifications/unread-count"),
+  listAuditLogs: (opts?: {
+    operator_id?: string;
+    operation_type?: string;
+    collection_id?: string;
+    target_id?: string;
+    from_date?: string;
+    to_date?: string;
+    page?: number;
+    page_size?: number;
+  }) =>
+    request<AuditLogListResponse>(WORKBENCH_BASE, "/workbench/audit-logs", {
+      query: opts
+        ? Object.fromEntries(
+            Object.entries(opts).map(([key, value]) => [key, value == null ? undefined : String(value)])
+          )
+        : undefined,
+    }),
+  exportAuditLogs: (opts?: { format?: "csv" | "excel" }) =>
+    request<{ download_url: string }>(WORKBENCH_BASE, "/workbench/audit-logs/export", {
+      method: "POST",
+      body: JSON.stringify(opts || {}),
+    }),
+  listApiKeys: () =>
+    request<{ items: ApiKeyItem[]; total: number }>(WORKBENCH_BASE, "/workbench/api-keys"),
+  getApiKeyDetail: (id: string) =>
+    request<ApiKeyDetail>(WORKBENCH_BASE, `/workbench/api-keys/${id}`),
+  createApiKey: (payload: {
+    name: string;
+    permissions?: string[];
+    collection_ids?: string[];
+    expires_at?: string | null;
+  }) =>
+    request<ApiKeyDetail>(WORKBENCH_BASE, "/workbench/api-keys", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateApiKey: (id: string, payload: {
+    name?: string;
+    permissions?: string[];
+    collection_ids?: string[];
+    expires_at?: string | null;
+  }) =>
+    request<ApiKeyDetail>(WORKBENCH_BASE, `/workbench/api-keys/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteApiKey: (id: string) =>
+    request<{ api_key_id: string; deleted: boolean }>(WORKBENCH_BASE, `/workbench/api-keys/${id}`, { method: "DELETE" }),
+  getApiKeyUsage: (id: string) =>
+    request<ApiKeyUsage>(WORKBENCH_BASE, `/workbench/api-keys/${id}/usage`),
 };
 
 export { WORKBENCH_BASE };

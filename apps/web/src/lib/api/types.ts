@@ -56,6 +56,63 @@ export interface RetrievalProfileItem {
   state: string;
 }
 
+export interface ParserProfileDetail {
+  parser_profile_id: string;
+  name: string;
+  state: "draft" | "published";
+  description?: string;
+  parser_id?: string;
+  config?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiKeyItem {
+  api_key_id: string;
+  name: string;
+  key_prefix: string;
+  state: "active" | "revoked";
+  permissions: string[];
+  collection_ids: string[];
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+}
+
+export interface ApiKeyDetail extends ApiKeyItem {
+  full_key?: string;
+}
+
+export interface ApiKeyUsage {
+  api_key_id: string;
+  total_requests: number;
+  total_tokens: number;
+  qps_peak: number;
+  last_used_at: string | null;
+  daily_stats: Array<{
+    date: string;
+    requests: number;
+    tokens: number;
+  }>;
+}
+
+export interface RetrievalProfileDetail {
+  retrieval_profile_id: string;
+  name: string;
+  state: "draft" | "published";
+  description?: string;
+  config: {
+    rerank_model?: string;
+    top_k?: number;
+    similarity_threshold?: number;
+    token_budget_limit?: number;
+    metadata_filters?: Record<string, unknown>;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Workbench ──────────────────────────────────────────────────────────
 
 export type UploadStatus =
@@ -551,6 +608,66 @@ export interface KnowledgeContext {
   citations: Array<Record<string, unknown>>;
   token_budget_used: number;
   retrieval_debug?: Record<string, unknown>;
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────
+
+export interface DashboardStats {
+  today_uploads: number;
+  pending_review_count: number;
+  total_documents: number;
+  stale_ratio: number;
+}
+
+export interface DashboardResponse {
+  stats: DashboardStats;
+  recent_tickets: TicketItem[];
+}
+
+// ── Notifications ──────────────────────────────────────────────────────
+
+export interface NotificationItem {
+  notification_id: string;
+  type: string;
+  title: string;
+  message: string;
+  link?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  items: NotificationItem[];
+  total: number;
+  unread_count: number;
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}
+
+// ── Audit Log ──────────────────────────────────────────────────────────
+
+export interface AuditLogItem {
+  log_id: string;
+  operator_id: string;
+  operator_email: string;
+  operation_type: "upload" | "approve" | "reject" | "return" | "edit_chunk" | "archive" | "retract" | "reindex" | "delete";
+  target_type: "document" | "collection" | "ticket" | "chunk";
+  target_id: string;
+  collection_id?: string;
+  timestamp: string;
+  ip_address: string;
+  details?: Record<string, unknown>;
+  before_snapshot?: Record<string, unknown>;
+  after_snapshot?: Record<string, unknown>;
+}
+
+export interface AuditLogListResponse {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 // ── Access Scope ───────────────────────────────────────────────────────

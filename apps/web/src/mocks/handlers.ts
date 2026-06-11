@@ -1379,6 +1379,65 @@ export function buildWorkspaceDetailBoundaryResponse(): WorkspaceDetailView {
   return buildDocumentWorkspaceBoundaryResponse();
 }
 
+// ── Dashboard ──────────────────────────────────────────────────────────
+
+export function buildDashboardResponse(
+  overrides?: Partial<{
+    stats: {
+      today_uploads: number;
+      pending_review_count: number;
+      total_documents: number;
+      stale_ratio: number;
+    };
+    recent_tickets: TicketItem[];
+  }>
+) {
+  return {
+    stats: {
+      today_uploads: 12,
+      pending_review_count: 3,
+      total_documents: 147,
+      stale_ratio: 0.08,
+    },
+    recent_tickets: [
+      buildTicketItem({ ticket_id: "ticket-001", title: "Review document.pdf", filename: "document.pdf" }),
+      buildTicketItem({ ticket_id: "ticket-002", title: "Review report.docx", filename: "report.docx" }),
+      buildTicketItem({ ticket_id: "ticket-003", title: "Review slides.pptx", filename: "slides.pptx" }),
+    ],
+    ...overrides,
+  };
+}
+
+export function buildDashboardEmptyResponse() {
+  return {
+    stats: {
+      today_uploads: 0,
+      pending_review_count: 0,
+      total_documents: 0,
+      stale_ratio: 0,
+    },
+    recent_tickets: [],
+  };
+}
+
+export function buildDashboardBoundaryResponse() {
+  return {
+    stats: {
+      today_uploads: 999999999,
+      pending_review_count: 999999999,
+      total_documents: 999999999,
+      stale_ratio: 0.999999,
+    },
+    recent_tickets: [
+      buildTicketItem({
+        ticket_id: "ticket-001",
+        title: LOREM_600.slice(0, 520),
+        filename: UNICODE_STR,
+      }),
+    ],
+  };
+}
+
 // ── Retrieve ───────────────────────────────────────────────────────────
 
 export function buildRetrieveResponse(
@@ -1460,6 +1519,1065 @@ export function buildRetrieveBoundaryResponse() {
   };
 }
 
+// ── Query Runs ─────────────────────────────────────────────────────────
+
+export function buildQueryRunsResponse(
+  overrides?: Partial<{
+    items: Array<{
+      query_run_id: string;
+      query: string;
+      collection_id: string;
+      retrieval_profile_id: string;
+      created_at: string;
+      latency_ms?: number;
+    }>;
+    total: number;
+  }>
+) {
+  return {
+    items: [
+      {
+        query_run_id: "qr-001",
+        query: "产品功能介绍",
+        collection_id: "coll-001",
+        retrieval_profile_id: "rp-001",
+        created_at: "2024-06-10T12:00:00Z",
+        latency_ms: 245,
+      },
+      {
+        query_run_id: "qr-002",
+        query: "安全合规要求",
+        collection_id: "coll-001",
+        retrieval_profile_id: "rp-002",
+        created_at: "2024-06-10T11:00:00Z",
+        latency_ms: 189,
+      },
+      {
+        query_run_id: "qr-003",
+        query: "API 使用文档",
+        collection_id: "coll-002",
+        retrieval_profile_id: "rp-001",
+        created_at: "2024-06-10T10:00:00Z",
+        latency_ms: 312,
+      },
+    ],
+    total: 3,
+    ...overrides,
+  };
+}
+
+export function buildQueryRunsEmptyResponse() {
+  return { items: [], total: 0 };
+}
+
+export function buildQueryRunsBoundaryResponse() {
+  return {
+    items: [
+      {
+        query_run_id: LOREM_600.slice(0, 520),
+        query: UNICODE_STR,
+        collection_id: LOREM_600.slice(0, 300),
+        retrieval_profile_id: LOREM_600.slice(0, 300),
+        created_at: "2099-12-31T23:59:59Z",
+        latency_ms: 999999,
+      },
+    ],
+    total: 999999,
+  };
+}
+
+// ── Notifications ──────────────────────────────────────────────────────
+
+function buildNotificationItem(
+  overrides?: Partial<{
+    notification_id: string;
+    type: "ticket_status_change" | "chunk_edit_conflict" | "quota_warning" | "system_maintenance";
+    title: string;
+    message: string;
+    link?: string;
+    is_read: boolean;
+    created_at: string;
+  }>
+) {
+  return {
+    notification_id: "notif-001",
+    type: "ticket_status_change" as const,
+    title: "Ticket status changed",
+    message: "Your ticket ticket-001 has been approved.",
+    link: "/workbench/tickets/ticket-001",
+    is_read: false,
+    created_at: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildNotificationsResponse(
+  overrides?: Partial<{ items: Array<Record<string, unknown>>; total: number; unread_count: number }>
+) {
+  return {
+    items: [
+      buildNotificationItem(),
+      buildNotificationItem({
+        notification_id: "notif-002",
+        type: "chunk_edit_conflict",
+        title: "Chunk edit conflict detected",
+        message: "A conflict was found in chunk ev-001.",
+        link: "/workbench/documents/doc-001",
+        is_read: true,
+        created_at: "2024-01-02T00:00:00Z",
+      }),
+      buildNotificationItem({
+        notification_id: "notif-003",
+        type: "quota_warning",
+        title: "Storage quota warning",
+        message: "You have used 90% of your storage quota.",
+        is_read: false,
+        created_at: "2024-01-03T00:00:00Z",
+      }),
+      buildNotificationItem({
+        notification_id: "notif-004",
+        type: "system_maintenance",
+        title: "Scheduled maintenance",
+        message: "System maintenance is scheduled for tonight.",
+        is_read: true,
+        created_at: "2024-01-04T00:00:00Z",
+      }),
+    ],
+    total: 4,
+    unread_count: 2,
+    ...overrides,
+  };
+}
+
+export function buildNotificationsEmptyResponse() {
+  return { items: [], total: 0, unread_count: 0 };
+}
+
+export function buildNotificationsBoundaryResponse() {
+  return {
+    items: [
+      buildNotificationItem({
+        notification_id: LOREM_600.slice(0, 520),
+        type: "system_maintenance",
+        title: LOREM_600.slice(0, 520),
+        message: UNICODE_STR,
+        link: LOREM_600.slice(0, 300),
+        is_read: false,
+        created_at: "2099-12-31T23:59:59Z",
+      }),
+    ],
+    total: 999999,
+    unread_count: 999999,
+  };
+}
+
+export function buildMarkNotificationReadResponse(
+  overrides?: Partial<{ notification_id: string; is_read: boolean; read_at: string }>
+) {
+  return {
+    notification_id: "notif-001",
+    is_read: true,
+    read_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildMarkNotificationReadEmptyResponse() {
+  return { notification_id: "notif-001", is_read: true };
+}
+
+export function buildMarkNotificationReadBoundaryResponse() {
+  return {
+    notification_id: LOREM_600.slice(0, 520),
+    is_read: true,
+    read_at: "2099-12-31T23:59:59Z",
+  };
+}
+
+export function buildReadAllNotificationsResponse(
+  overrides?: Partial<{ updated_count: number; updated_ids: string[] }>
+) {
+  return {
+    updated_count: 4,
+    updated_ids: ["notif-001", "notif-002", "notif-003", "notif-004"],
+    ...overrides,
+  };
+}
+
+export function buildReadAllNotificationsEmptyResponse() {
+  return { updated_count: 0, updated_ids: [] };
+}
+
+export function buildReadAllNotificationsBoundaryResponse() {
+  return {
+    updated_count: 999999,
+    updated_ids: [LOREM_600.slice(0, 520), UNICODE_STR],
+  };
+}
+
+export function buildUnreadCountResponse(overrides?: Partial<{ count: number }>) {
+  return { count: 2, ...overrides };
+}
+
+export function buildUnreadCountEmptyResponse() {
+  return { count: 0 };
+}
+
+export function buildUnreadCountBoundaryResponse() {
+  return { count: 999999 };
+}
+
+// ── Retrieval Profile Detail ───────────────────────────────────────────
+
+export function buildRetrievalProfileDetailResponse(
+  overrides?: Partial<{
+    retrieval_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    description?: string;
+    config: {
+      rerank_model?: string;
+      top_k?: number;
+      similarity_threshold?: number;
+      token_budget_limit?: number;
+      metadata_filters?: Record<string, unknown>;
+    };
+    created_at: string;
+    updated_at: string;
+  }>
+) {
+  return {
+    retrieval_profile_id: "rp-001",
+    name: "Standard",
+    state: "published" as const,
+    description: "Standard retrieval configuration",
+    config: {
+      rerank_model: "default",
+      top_k: 10,
+      similarity_threshold: 0.75,
+      token_budget_limit: 4096,
+      metadata_filters: { language: "en" },
+    },
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildRetrievalProfileDetailEmptyResponse() {
+  return {
+    retrieval_profile_id: "rp-001",
+    name: "",
+    state: "draft" as const,
+    config: {},
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-01T00:00:00Z",
+  };
+}
+
+export function buildRetrievalProfileDetailBoundaryResponse() {
+  return {
+    retrieval_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    description: UNICODE_STR,
+    config: deepNested(6),
+    created_at: "2099-12-31T23:59:59Z",
+    updated_at: "2099-12-31T23:59:59Z",
+  };
+}
+
+export function buildCreateRetrievalProfileResponse(
+  overrides?: Partial<{
+    retrieval_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    created_at: string;
+  }>
+) {
+  return {
+    retrieval_profile_id: "rp-new",
+    name: "New Retrieval Profile",
+    state: "draft" as const,
+    created_at: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildCreateRetrievalProfileEmptyResponse() {
+  return {
+    retrieval_profile_id: "rp-new",
+    name: "",
+    state: "draft" as const,
+    created_at: "2024-01-01T00:00:00Z",
+  };
+}
+
+export function buildCreateRetrievalProfileBoundaryResponse() {
+  return {
+    retrieval_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    created_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+export function buildUpdateRetrievalProfileResponse(
+  overrides?: Partial<{
+    retrieval_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    updated_at: string;
+  }>
+) {
+  return {
+    retrieval_profile_id: "rp-001",
+    name: "Updated Standard",
+    state: "published" as const,
+    updated_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildUpdateRetrievalProfileEmptyResponse() {
+  return {
+    retrieval_profile_id: "rp-001",
+    name: "",
+    state: "draft" as const,
+    updated_at: "2024-01-01T00:00:00Z",
+  };
+}
+
+export function buildUpdateRetrievalProfileBoundaryResponse() {
+  return {
+    retrieval_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    updated_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+export function buildDeleteRetrievalProfileResponse(
+  overrides?: Partial<{
+    retrieval_profile_id: string;
+    deleted: boolean;
+  }>
+) {
+  return {
+    retrieval_profile_id: "rp-001",
+    deleted: true,
+    ...overrides,
+  };
+}
+
+export function buildDeleteRetrievalProfileEmptyResponse() {
+  return {
+    retrieval_profile_id: "rp-001",
+    deleted: true,
+  };
+}
+
+export function buildDeleteRetrievalProfileBoundaryResponse() {
+  return {
+    retrieval_profile_id: LOREM_600.slice(0, 520),
+    deleted: false,
+    reason: UNICODE_STR,
+  };
+}
+
+export function buildPublishRetrievalProfileResponse(
+  overrides?: Partial<{
+    retrieval_profile_id: string;
+    state: "draft" | "published";
+    published_at: string;
+  }>
+) {
+  return {
+    retrieval_profile_id: "rp-001",
+    state: "published" as const,
+    published_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildPublishRetrievalProfileEmptyResponse() {
+  return {
+    retrieval_profile_id: "rp-001",
+    state: "published" as const,
+  };
+}
+
+export function buildPublishRetrievalProfileBoundaryResponse() {
+  return {
+    retrieval_profile_id: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    published_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+export function buildCloneRetrievalProfileResponse(
+  overrides?: Partial<{
+    source_retrieval_profile_id: string;
+    retrieval_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    created_at: string;
+  }>
+) {
+  return {
+    source_retrieval_profile_id: "rp-001",
+    retrieval_profile_id: "rp-clone-001",
+    name: "Standard (Copy)",
+    state: "draft" as const,
+    created_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildCloneRetrievalProfileEmptyResponse() {
+  return {
+    source_retrieval_profile_id: "rp-001",
+    retrieval_profile_id: "rp-clone-001",
+    name: "",
+    state: "draft" as const,
+    created_at: "2024-06-10T12:00:00Z",
+  };
+}
+
+export function buildCloneRetrievalProfileBoundaryResponse() {
+  return {
+    source_retrieval_profile_id: LOREM_600.slice(0, 520),
+    retrieval_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    created_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+// ── Parser Profiles ────────────────────────────────────────────────────
+
+export function buildParserProfilesResponse(
+  overrides?: Partial<{ items: Array<Record<string, unknown>>; total: number }>
+) {
+  return {
+    items: [
+      { parser_profile_id: "pp-001", name: "Standard", state: "published", parser_id: "deepdoc", is_default: true },
+      { parser_profile_id: "pp-002", name: "Aggressive", state: "published", parser_id: "deepdoc", is_default: false },
+    ],
+    total: 2,
+    ...overrides,
+  };
+}
+
+export function buildParserProfilesEmptyResponse() {
+  return { items: [], total: 0 };
+}
+
+export function buildParserProfilesBoundaryResponse() {
+  return {
+    items: [
+      {
+        parser_profile_id: "pp-001",
+        name: LOREM_600.slice(0, 520),
+        state: UNICODE_STR,
+        parser_id: LOREM_600.slice(0, 520),
+        is_default: false,
+      },
+    ],
+    total: 1,
+  };
+}
+
+export function buildParserProfileDetailResponse(
+  overrides?: Partial<{
+    parser_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    description?: string;
+    parser_id?: string;
+    config?: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  }>
+) {
+  return {
+    parser_profile_id: "pp-001",
+    name: "Standard",
+    state: "published" as const,
+    description: "Standard parser configuration",
+    parser_id: "deepdoc",
+    config: { ocr: true, table_detection: false, language: "en" },
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildParserProfileDetailEmptyResponse() {
+  return {
+    parser_profile_id: "pp-001",
+    name: "",
+    state: "draft" as const,
+    config: {},
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-01T00:00:00Z",
+  };
+}
+
+export function buildParserProfileDetailBoundaryResponse() {
+  return {
+    parser_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    description: UNICODE_STR,
+    parser_id: LOREM_600.slice(0, 520),
+    config: deepNested(6),
+    created_at: "2099-12-31T23:59:59Z",
+    updated_at: "2099-12-31T23:59:59Z",
+  };
+}
+
+export function buildCreateParserProfileResponse(
+  overrides?: Partial<{
+    parser_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    created_at: string;
+  }>
+) {
+  return {
+    parser_profile_id: "pp-new",
+    name: "New Parser Profile",
+    state: "draft" as const,
+    created_at: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildCreateParserProfileEmptyResponse() {
+  return {
+    parser_profile_id: "pp-new",
+    name: "",
+    state: "draft" as const,
+    created_at: "2024-01-01T00:00:00Z",
+  };
+}
+
+export function buildCreateParserProfileBoundaryResponse() {
+  return {
+    parser_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    created_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+export function buildUpdateParserProfileResponse(
+  overrides?: Partial<{
+    parser_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    updated_at: string;
+  }>
+) {
+  return {
+    parser_profile_id: "pp-001",
+    name: "Updated Standard",
+    state: "published" as const,
+    updated_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildUpdateParserProfileEmptyResponse() {
+  return {
+    parser_profile_id: "pp-001",
+    name: "",
+    state: "draft" as const,
+    updated_at: "2024-01-01T00:00:00Z",
+  };
+}
+
+export function buildUpdateParserProfileBoundaryResponse() {
+  return {
+    parser_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    updated_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+export function buildDeleteParserProfileResponse(
+  overrides?: Partial<{
+    parser_profile_id: string;
+    deleted: boolean;
+  }>
+) {
+  return {
+    parser_profile_id: "pp-001",
+    deleted: true,
+    ...overrides,
+  };
+}
+
+export function buildDeleteParserProfileEmptyResponse() {
+  return {
+    parser_profile_id: "pp-001",
+    deleted: true,
+  };
+}
+
+export function buildDeleteParserProfileBoundaryResponse() {
+  return {
+    parser_profile_id: LOREM_600.slice(0, 520),
+    deleted: false,
+    reason: UNICODE_STR,
+  };
+}
+
+export function buildPublishParserProfileResponse(
+  overrides?: Partial<{
+    parser_profile_id: string;
+    state: "draft" | "published";
+    published_at: string;
+  }>
+) {
+  return {
+    parser_profile_id: "pp-001",
+    state: "published" as const,
+    published_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildPublishParserProfileEmptyResponse() {
+  return {
+    parser_profile_id: "pp-001",
+    state: "published" as const,
+  };
+}
+
+export function buildPublishParserProfileBoundaryResponse() {
+  return {
+    parser_profile_id: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    published_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+export function buildCloneParserProfileResponse(
+  overrides?: Partial<{
+    source_parser_profile_id: string;
+    parser_profile_id: string;
+    name: string;
+    state: "draft" | "published";
+    created_at: string;
+  }>
+) {
+  return {
+    source_parser_profile_id: "pp-001",
+    parser_profile_id: "pp-clone-001",
+    name: "Standard (Copy)",
+    state: "draft" as const,
+    created_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildCloneParserProfileEmptyResponse() {
+  return {
+    source_parser_profile_id: "pp-001",
+    parser_profile_id: "pp-clone-001",
+    name: "",
+    state: "draft" as const,
+    created_at: "2024-06-10T12:00:00Z",
+  };
+}
+
+export function buildCloneParserProfileBoundaryResponse() {
+  return {
+    source_parser_profile_id: LOREM_600.slice(0, 520),
+    parser_profile_id: LOREM_600.slice(0, 520),
+    name: LOREM_600.slice(0, 520),
+    state: UNICODE_STR,
+    created_at: "2099-12-31T23:59:59Z",
+    metadata: deepNested(6),
+  };
+}
+
+// ── Audit Logs ─────────────────────────────────────────────────────────
+
+function buildAuditLogItem(
+  overrides?: Partial<{
+    log_id: string;
+    operator_id: string;
+    operator_email: string;
+    operation_type: "upload" | "approve" | "reject" | "return" | "edit_chunk" | "archive" | "retract" | "reindex" | "delete";
+    target_type: "document" | "collection" | "ticket" | "chunk";
+    target_id: string;
+    collection_id?: string;
+    timestamp: string;
+    ip_address: string;
+    details?: Record<string, unknown>;
+    before_snapshot?: Record<string, unknown>;
+    after_snapshot?: Record<string, unknown>;
+  }>
+) {
+  return {
+    log_id: "log-001",
+    operator_id: "user-001",
+    operator_email: "admin@example.com",
+    operation_type: "upload" as const,
+    target_type: "document" as const,
+    target_id: "doc-001",
+    collection_id: "coll-001",
+    timestamp: "2024-06-10T12:00:00Z",
+    ip_address: "192.168.1.1",
+    details: { filename: "document.pdf", mime_type: "application/pdf" },
+    before_snapshot: undefined,
+    after_snapshot: { doc_id: "doc-001", state: "active" },
+    ...overrides,
+  };
+}
+
+export function buildAuditLogsResponse(
+  overrides?: Partial<{ items: Array<Record<string, unknown>>; total: number; page: number; page_size: number }>
+) {
+  return {
+    items: [
+      buildAuditLogItem(),
+      buildAuditLogItem({
+        log_id: "log-002",
+        operation_type: "approve",
+        target_type: "ticket",
+        target_id: "ticket-001",
+        operator_id: "user-002",
+        operator_email: "reviewer@example.com",
+        timestamp: "2024-06-10T13:00:00Z",
+        ip_address: "192.168.1.2",
+        details: { decision: "APPROVE", reason: "Looks good" },
+        before_snapshot: { status: "pending_review" },
+        after_snapshot: { status: "approved" },
+      }),
+      buildAuditLogItem({
+        log_id: "log-003",
+        operation_type: "edit_chunk",
+        target_type: "chunk",
+        target_id: "ev-001",
+        operator_id: "user-001",
+        operator_email: "admin@example.com",
+        timestamp: "2024-06-10T14:00:00Z",
+        ip_address: "192.168.1.1",
+        details: { edit_reason: "Fixed typo" },
+        before_snapshot: { content: "Old content" },
+        after_snapshot: { content: "Updated content" },
+      }),
+    ],
+    total: 3,
+    page: 1,
+    page_size: 20,
+    ...overrides,
+  };
+}
+
+export function buildAuditLogsEmptyResponse() {
+  return { items: [], total: 0, page: 1, page_size: 20 };
+}
+
+export function buildAuditLogsBoundaryResponse() {
+  return {
+    items: [
+      buildAuditLogItem({
+        log_id: LOREM_600.slice(0, 520),
+        operator_email: LOREM_600.slice(0, 520),
+        operation_type: UNICODE_STR as unknown as "upload",
+        target_type: UNICODE_STR as unknown as "document",
+        target_id: LOREM_600.slice(0, 520),
+        collection_id: LOREM_600.slice(0, 520),
+        timestamp: "2099-12-31T23:59:59Z",
+        ip_address: UNICODE_STR,
+        details: deepNested(6),
+        before_snapshot: deepNested(6),
+        after_snapshot: deepNested(6),
+      }),
+    ],
+    total: 999999,
+    page: 999999,
+    page_size: 999999,
+  };
+}
+
+export function buildExportAuditLogsResponse(overrides?: Partial<{ download_url: string }>) {
+  return {
+    download_url: "/api/workbench/audit-logs/export/download?file=audit-logs-2024-06-10.csv",
+    ...overrides,
+  };
+}
+
+export function buildExportAuditLogsEmptyResponse() {
+  return { download_url: "" };
+}
+
+export function buildExportAuditLogsBoundaryResponse() {
+  return { download_url: LOREM_600.slice(0, 520) };
+}
+
+// ── API Keys ───────────────────────────────────────────────────────────
+
+export function buildApiKeysResponse() {
+  return {
+    items: [
+      {
+        api_key_id: "ak-001",
+        name: "Production API Key",
+        key_prefix: "ak_prod...",
+        state: "active",
+        permissions: ["read", "search"],
+        collection_ids: ["coll-001"],
+        expires_at: "2025-12-31T23:59:59Z",
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-06-01T00:00:00Z",
+        last_used_at: "2024-06-10T12:00:00Z",
+      },
+      {
+        api_key_id: "ak-002",
+        name: "Development API Key",
+        key_prefix: "ak_dev...",
+        state: "active",
+        permissions: ["read", "search", "upload"],
+        collection_ids: ["coll-001", "coll-002"],
+        expires_at: null,
+        created_at: "2024-03-01T00:00:00Z",
+        updated_at: "2024-03-01T00:00:00Z",
+        last_used_at: null,
+      },
+    ],
+    total: 2,
+  };
+}
+
+export function buildApiKeysEmptyResponse() {
+  return { items: [], total: 0 };
+}
+
+export function buildApiKeysBoundaryResponse() {
+  return {
+    items: [
+      {
+        api_key_id: "ak-" + "x".repeat(120),
+        name: LOREM_600.slice(0, 200),
+        key_prefix: LOREM_600.slice(0, 50),
+        state: UNICODE_STR,
+        permissions: [UNICODE_STR, LOREM_600.slice(0, 100)],
+        collection_ids: ["coll-001", "coll-002", "coll-003", "coll-004", "coll-005"],
+        expires_at: "2099-12-31T23:59:59Z",
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-06-01T00:00:00Z",
+        last_used_at: "2024-06-10T12:00:00Z",
+      },
+    ],
+    total: 1,
+  };
+}
+
+export function buildApiKeyDetailResponse() {
+  return {
+    api_key_id: "ak-001",
+    name: "Production API Key",
+    key_prefix: "ak_prod...",
+    state: "active",
+    permissions: ["read", "search"],
+    collection_ids: ["coll-001"],
+    expires_at: "2025-12-31T23:59:59Z",
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-01T00:00:00Z",
+    last_used_at: "2024-06-10T12:00:00Z",
+  };
+}
+
+export function buildApiKeyDetailEmptyResponse() {
+  return {
+    api_key_id: "ak-001",
+    name: "",
+    key_prefix: "",
+    state: "active",
+    permissions: [],
+    collection_ids: [],
+    expires_at: null,
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-01T00:00:00Z",
+    last_used_at: null,
+  };
+}
+
+export function buildApiKeyDetailBoundaryResponse() {
+  return {
+    api_key_id: "ak-" + "x".repeat(120),
+    name: LOREM_600.slice(0, 200),
+    key_prefix: LOREM_600.slice(0, 50),
+    state: UNICODE_STR,
+    permissions: [UNICODE_STR, LOREM_600.slice(0, 100)],
+    collection_ids: ["coll-001", "coll-002", "coll-003", "coll-004", "coll-005"],
+    expires_at: "2099-12-31T23:59:59Z",
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-01T00:00:00Z",
+    last_used_at: "2024-06-10T12:00:00Z",
+  };
+}
+
+export function buildCreateApiKeyResponse() {
+  return {
+    api_key_id: "ak-new-001",
+    name: "New API Key",
+    key_prefix: "ak_new...",
+    full_key: "ak_new_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    state: "active",
+    permissions: ["read"],
+    collection_ids: ["coll-001"],
+    expires_at: null,
+    created_at: "2024-06-10T12:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    last_used_at: null,
+  };
+}
+
+export function buildCreateApiKeyEmptyResponse() {
+  return {
+    api_key_id: "ak-new-001",
+    name: "",
+    key_prefix: "",
+    full_key: "",
+    state: "active",
+    permissions: [],
+    collection_ids: [],
+    expires_at: null,
+    created_at: "2024-06-10T12:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    last_used_at: null,
+  };
+}
+
+export function buildCreateApiKeyBoundaryResponse() {
+  return {
+    api_key_id: "ak-" + "x".repeat(120),
+    name: LOREM_600.slice(0, 200),
+    key_prefix: LOREM_600.slice(0, 50),
+    full_key: LOREM_600.slice(0, 300),
+    state: UNICODE_STR,
+    permissions: [UNICODE_STR],
+    collection_ids: ["coll-001"],
+    expires_at: "2099-12-31T23:59:59Z",
+    created_at: "2024-06-10T12:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    last_used_at: null,
+  };
+}
+
+export function buildUpdateApiKeyResponse() {
+  return {
+    api_key_id: "ak-001",
+    name: "Updated API Key",
+    key_prefix: "ak_prod...",
+    state: "active",
+    permissions: ["read", "search", "upload"],
+    collection_ids: ["coll-001", "coll-002"],
+    expires_at: "2025-12-31T23:59:59Z",
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    last_used_at: "2024-06-10T12:00:00Z",
+  };
+}
+
+export function buildUpdateApiKeyEmptyResponse() {
+  return {
+    api_key_id: "ak-001",
+    name: "",
+    key_prefix: "",
+    state: "active",
+    permissions: [],
+    collection_ids: [],
+    expires_at: null,
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    last_used_at: null,
+  };
+}
+
+export function buildUpdateApiKeyBoundaryResponse() {
+  return {
+    api_key_id: "ak-" + "x".repeat(120),
+    name: LOREM_600.slice(0, 200),
+    key_prefix: LOREM_600.slice(0, 50),
+    state: UNICODE_STR,
+    permissions: [UNICODE_STR, LOREM_600.slice(0, 100)],
+    collection_ids: ["coll-001", "coll-002", "coll-003", "coll-004", "coll-005"],
+    expires_at: "2099-12-31T23:59:59Z",
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    last_used_at: "2024-06-10T12:00:00Z",
+  };
+}
+
+export function buildDeleteApiKeyResponse() {
+  return { api_key_id: "ak-001", deleted: true };
+}
+
+export function buildDeleteApiKeyEmptyResponse() {
+  return { api_key_id: "", deleted: false };
+}
+
+export function buildDeleteApiKeyBoundaryResponse() {
+  return { api_key_id: "ak-" + "x".repeat(120), deleted: true };
+}
+
+export function buildApiKeyUsageResponse() {
+  return {
+    api_key_id: "ak-001",
+    total_requests: 15420,
+    total_tokens: 3847500,
+    qps_peak: 45.2,
+    last_used_at: "2024-06-10T12:00:00Z",
+    daily_stats: [
+      { date: "2024-06-08", requests: 5200, tokens: 1250000 },
+      { date: "2024-06-09", requests: 4800, tokens: 1100000 },
+      { date: "2024-06-10", requests: 5420, tokens: 1497500 },
+    ],
+  };
+}
+
+export function buildApiKeyUsageEmptyResponse() {
+  return {
+    api_key_id: "ak-001",
+    total_requests: 0,
+    total_tokens: 0,
+    qps_peak: 0,
+    last_used_at: null,
+    daily_stats: [],
+  };
+}
+
+export function buildApiKeyUsageBoundaryResponse() {
+  return {
+    api_key_id: "ak-" + "x".repeat(120),
+    total_requests: 999999999,
+    total_tokens: 999999999999,
+    qps_peak: 99999.99,
+    last_used_at: "2099-12-31T23:59:59Z",
+    daily_stats: Array.from({ length: 365 }, (_, i) => ({
+      date: `2024-01-${String(i + 1).padStart(2, "0")}`,
+      requests: 999999,
+      tokens: 99999999,
+    })),
+  };
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────
 
 export const handlers = [
@@ -1468,6 +2586,9 @@ export const handlers = [
 
   // healthAll
   http.get("*/api/workbench/health/all", () => HttpResponse.json(buildHealthAllResponse())),
+
+  // dashboard
+  http.get("*/api/workbench/dashboard", () => HttpResponse.json(buildDashboardResponse())),
 
   // me
   http.get("*/api/workbench/auth/me", () => HttpResponse.json(buildMeResponse())),
@@ -1601,4 +2722,98 @@ export const handlers = [
 
   // retrieve
   http.post("*/api/workbench/retrieve", () => HttpResponse.json(buildRetrieveResponse())),
+
+  // listQueryRuns
+  http.get("*/api/workbench/query-runs", () => HttpResponse.json(buildQueryRunsResponse())),
+
+  // listNotifications
+  http.get("*/api/workbench/notifications", () => HttpResponse.json(buildNotificationsResponse())),
+
+  // markNotificationRead
+  http.patch("*/api/workbench/notifications/:id/read", () => HttpResponse.json(buildMarkNotificationReadResponse())),
+
+  // readAllNotifications
+  http.post("*/api/workbench/notifications/read-all", () => HttpResponse.json(buildReadAllNotificationsResponse())),
+
+  // getUnreadCount
+  http.get("*/api/workbench/notifications/unread-count", () => HttpResponse.json(buildUnreadCountResponse())),
+
+  // getRetrievalProfileDetail
+  http.get("*/api/workbench/retrieval-profiles/:id", () =>
+    HttpResponse.json(buildRetrievalProfileDetailResponse())
+  ),
+
+  // createRetrievalProfile
+  http.post("*/api/workbench/retrieval-profiles", () =>
+    HttpResponse.json(buildCreateRetrievalProfileResponse())
+  ),
+
+  // updateRetrievalProfile
+  http.patch("*/api/workbench/retrieval-profiles/:id", () =>
+    HttpResponse.json(buildUpdateRetrievalProfileResponse())
+  ),
+
+  // deleteRetrievalProfile
+  http.delete("*/api/workbench/retrieval-profiles/:id", () =>
+    HttpResponse.json(buildDeleteRetrievalProfileResponse())
+  ),
+
+  // publishRetrievalProfile
+  http.post("*/api/workbench/retrieval-profiles/:id/publish", () =>
+    HttpResponse.json(buildPublishRetrievalProfileResponse())
+  ),
+
+  // cloneRetrievalProfile
+  http.post("*/api/workbench/retrieval-profiles/:id/clone", () =>
+    HttpResponse.json(buildCloneRetrievalProfileResponse())
+  ),
+
+  // listParserProfiles
+  http.get("*/api/workbench/parser-profiles", () => HttpResponse.json(buildParserProfilesResponse())),
+
+  // getParserProfileDetail
+  http.get("*/api/workbench/parser-profiles/:id", () => HttpResponse.json(buildParserProfileDetailResponse())),
+
+  // createParserProfile
+  http.post("*/api/workbench/parser-profiles", () => HttpResponse.json(buildCreateParserProfileResponse())),
+
+  // updateParserProfile
+  http.patch("*/api/workbench/parser-profiles/:id", () => HttpResponse.json(buildUpdateParserProfileResponse())),
+
+  // deleteParserProfile
+  http.delete("*/api/workbench/parser-profiles/:id", () => HttpResponse.json(buildDeleteParserProfileResponse())),
+
+  // publishParserProfile
+  http.post("*/api/workbench/parser-profiles/:id/publish", () =>
+    HttpResponse.json(buildPublishParserProfileResponse())
+  ),
+
+  // cloneParserProfile
+  http.post("*/api/workbench/parser-profiles/:id/clone", () =>
+    HttpResponse.json(buildCloneParserProfileResponse())
+  ),
+
+  // listAuditLogs
+  http.get("*/api/workbench/audit-logs", () => HttpResponse.json(buildAuditLogsResponse())),
+
+  // exportAuditLogs
+  http.post("*/api/workbench/audit-logs/export", () => HttpResponse.json(buildExportAuditLogsResponse())),
+
+  // listApiKeys
+  http.get("*/api/workbench/api-keys", () => HttpResponse.json(buildApiKeysResponse())),
+
+  // createApiKey
+  http.post("*/api/workbench/api-keys", () => HttpResponse.json(buildCreateApiKeyResponse())),
+
+  // getApiKeyDetail
+  http.get("*/api/workbench/api-keys/:id", () => HttpResponse.json(buildApiKeyDetailResponse())),
+
+  // updateApiKey
+  http.patch("*/api/workbench/api-keys/:id", () => HttpResponse.json(buildUpdateApiKeyResponse())),
+
+  // deleteApiKey
+  http.delete("*/api/workbench/api-keys/:id", () => HttpResponse.json(buildDeleteApiKeyResponse())),
+
+  // getApiKeyUsage
+  http.get("*/api/workbench/api-keys/:id/usage", () => HttpResponse.json(buildApiKeyUsageResponse())),
 ];
