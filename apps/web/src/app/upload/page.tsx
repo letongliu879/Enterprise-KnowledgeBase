@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
   useQuery,
   useMutation,
@@ -34,6 +35,7 @@ import {
   Timer,
   Gauge,
   X,
+  Eraser,
 } from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store";
@@ -122,6 +124,42 @@ interface FileItem {
   status: FileStatus;
   error?: string;
   uploadId?: string;
+}
+
+// Serializable snapshot of a FileItem for localStorage persistence.
+// File objects cannot be serialized, so we store metadata and reconstruct File stubs.
+interface FileItemSnapshot {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  status: FileStatus;
+  error?: string;
+  uploadId?: string;
+}
+
+const UPLOAD_BATCH_KEY = "ekb-upload-batch";
+
+function snapshotFiles(files: FileItem[]): FileItemSnapshot[] {
+  return files.map((f) => ({
+    id: f.id,
+    fileName: f.file.name,
+    fileType: f.file.type,
+    fileSize: f.file.size,
+    status: f.status,
+    error: f.error,
+    uploadId: f.uploadId,
+  }));
+}
+
+function restoreSnapshots(snapshots: FileItemSnapshot[]): FileItem[] {
+  return snapshots.map((s) => ({
+    id: s.id,
+    file: new File([], s.fileName, { type: s.fileType, lastModified: Date.now() }),
+    status: s.status,
+    error: s.error,
+    uploadId: s.uploadId,
+  }));
 }
 
 function normalizeUploadStatus(status?: string | null): FileStatus {
@@ -269,7 +307,14 @@ const SORT_OPTIONS = [
 export default function UploadPage() {
   const { currentCollectionId, accessScope } = useAppStore();
   const queryClient = useQueryClient();
-  const [files, setFiles] = useState<FileItem[]>([]);
+
+  // Upload history persistence via localStorage
+  const [storedBatch, setStoredBatch, clearStoredBatch] = useLocalStorage<FileItemSnapshot[]>(
+    UPLOAD_BATCH_KEY,
+    []
+  );
+
+  const [files, setFiles] = useState<FileItem[]>(() => restoreSnapshots(storedBatch));
   const filesRef = useRef<FileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -288,6 +333,11 @@ export default function UploadPage() {
 
   // C5: Upload speed/ETA tracking
   const uploadStartTimesRef = useRef<Record<string, number>>({});
+
+  // Persist batch to localStorage whenever files change
+  useEffect(() => {
+    setStoredBatch(snapshotFiles(files));
+  }, [files, setStoredBatch]);
 
   useEffect(() => {
     filesRef.current = files;
@@ -518,9 +568,8 @@ export default function UploadPage() {
       // C5: File size warning
       valid.forEach((file) => {
         if (file.size > LARGE_FILE_THRESHOLD) {
-          toast.warning(`大文件解析可能耗时较长: ${file.name}`, {
-            description: `文件大小 ${(file.size / 1024 / 1024).toFixed(1)} MB`,
-          });
+          const sizeMB = (file.size / 1024 / 1024).toFixed(0);
+          toast.warning(`文件 ${file.name} (${sizeMB}MB) 较大，解析可能耗时较长`);
         }
       });
 
@@ -548,9 +597,8 @@ export default function UploadPage() {
     // C5: File size warning
     valid.forEach((file) => {
       if (file.size > LARGE_FILE_THRESHOLD) {
-        toast.warning(`大文件解析可能耗时较长: ${file.name}`, {
-          description: `文件大小 ${(file.size / 1024 / 1024).toFixed(1)} MB`,
-        });
+        const sizeMB = (file.size / 1024 / 1024).toFixed(0);
+        toast.warning(`文件 ${file.name} (${sizeMB}MB) 较大，解析可能耗时较长`);
       }
     });
 
@@ -571,6 +619,14 @@ export default function UploadPage() {
       next.delete(id);
       return next;
     });
+  };
+
+  const clearBatch = () => {
+    filesRef.current = [];
+    setFiles([]);
+    setSelectedIds(new Set());
+    clearStoredBatch();
+    toast.success("已清除当前批次");
   };
 
   const retryFile = (item: FileItem) => {
@@ -868,6 +924,15 @@ export default function UploadPage() {
                 <TooltipContent>即将推出</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={clearBatch}
+            >
+              <Eraser className="h-3.5 w-3.5" />
+              清除当前批次
+            </Button>
           </motion.div>
         )}
       </AnimatePresence>

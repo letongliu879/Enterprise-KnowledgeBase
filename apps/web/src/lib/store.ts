@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { persist, subscribeWithSelector } from "zustand/middleware";
 
+interface NotificationPrefs {
+  site: Record<string, boolean>;
+  email: { enabled: boolean; events: Record<string, boolean> };
+  dnd: { enabled: boolean; start: string; end: string };
+}
+
 interface AppState {
   currentCollectionId: string | null;
   setCurrentCollectionId: (id: string | null) => void;
@@ -41,6 +47,19 @@ interface AppState {
 
   uiDensity: "compact" | "comfortable";
   setUiDensity: (density: "compact" | "comfortable") => void;
+
+  theme: "dark" | "light" | "system";
+  setTheme: (theme: "dark" | "light" | "system") => void;
+
+  language: "zh" | "en";
+  setLanguage: (lang: "zh" | "en") => void;
+
+  notificationPrefs: NotificationPrefs;
+  setNotificationPrefs: (prefs: NotificationPrefs) => void;
+  setSiteNotification: (key: string, value: boolean) => void;
+  setEmailEnabled: (enabled: boolean) => void;
+  setEmailNotification: (key: string, value: boolean) => void;
+  setDnd: (dnd: { enabled: boolean; start: string; end: string }) => void;
 }
 
 const BROADCAST_CHANNEL_NAME = "ekb-workbench-sync";
@@ -51,6 +70,15 @@ function getBroadcastChannel() {
   }
   return null;
 }
+
+const defaultNotificationPrefs: NotificationPrefs = {
+  site: { upload: true, review: true, decision: true, system: true },
+  email: {
+    enabled: false,
+    events: { upload: false, review: true, decision: true, system: false },
+  },
+  dnd: { enabled: false, start: "22:00", end: "08:00" },
+};
 
 export const useAppStore = create<AppState>()(
   subscribeWithSelector(
@@ -89,6 +117,44 @@ export const useAppStore = create<AppState>()(
 
         uiDensity: "comfortable",
         setUiDensity: (density) => set({ uiDensity: density }),
+
+        theme: "dark",
+        setTheme: (theme) => set({ theme }),
+
+        language: "zh",
+        setLanguage: (language) => set({ language }),
+
+        notificationPrefs: defaultNotificationPrefs,
+        setNotificationPrefs: (prefs) =>
+          set({ notificationPrefs: prefs }),
+        setSiteNotification: (key, value) =>
+          set((state) => ({
+            notificationPrefs: {
+              ...state.notificationPrefs,
+              site: { ...state.notificationPrefs.site, [key]: value },
+            },
+          })),
+        setEmailEnabled: (enabled) =>
+          set((state) => ({
+            notificationPrefs: {
+              ...state.notificationPrefs,
+              email: { ...state.notificationPrefs.email, enabled },
+            },
+          })),
+        setEmailNotification: (key, value) =>
+          set((state) => ({
+            notificationPrefs: {
+              ...state.notificationPrefs,
+              email: {
+                ...state.notificationPrefs.email,
+                events: { ...state.notificationPrefs.email.events, [key]: value },
+              },
+            },
+          })),
+        setDnd: (dnd) =>
+          set((state) => ({
+            notificationPrefs: { ...state.notificationPrefs, dnd },
+          })),
       }),
       {
         name: "ekb-workbench-store",
@@ -99,6 +165,9 @@ export const useAppStore = create<AppState>()(
           demoApiKey: state.demoApiKey,
           sidebarOpen: state.sidebarOpen,
           uiDensity: state.uiDensity,
+          theme: state.theme,
+          language: state.language,
+          notificationPrefs: state.notificationPrefs,
         }),
       }
     )
@@ -124,5 +193,26 @@ if (typeof window !== "undefined") {
         useAppStore.setState({ demoApiKey: key });
       }
     };
+  }
+
+  // Sync theme from store on load
+  const stored = localStorage.getItem("ekb-workbench-store");
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      const t = parsed.state?.theme as "dark" | "light" | "system" | undefined;
+      if (t) {
+        const root = document.documentElement;
+        if (t === "dark") root.classList.add("dark");
+        else if (t === "light") root.classList.remove("dark");
+        else {
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (prefersDark) root.classList.add("dark");
+          else root.classList.remove("dark");
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 }

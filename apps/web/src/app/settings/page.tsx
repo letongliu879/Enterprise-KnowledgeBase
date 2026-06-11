@@ -89,6 +89,15 @@ export default function SettingsPage() {
     setSidebarOpen,
     uiDensity,
     setUiDensity,
+    theme: storeTheme,
+    setTheme,
+    language: storeLanguage,
+    setLanguage,
+    notificationPrefs,
+    setSiteNotification,
+    setEmailEnabled,
+    setEmailNotification,
+    setDnd,
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<TabValue>("auth");
@@ -110,9 +119,10 @@ export default function SettingsPage() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [userInfoError, setUserInfoError] = useState(false);
 
-  // Preferences
-  const [language, setLanguage] = useState<"zh" | "en">("zh");
-  const [theme, setTheme] = useState<"dark" | "light" | "system">("dark");
+  // Password change
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
     workbenchApi
@@ -124,14 +134,6 @@ export default function SettingsPage() {
       .catch(() => {
         setUserInfoError(true);
       });
-  }, []);
-
-  useEffect(() => {
-    const storedLang = localStorage.getItem("ekb-language");
-    if (storedLang === "zh" || storedLang === "en") setLanguage(storedLang);
-    const storedTheme = localStorage.getItem("ekb-theme");
-    if (storedTheme === "dark" || storedTheme === "light" || storedTheme === "system")
-      setTheme(storedTheme);
   }, []);
 
   const saveAuth = () => {
@@ -161,17 +163,9 @@ export default function SettingsPage() {
     toast.success("权限范围已保存");
   };
 
-  const handleLanguageChange = (value: string) => {
-    const lang = value as "zh" | "en";
-    setLanguage(lang);
-    localStorage.setItem("ekb-language", lang);
-    toast.success(lang === "zh" ? "语言已切换为中文" : "Language switched to English");
-  };
-
   const handleThemeChange = (value: string) => {
     const t = value as "dark" | "light" | "system";
     setTheme(t);
-    localStorage.setItem("ekb-theme", t);
     const root = document.documentElement;
     if (t === "dark") {
       root.classList.add("dark");
@@ -183,6 +177,25 @@ export default function SettingsPage() {
       else root.classList.remove("dark");
     }
     toast.success("主题已更新");
+  };
+
+  const handlePasswordChange = () => {
+    if (!currentPassword || !newPassword) {
+      toast.error("请填写完整密码信息");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("两次输入的新密码不一致");
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error("新密码长度至少 8 位");
+      return;
+    }
+    toast.success("密码修改成功（演示模式）");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
   };
 
   const clearLocalCache = () => {
@@ -615,8 +628,8 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>语言</Label>
                   <RadioGroup
-                    value={language}
-                    onValueChange={handleLanguageChange}
+                    value={storeLanguage}
+                    onValueChange={(v) => setLanguage(v as "zh" | "en")}
                   >
                     <RadioItem value="zh" label="中文" />
                     <RadioItem value="en" label="English" />
@@ -625,7 +638,7 @@ export default function SettingsPage() {
 
                 <div className="space-y-2">
                   <Label>主题</Label>
-                  <RadioGroup value={theme} onValueChange={handleThemeChange}>
+                  <RadioGroup value={storeTheme} onValueChange={handleThemeChange}>
                     <RadioItem value="dark" label="深色" />
                     <RadioItem value="light" label="浅色" />
                     <RadioItem value="system" label="跟随系统" />
@@ -693,30 +706,53 @@ export default function SettingsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <ComingSoonTooltip>
-                  <Button disabled className="w-full justify-start gap-2">
-                    <KeyRound className="h-4 w-4" />
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium">修改密码</h3>
+                  <div className="space-y-2">
+                    <Input
+                      type="password"
+                      placeholder="当前密码"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      placeholder="新密码（至少 8 位）"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      placeholder="确认新密码"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                  <Button onClick={handlePasswordChange} size="sm">
+                    <KeyRound className="h-4 w-4 mr-2" />
                     修改密码
                   </Button>
-                </ComingSoonTooltip>
-                <ComingSoonTooltip>
-                  <Button disabled className="w-full justify-start gap-2">
-                    <Shield className="h-4 w-4" />
-                    双重认证 (2FA)
-                  </Button>
-                </ComingSoonTooltip>
-                <ComingSoonTooltip>
-                  <Button disabled className="w-full justify-start gap-2">
-                    <Monitor className="h-4 w-4" />
-                    设备管理
-                  </Button>
-                </ComingSoonTooltip>
-                <ComingSoonTooltip>
-                  <Button disabled className="w-full justify-start gap-2">
-                    <Clock className="h-4 w-4" />
-                    登录历史
-                  </Button>
-                </ComingSoonTooltip>
+                </div>
+                <div className="pt-3 border-t border-white/5 space-y-3">
+                  <ComingSoonTooltip>
+                    <Button disabled className="w-full justify-start gap-2">
+                      <Shield className="h-4 w-4" />
+                      双重认证 (2FA)
+                    </Button>
+                  </ComingSoonTooltip>
+                  <ComingSoonTooltip>
+                    <Button disabled className="w-full justify-start gap-2">
+                      <Monitor className="h-4 w-4" />
+                      设备管理
+                    </Button>
+                  </ComingSoonTooltip>
+                  <ComingSoonTooltip>
+                    <Button disabled className="w-full justify-start gap-2">
+                      <Clock className="h-4 w-4" />
+                      登录历史
+                    </Button>
+                  </ComingSoonTooltip>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
@@ -788,22 +824,73 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
+                  <h3 className="text-sm font-medium">站内通知</h3>
                   {notificationEvents.map((evt) => (
-                    <ComingSoonTooltip key={evt.key}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">{evt.label}</span>
-                        <Switch disabled />
-                      </div>
-                    </ComingSoonTooltip>
+                    <div key={evt.key} className="flex items-center justify-between">
+                      <span className="text-sm">{evt.label}</span>
+                      <Switch
+                        checked={notificationPrefs.site[evt.key] ?? true}
+                        onCheckedChange={(v) => setSiteNotification(evt.key, v)}
+                      />
+                    </div>
                   ))}
                 </div>
-                <div className="pt-2 border-t border-white/5">
-                  <ComingSoonTooltip>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">邮件通知</span>
-                      <Switch disabled />
+                <div className="pt-3 border-t border-white/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">邮件通知总开关</span>
+                    <Switch
+                      checked={notificationPrefs.email.enabled}
+                      onCheckedChange={(v) => setEmailEnabled(v)}
+                    />
+                  </div>
+                  {notificationPrefs.email.enabled && (
+                    <div className="space-y-2 pl-4 border-l-2 border-white/5">
+                      {notificationEvents.map((evt) => (
+                        <div key={evt.key} className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">{evt.label}</span>
+                          <Switch
+                            checked={notificationPrefs.email.events[evt.key] ?? false}
+                            onCheckedChange={(v) => setEmailNotification(evt.key, v)}
+                          />
+                        </div>
+                      ))}
                     </div>
-                  </ComingSoonTooltip>
+                  )}
+                </div>
+                <div className="pt-3 border-t border-white/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">免打扰时段</span>
+                    <Switch
+                      checked={notificationPrefs.dnd.enabled}
+                      onCheckedChange={(v) =>
+                        setDnd({ ...notificationPrefs.dnd, enabled: v })
+                      }
+                    />
+                  </div>
+                  {notificationPrefs.dnd.enabled && (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs text-muted-foreground">开始时间</Label>
+                        <Input
+                          type="time"
+                          value={notificationPrefs.dnd.start}
+                          onChange={(e) =>
+                            setDnd({ ...notificationPrefs.dnd, start: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs text-muted-foreground">结束时间</Label>
+                        <Input
+                          type="time"
+                          value={notificationPrefs.dnd.end}
+                          onChange={(e) =>
+                            setDnd({ ...notificationPrefs.dnd, end: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -831,14 +918,12 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {shortcutsList.map((s) => (
-                  <ComingSoonTooltip key={s.action}>
-                    <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                      <span className="text-sm">{s.action}</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-xs font-mono">
-                        {s.key}
-                      </kbd>
-                    </div>
-                  </ComingSoonTooltip>
+                  <div key={s.action} className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                    <span className="text-sm">{s.action}</span>
+                    <kbd className="px-2 py-0.5 rounded bg-white/10 text-xs font-mono">
+                      {s.key}
+                    </kbd>
+                  </div>
                 ))}
               </CardContent>
             </Card>
@@ -865,18 +950,37 @@ export default function SettingsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <ComingSoonTooltip>
-                  <Button disabled className="w-full justify-start gap-2">
-                    <X className="h-4 w-4" />
-                    申请注销账户
+                {userInfo ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between py-1">
+                      <span className="text-muted-foreground">用户 ID</span>
+                      <span className="font-medium">{userInfo.user_id}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-muted-foreground">邮箱</span>
+                      <span className="font-medium">{userInfo.email}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-muted-foreground">角色</span>
+                      <span className="font-medium">{userInfo.roles.join(", ")}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">加载中...</p>
+                )}
+                <div className="pt-3 border-t border-white/5 space-y-3">
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <Download className="h-4 w-4" />
+                    导出个人数据 (JSON)
                   </Button>
-                </ComingSoonTooltip>
-                <ComingSoonTooltip>
-                  <Button disabled className="w-full justify-start gap-2">
-                    <HardDrive className="h-4 w-4" />
-                    请求删除个人数据
-                  </Button>
-                </ComingSoonTooltip>
+                  <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-3">
+                    <p className="text-sm text-destructive font-medium">危险区域</p>
+                    <p className="text-xs text-muted-foreground">注销账户将删除您的所有数据，此操作不可撤销。</p>
+                    <Button variant="destructive" size="sm" className="w-full">
+                      申请注销账户
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </motion.div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -55,13 +55,19 @@ import { EmptyState } from "@/components/empty-state";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import Link from "next/link";
 
 const EXAMPLE_QUERIES = [
-  "产品功能介绍",
+  "产品手册使用规范",
+  "API 调用方法",
   "安全合规要求",
-  "API 使用文档",
+  "故障排查指南",
+  "部署配置说明",
 ];
+
+const RECENT_QUERIES_KEY = "ekb-recent-queries";
+const MAX_RECENT_QUERIES = 5;
 
 interface QueryRunItem {
   query_run_id: string;
@@ -84,6 +90,19 @@ export default function RetrievalPage() {
   // H2: Comparison mode state
   const [compareMode, setCompareMode] = useState(false);
   const [compareProfileId, setCompareProfileId] = useState("");
+
+  // Search timing: frontend-measured latency
+  const [frontendLatency, setFrontendLatency] = useState<number | null>(null);
+  const searchStartTimeRef = useRef<number | null>(null);
+
+  // Recent queries from localStorage
+  const [recentQueriesStorage, setRecentQueriesStorage] = useLocalStorage<string[]>(
+    RECENT_QUERIES_KEY,
+    []
+  );
+
+  // Query input focus state for showing suggestions
+  const [queryFocused, setQueryFocused] = useState(false);
 
   const { data: me } = useQuery({
     queryKey: ["workbench-me"],
@@ -113,6 +132,15 @@ export default function RetrievalPage() {
   const queryRuns = (queryRunsResponse?.items ?? []) as QueryRunItem[];
   const recentQueries = queryRuns.slice(0, 20);
 
+  // Helper to save query to localStorage history
+  const saveQueryToHistory = useCallback((q: string) => {
+    if (!q.trim()) return;
+    setRecentQueriesStorage((prev) => {
+      const filtered = prev.filter((item) => item !== q);
+      return [q, ...filtered].slice(0, MAX_RECENT_QUERIES);
+    });
+  }, [setRecentQueriesStorage]);
+
   // Main retrieve query
   const {
     data: result,
@@ -127,14 +155,16 @@ export default function RetrievalPage() {
       retrievalProfileId,
       tokenBudget,
     ],
-    queryFn: () =>
-      workbenchApi.retrieve({
+    queryFn: async () => {
+      const res = await workbenchApi.retrieve({
         query,
         collection_id: currentCollectionId || "",
         retrieval_profile_id: retrievalProfileId,
         token_budget: parseInt(tokenBudget, 10) || 2000,
         debug,
-      }),
+      });
+      return res;
+    },
     enabled: false,
   });
 
@@ -236,16 +266,24 @@ export default function RetrievalPage() {
     }
     // Execute search after state updates (use timeout to allow state to settle)
     setTimeout(() => {
-      refetch();
-      if (compareMode && compareProfileId) {
-        setTimeout(() => refetchCompare(), 50);
-      }
+      handleSearch(run.query);
     }, 50);
   };
 
-  // H6: Handle example query click
+  // H6: Handle example query click — fill and trigger search
   const handleExampleClick = (exampleQuery: string) => {
     setQuery(exampleQuery);
+    setTimeout(() => {
+      handleSearch(exampleQuery);
+    }, 0);
+  };
+
+  // Handle recent query from localStorage click
+  const handleRecentQueryClick = (recentQuery: string) => {
+    setQuery(recentQuery);
+    setTimeout(() => {
+      handleSearch(recentQuery);
+    }, 0);
   };
 
   const evidenceItems =
@@ -257,8 +295,22 @@ export default function RetrievalPage() {
     !!query && !!currentCollectionId && !!retrievalProfileId;
   const isCompareEnabled = isSearchEnabled && !!compareProfileId;
 
-  const handleSearch = () => {
-    refetch();
+  const handleSearch = (explicitQuery?: string) => {
+    const q = explicitQuery || query;
+    if (!q || !currentCollectionId || !retrievalProfileId) return;
+
+    // Start frontend timing
+    searchStartTimeRef.current = Date.now();
+    setFrontendLatency(null);
+
+    saveQueryToHistory(q);
+
+    refetch().then(() => {
+      if (searchStartTimeRef.current) {
+        setFrontendLatency(Date.now() - searchStartTimeRef.current);
+      }
+    });
+
     if (compareMode && compareProfileId) {
       setTimeout(() => refetchCompare(), 50);
     }
@@ -317,6 +369,8 @@ export default function RetrievalPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  onFocus={() => setQueryFocused(true)}
+                  onBlur={() => setTimeout(() => setQueryFocused(false), 150)}
                   className="h-10"
                 />
               </div>
@@ -507,9 +561,9 @@ export default function RetrievalPage() {
         </Card>
       </motion.div>
 
-      {/* H6: Empty query suggestions panel */}
+      {/* H6: Empty query suggestions panel — shown when input is focused and query is empty */}
       <AnimatePresence>
-        {!query && (
+        {queryFocused && !query && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -523,34 +577,23 @@ export default function RetrievalPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Recent queries */}
+                  {/* Recent queries from localStorage */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
                       <History className="h-3 w-3" />
                       <span>最近查询</span>
                     </div>
-                    {recentQueries.length > 0 ? (
+                    {recentQueriesStorage.length > 0 ? (
                       <div className="space-y-1.5">
-                        {recentQueries.map((run) => (
+                        {recentQueriesStorage.map((recentQuery, idx) => (
                           <button
-                            key={run.query_run_id}
-                            onClick={() => handleHistoryClick(run)}
+                            key={`${recentQuery}-${idx}`}
+                            onClick={() => handleRecentQueryClick(recentQuery)}
                             className="w-full text-left px-3 py-2 rounded-lg text-xs bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
                           >
-                            <div className="font-medium text-foreground/80 truncate">
-                              {run.query}
-                            </div>
-                            <div className="text-muted-foreground/40 mt-0.5 flex items-center gap-1.5">
-                              <span>{collectionNameMap.get(run.collection_id) || run.collection_id}</span>
-                              <span>·</span>
-                              <span>{profileNameMap.get(run.retrieval_profile_id) || run.retrieval_profile_id}</span>
-                              {run.latency_ms != null && (
-                                <>
-                                  <span>·</span>
-                                  <span>{run.latency_ms}ms</span>
-                                </>
-                              )}
-                            </div>
+                            <span className="font-medium text-foreground/80 truncate">
+                              {recentQuery}
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -561,11 +604,11 @@ export default function RetrievalPage() {
                     )}
                   </div>
 
-                  {/* Example queries */}
+                  {/* Example / hot queries */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
                       <Sparkles className="h-3 w-3" />
-                      <span>示例查询</span>
+                      <span>热门查询</span>
                     </div>
                     <div className="space-y-1.5">
                       {EXAMPLE_QUERIES.map((example) => (
@@ -673,11 +716,13 @@ export default function RetrievalPage() {
             <h2 className="text-lg font-medium flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
               检索到的证据片段
-              {/* H5: Latency display */}
-              {result?.latency_ms != null && (
+              {/* H5: Latency display — frontend + backend */}
+              {(frontendLatency != null || result?.latency_ms != null) && (
                 <span className="text-xs text-muted-foreground/50 font-normal flex items-center gap-1 ml-2">
                   <Clock className="h-3 w-3" />
-                  检索完成 · {result.latency_ms}ms
+                  {frontendLatency != null && `检索耗时 ${frontendLatency}ms`}
+                  {result?.latency_ms != null && frontendLatency != null && " · "}
+                  {result?.latency_ms != null && `后端 ${result.latency_ms}ms`}
                 </span>
               )}
             </h2>
