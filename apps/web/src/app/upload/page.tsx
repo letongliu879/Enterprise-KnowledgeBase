@@ -26,6 +26,14 @@ import {
   TrendingUp,
   ShieldCheck,
   AlertTriangle,
+  Search,
+  Square,
+  FileUp,
+  History,
+  Bookmark,
+  Timer,
+  Gauge,
+  X,
 } from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store";
@@ -34,10 +42,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/empty-state";
-import { isApiError, getErrorMessage } from "@/lib/api/errors";
+import { BackendGap } from "@/components/backend-gap";
+import { isApiError, isBackendGap, getErrorMessage } from "@/lib/api/errors";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import type { UploadStatus } from "@/lib/api/types";
+import { Input } from "@/components/ui/input";
+import { SortDropdown } from "@/components/sort-dropdown";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 
 const SUPPORTED_TYPES = [
   "application/pdf",
@@ -237,6 +255,16 @@ function getStatusConfig(status: FileStatus) {
 }
 
 const MAX_CONCURRENT_UPLOADS = 3;
+const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
+
+type SortField = "time" | "name" | "size" | "status";
+
+const SORT_OPTIONS = [
+  { value: "time", label: "上传时间" },
+  { value: "name", label: "文件名" },
+  { value: "size", label: "文件大小" },
+  { value: "status", label: "状态" },
+];
 
 export default function UploadPage() {
   const { currentCollectionId, accessScope } = useAppStore();
@@ -248,11 +276,27 @@ export default function UploadPage() {
   const uploadQueueRef = useRef<string[]>([]);
   const activeUploadsRef = useRef(0);
 
+  // C1: Search/filter
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // C2: Sorting
+  const [sortField, setSortField] = useState<SortField>("time");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  // C3: Batch selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // C5: Upload speed/ETA tracking
+  const uploadStartTimesRef = useRef<Record<string, number>>({});
+
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
 
-  const { data: tasks } = useQuery({
+  const {
+    data: tasks,
+    error: tasksError,
+  } = useQuery({
     queryKey: ["tasks"],
     queryFn: () => workbenchApi.listTasks({ sort_by: "created_at", sort_order: "desc" }),
     refetchInterval: files.some((file) =>
@@ -267,26 +311,56 @@ export default function UploadPage() {
     [tasks?.items]
   );
 
-  const displayFiles = useMemo(
-    () =>
-      files.map((file) => {
-        if (
-          !file.uploadId ||
-          file.status === "failed" ||
-          file.status === "rejected"
-        ) {
-          return file;
-        }
+  const displayFiles = useMemo(() => {
+    let result = files.map((file) => {
+      if (
+        !file.uploadId ||
+        file.status === "failed" ||
+        file.status === "rejected"
+      ) {
+        return file;
+      }
 
-        const task = taskMap.get(file.uploadId);
-        if (!task || task.status === file.status) {
-          return file;
-        }
+      const task = taskMap.get(file.uploadId);
+      if (!task || task.status === file.status) {
+        return file;
+      }
 
-        return { ...file, status: task.status as FileStatus };
-      }),
-    [files, taskMap]
-  );
+      return { ...file, status: task.status as FileStatus };
+    });
+
+    // C1: Filter by search query
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
+      result = result.filter((item) =>
+        item.file.name.toLowerCase().includes(query)
+      );
+    }
+
+    // C2: Sort
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = a.file.name.localeCompare(b.file.name);
+          break;
+        case "size":
+          cmp = a.file.size - b.file.size;
+          break;
+        case "status":
+          cmp = a.status.localeCompare(b.status);
+          break;
+        case "time":
+        default:
+          // Sort by id (timestamp-based) as proxy for upload time
+          cmp = a.id.localeCompare(b.id);
+          break;
+      }
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [files, taskMap, searchQuery, sortField, sortDirection]);
 
   // Recent tasks with infinite scroll.
   const {
@@ -401,6 +475,7 @@ export default function UploadPage() {
 
   const startUpload = useCallback((item: FileItem) => {
     activeUploadsRef.current += 1;
+    uploadStartTimesRef.current[item.id] = Date.now();
     setFiles((prev) =>
       prev.map((f) => (f.id === item.id ? { ...f, status: "uploading" } : f))
     );
@@ -439,6 +514,16 @@ export default function UploadPage() {
       const valid = dropped.filter(
         (f) => SUPPORTED_TYPES.includes(f.type) || f.name.endsWith(".pdf")
       );
+
+      // C5: File size warning
+      valid.forEach((file) => {
+        if (file.size > LARGE_FILE_THRESHOLD) {
+          toast.warning(`大文件解析可能耗时较长: ${file.name}`, {
+            description: `文件大小 ${(file.size / 1024 / 1024).toFixed(1)} MB`,
+          });
+        }
+      });
+
       const newItems: FileItem[] = valid.map((file) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         file,
@@ -459,6 +544,16 @@ export default function UploadPage() {
     const valid = selected.filter(
       (f) => SUPPORTED_TYPES.includes(f.type) || f.name.endsWith(".pdf")
     );
+
+    // C5: File size warning
+    valid.forEach((file) => {
+      if (file.size > LARGE_FILE_THRESHOLD) {
+        toast.warning(`大文件解析可能耗时较长: ${file.name}`, {
+          description: `文件大小 ${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        });
+      }
+    });
+
     const newItems: FileItem[] = valid.map((file) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file,
@@ -471,6 +566,11 @@ export default function UploadPage() {
   const removeFile = (id: string) => {
     filesRef.current = filesRef.current.filter((f) => f.id !== id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   const retryFile = (item: FileItem) => {
@@ -487,6 +587,43 @@ export default function UploadPage() {
     uploadQueueRef.current.push(item.id);
     processUploadQueue();
   };
+
+  // C3: Batch operations
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === displayFiles.length && displayFiles.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayFiles.map((f) => f.id)));
+    }
+  };
+
+  const batchDelete = () => {
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => removeFile(id));
+    setSelectedIds(new Set());
+    toast.success(`已删除 ${ids.length} 个文件`);
+  };
+
+  const batchRetry = () => {
+    const failedSelected = displayFiles.filter(
+      (f) => selectedIds.has(f.id) && f.status === "failed"
+    );
+    failedSelected.forEach((item) => retryFile(item));
+    setSelectedIds(new Set());
+    toast.success(`已重试 ${failedSelected.length} 个失败文件`);
+  };
+
+  const allSelected =
+    displayFiles.length > 0 && selectedIds.size === displayFiles.length;
 
   const stats = {
     total: displayFiles.length,
@@ -689,6 +826,80 @@ export default function UploadPage() {
         )}
       </AnimatePresence>
 
+      {/* C6: Toolbar — template / resume / history */}
+      <AnimatePresence>
+        {displayFiles.length > 0 && (
+          <motion.div
+            variants={staggerItem}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
+                    <FileUp className="h-3.5 w-3.5" />
+                    上传模板
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>即将推出</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
+                    <Bookmark className="h-3.5 w-3.5" />
+                    断点续传
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>即将推出</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
+                    <History className="h-3.5 w-3.5" />
+                    上传历史
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>即将推出</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Tasks Error */}
+      <AnimatePresence>
+        {tasksError && (
+          <motion.div
+            variants={staggerItem}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            {isBackendGap(tasksError) ? (
+              <BackendGap
+                feature="获取任务列表"
+                endpoint={tasksError.endpoint}
+              />
+            ) : (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  {isApiError(tasksError)
+                    ? tasksError.message
+                    : getErrorMessage(tasksError)}
+                </AlertDescription>
+              </Alert>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* File List */}
       <AnimatePresence>
         {displayFiles.length > 0 && (
@@ -698,6 +909,92 @@ export default function UploadPage() {
             animate={{ opacity: 1 }}
             className="space-y-3"
           >
+            {/* C1 + C2: Search and Sort toolbar */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="glass flex items-center gap-2 rounded-full px-1 py-1 flex-1 min-w-[200px]">
+                <Search className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="搜索文件名..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-7 border-0 bg-transparent px-0 text-sm focus-visible:ring-0 focus-visible:shadow-none"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 rounded-full"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    <X className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
+              <SortDropdown
+                options={SORT_OPTIONS}
+                value={sortField}
+                direction={sortDirection}
+                onChange={(value, direction) => {
+                  setSortField(value as SortField);
+                  setSortDirection(direction);
+                }}
+              />
+            </div>
+
+            {/* C3: Batch operations bar */}
+            <AnimatePresence>
+              {selectedIds.size > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                >
+                  <Card className="rounded-2xl border-dashed">
+                    <CardContent className="flex flex-wrap items-center gap-3 p-3">
+                      <Badge variant="secondary">{selectedIds.size} 已选择</Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={batchDelete}
+                      >
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        批量删除
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={batchRetry}
+                      >
+                        <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                        批量重试
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs ml-auto"
+                        onClick={() => setSelectedIds(new Set())}
+                      >
+                        清除选择
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex items-center gap-3 rounded-xl border bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={allSelected}
+                onChange={() => toggleSelectAll()}
+              />
+              <span>全选</span>
+              <span className="ml-auto text-muted-foreground/50">
+                {displayFiles.length} 个文件
+              </span>
+            </div>
+
             <h3 className="text-sm font-medium text-muted-foreground/80">
               当前上传 ({displayFiles.length})
             </h3>
@@ -731,6 +1028,12 @@ export default function UploadPage() {
 
                         <CardContent className="p-3 pl-4">
                           <div className="flex items-center gap-3">
+                            {/* C3: Checkbox */}
+                            <Checkbox
+                              checked={selectedIds.has(item.id)}
+                              onChange={() => toggleSelection(item.id)}
+                            />
+
                             {/* File type icon */}
                             <div
                               className={cn(
@@ -782,6 +1085,28 @@ export default function UploadPage() {
 
                             {/* Actions */}
                             <div className="flex items-center gap-1 shrink-0">
+                              {/* C4: Cancel button (disabled with tooltip) */}
+                              {(item.status === "uploading" ||
+                                item.status === "parsing" ||
+                                item.status === "indexing" ||
+                                item.status === "queued" ||
+                                item.status === "ready") && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 rounded-lg"
+                                        disabled
+                                      >
+                                        <Square className="h-3.5 w-3.5 text-muted-foreground" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>暂不支持取消任务</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
                               {item.status === "failed" && (
                                 <Button
                                   variant="ghost"
@@ -811,15 +1136,27 @@ export default function UploadPage() {
                             </div>
                           </div>
 
-                          {/* Progress bar for uploading */}
+                          {/* C5: Progress bar + ETA for uploading */}
                           {(item.status === "uploading" ||
                             item.status === "parsing" ||
                             item.status === "indexing") && (
-                            <div className="mt-2 h-1 rounded-full bg-white/[0.04] overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary animate-shimmer"
-                                style={{ width: "60%" }}
-                              />
+                            <div className="mt-2 space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
+                                <span className="flex items-center gap-1">
+                                  <Timer className="h-3 w-3" />
+                                  {getEtaText(item.id, item.status, uploadStartTimesRef.current)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Gauge className="h-3 w-3" />
+                                  {getSpeedText(item.file.size, uploadStartTimesRef.current[item.id])}
+                                </span>
+                              </div>
+                              <div className="h-1 rounded-full bg-white/[0.04] overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary animate-shimmer"
+                                  style={{ width: getProgressWidth(item.status) }}
+                                />
+                              </div>
                             </div>
                           )}
                         </CardContent>
@@ -954,4 +1291,52 @@ function getStatusLabel(status: FileStatus): string {
     failed: "处理失败",
   };
   return labels[status];
+}
+
+// C5: Upload speed / ETA helpers
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function getSpeedText(fileSize: number, startTime?: number): string {
+  if (!startTime) return "计算中...";
+  const elapsedSec = (Date.now() - startTime) / 1000;
+  if (elapsedSec < 1) return "计算中...";
+  const speed = fileSize / elapsedSec;
+  return `${formatBytes(speed)}/s`;
+}
+
+function getEtaText(
+  itemId: string,
+  status: FileStatus,
+  startTimes: Record<string, number>
+): string {
+  if (status !== "uploading") {
+    return status === "parsing" ? "正在解析..." : "正在构建索引...";
+  }
+  const start = startTimes[itemId];
+  if (!start) return "计算中...";
+  const elapsed = (Date.now() - start) / 1000;
+  if (elapsed < 2) return "计算中...";
+  // Rough heuristic: assume upload takes ~10s for average file
+  const remaining = Math.max(0, Math.round(10 - elapsed));
+  if (remaining <= 0) return "即将完成...";
+  return `预计剩余 ${remaining}s`;
+}
+
+function getProgressWidth(status: FileStatus): string {
+  switch (status) {
+    case "uploading":
+      return "60%";
+    case "parsing":
+      return "75%";
+    case "indexing":
+      return "90%";
+    default:
+      return "60%";
+  }
 }

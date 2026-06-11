@@ -8,19 +8,23 @@ import {
   Archive,
   ChevronRight,
   Database,
+  Eye,
   FileSpreadsheet,
   FileText,
   Filter,
   Layers,
+  Link as LinkIcon,
+  MoreHorizontal,
   Presentation,
   RotateCcw,
   Search,
+  Share2,
   ShieldAlert,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { workbenchApi } from "@/lib/api/client";
-import type { BatchDocumentActionResult } from "@/lib/api/types";
+import type { BatchDocumentActionResult, DocumentProjectionItem } from "@/lib/api/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +36,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,8 +63,19 @@ import { BackendGap } from "@/components/backend-gap";
 import { isBackendGap, isApiError, getErrorMessage } from "@/lib/api/errors";
 import { normalizeStatus } from "@/lib/status";
 import { staggerContainer, staggerItem } from "@/lib/animations";
+import { SortDropdown } from "@/components/sort-dropdown";
+import { ViewToggle } from "@/components/view-toggle";
 
 type BatchAction = "archive" | "retract" | "reindex";
+type ViewMode = "list" | "card" | "grid";
+
+const SORT_OPTIONS = [
+  { value: "projection_updated_at", label: "Updated" },
+  { value: "filename", label: "Filename" },
+  { value: "page_count", label: "Pages" },
+  { value: "chunk_count", label: "Chunks" },
+  { value: "document_state", label: "State" },
+];
 
 function getDocIcon(filename?: string | null) {
   if (!filename) {
@@ -134,6 +161,172 @@ function formatRelativeTime(value?: string | null) {
   return date.toLocaleDateString("zh-CN");
 }
 
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return date.toLocaleString("zh-CN");
+}
+
+function DocumentPreviewDialog({
+  doc,
+  open,
+  onOpenChange,
+}: {
+  doc: DocumentProjectionItem | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!doc) return null;
+  const iconConfig = getDocIcon(doc.filename);
+  const stateConfig = getStateConfig(doc.document_state);
+  const Icon = iconConfig.icon;
+  const completeness =
+    doc.has_source_file && doc.has_parse_snapshot ? "Complete" : "Partial";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconConfig.bg}`}>
+              <Icon className={`h-4 w-4 ${iconConfig.color}`} />
+            </div>
+            <span className="truncate">{doc.filename || doc.doc_id}</span>
+          </DialogTitle>
+          <DialogDescription>Document metadata summary</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Doc ID</div>
+              <div className="font-mono">{doc.doc_id}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Collection</div>
+              <div className="font-mono">{doc.collection_id}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">State</div>
+              <div className={stateConfig.color}>{stateConfig.label}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Publish State</div>
+              <div>{doc.publish_state || "-"}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Pages</div>
+              <div>{doc.page_count || 0}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Chunks</div>
+              <div>{doc.chunk_count}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">MIME Type</div>
+              <div>{doc.mime_type || "-"}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Completeness</div>
+              <div>{completeness}</div>
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/30 p-2">
+            <div className="text-xs text-muted-foreground">Parser Profile</div>
+            <div>{doc.parser_profile_name || doc.parser_profile_id || "-"}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Created</div>
+              <div>{formatDate(doc.created_at)}</div>
+            </div>
+            <div className="rounded-lg bg-muted/30 p-2">
+              <div className="text-xs text-muted-foreground">Updated</div>
+              <div>{formatDate(doc.updated_at)}</div>
+            </div>
+          </div>
+          {doc.degraded_reason ? (
+            <div className="rounded-lg bg-amber-500/10 p-2 text-amber-500">
+              <div className="text-xs text-amber-400/70">Degraded Reason</div>
+              <div>{doc.degraded_reason}</div>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {doc.has_active_index ? (
+              <Badge variant="outline" className="text-[10px]">Indexed</Badge>
+            ) : null}
+            {doc.is_stale ? (
+              <Badge variant="destructive" className="text-[10px]">Stale</Badge>
+            ) : null}
+            {doc.ticket_status ? (
+              <Badge variant="secondary" className="text-[10px]">Review {doc.ticket_status}</Badge>
+            ) : null}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Link href={`/documents/${doc.doc_id}`}>
+            <Button>Open Document</Button>
+          </Link>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ComingSoonButton({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger>
+        <Button variant="ghost" size="sm" disabled className="h-7 gap-1 text-xs opacity-60">
+          {children}
+          <span className="hidden sm:inline">{label}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>即将推出</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function DocumentActionMenu({
+  doc,
+  canArchive,
+  onArchive,
+}: {
+  doc: DocumentProjectionItem;
+  canArchive: boolean;
+  onArchive: (doc: DocumentProjectionItem) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger>
+        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
+          <MoreHorizontal className="h-4 w-4 text-muted-foreground/50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem
+          disabled={!canArchive}
+          onClick={() => onArchive(doc)}
+          className="gap-2"
+        >
+          <Archive className="h-3.5 w-3.5" />
+          Quick archive
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled className="gap-2">
+          <Share2 className="h-3.5 w-3.5" />
+          Share link
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled className="gap-2">
+          <LinkIcon className="h-3.5 w-3.5" />
+          Copy link
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function DocumentsPage() {
   const queryClient = useQueryClient();
   const [collectionFilter, setCollectionFilter] = useState("ALL");
@@ -148,6 +341,20 @@ export default function DocumentsPage() {
   const [batchReason, setBatchReason] = useState("");
   const [indexProfileId, setIndexProfileId] = useState("ragflow");
   const [lastBatchResult, setLastBatchResult] = useState<BatchDocumentActionResult | null>(null);
+
+  // F1: Sorting state
+  const [sortBy, setSortBy] = useState("projection_updated_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // F2: View mode state
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  // F3: Preview dialog state
+  const [previewDoc, setPreviewDoc] = useState<DocumentProjectionItem | null>(null);
+
+  // F5: Single archive dialog
+  const [singleArchiveDoc, setSingleArchiveDoc] = useState<DocumentProjectionItem | null>(null);
+  const [singleArchiveReason, setSingleArchiveReason] = useState("");
 
   const { data: me } = useQuery({
     queryKey: ["workbench-me"],
@@ -165,12 +372,12 @@ export default function DocumentsPage() {
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["documents"],
+    queryKey: ["documents", sortBy, sortDir],
     queryFn: () =>
       workbenchApi.listDocuments({
         limit: 200,
-        order_by: "projection_updated_at",
-        order_dir: "desc",
+        order_by: sortBy,
+        order_dir: sortDir,
       }),
   });
 
@@ -277,213 +484,42 @@ export default function DocumentsPage() {
     },
   });
 
-  return (
-    <motion.div
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-      className="space-y-6"
-    >
-      <motion.div variants={staggerItem} className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Document Library</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage document health, review linkage, index status, and lifecycle operations.
-          </p>
-        </div>
-        {canManageLifecycle ? (
-          <Badge variant="outline" className="h-7 px-3">
-            Admin lifecycle enabled
-          </Badge>
-        ) : null}
-      </motion.div>
+  const singleArchiveMutation = useMutation({
+    mutationFn: async () => {
+      if (!singleArchiveDoc) throw new Error("No document selected");
+      return workbenchApi.archiveDocument(singleArchiveDoc.doc_id, {
+        reason: singleArchiveReason || "Quick archive",
+      });
+    },
+    onSuccess: async () => {
+      setSingleArchiveDoc(null);
+      setSingleArchiveReason("");
+      toast.success("Document archived");
+      await queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: (mutationError) => {
+      toast.error(isApiError(mutationError) ? mutationError.message : getErrorMessage(mutationError));
+    },
+  });
 
-      <motion.div variants={staggerItem} className="flex flex-wrap items-center gap-2">
-        <div className="glass flex items-center gap-2 rounded-full px-1 py-1">
-          <Search className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search by filename or doc id..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-7 w-56 border-0 bg-transparent px-0 text-sm focus-visible:ring-0 focus-visible:shadow-none"
-          />
-        </div>
+  const handleSortChange = (value: string, direction: "asc" | "desc") => {
+    setSortBy(value);
+    setSortDir(direction);
+  };
 
-        <Select
-          value={collectionFilter}
-          onValueChange={(value) => setCollectionFilter(value ?? "ALL")}
-          disabled={collectionsLoading}
-        >
-          <SelectTrigger className="w-48 h-8 glass rounded-full border-white/10 text-xs">
-            <Database className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
-            <SelectValue placeholder="Collection" />
-          </SelectTrigger>
-          <SelectContent className="glass-strong rounded-xl border-white/10">
-            <SelectItem value="ALL">All collections</SelectItem>
-            {collections.map((collection) => (
-              <SelectItem key={collection.collection_id} value={collection.collection_id}>
-                {collection.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={stateFilter} onValueChange={(value) => setStateFilter(value ?? "ALL")}>
-          <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
-            <Filter className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
-            <SelectValue placeholder="State" />
-          </SelectTrigger>
-          <SelectContent className="glass-strong rounded-xl border-white/10">
-            <SelectItem value="ALL">All states</SelectItem>
-            <SelectItem value="ACTIVE">Active</SelectItem>
-            <SelectItem value="PENDING">Pending</SelectItem>
-            <SelectItem value="ARCHIVED">Archived</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={reviewFilter} onValueChange={(value) => setReviewFilter(value ?? "ALL")}>
-          <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
-            <ShieldAlert className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
-            <SelectValue placeholder="Review" />
-          </SelectTrigger>
-          <SelectContent className="glass-strong rounded-xl border-white/10">
-            <SelectItem value="ALL">All review</SelectItem>
-            <SelectItem value="PENDING">Pending</SelectItem>
-            <SelectItem value="APPROVED">Approved</SelectItem>
-            <SelectItem value="REJECTED">Rejected</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={fileTypeFilter} onValueChange={(value) => setFileTypeFilter(value ?? "ALL")}>
-          <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
-            <FileText className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent className="glass-strong rounded-xl border-white/10">
-            <SelectItem value="ALL">All types</SelectItem>
-            <SelectItem value="pdf">PDF</SelectItem>
-            <SelectItem value="doc">Document</SelectItem>
-            <SelectItem value="ppt">Presentation</SelectItem>
-            <SelectItem value="sheet">Spreadsheet</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={staleFilter} onValueChange={(value) => setStaleFilter(value ?? "ALL")}>
-          <SelectTrigger className="w-32 h-8 glass rounded-full border-white/10 text-xs">
-            <SelectValue placeholder="Stale" />
-          </SelectTrigger>
-          <SelectContent className="glass-strong rounded-xl border-white/10">
-            <SelectItem value="ALL">All freshness</SelectItem>
-            <SelectItem value="STALE">Stale only</SelectItem>
-            <SelectItem value="FRESH">Fresh only</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={indexFilter} onValueChange={(value) => setIndexFilter(value ?? "ALL")}>
-          <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
-            <Layers className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
-            <SelectValue placeholder="Index" />
-          </SelectTrigger>
-          <SelectContent className="glass-strong rounded-xl border-white/10">
-            <SelectItem value="ALL">All index</SelectItem>
-            <SelectItem value="INDEXED">Indexed</SelectItem>
-            <SelectItem value="NOT_INDEXED">Not indexed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <span className="ml-auto text-xs text-muted-foreground/50">
-          {filteredDocuments.length} visible
-        </span>
-      </motion.div>
-
-      {canManageLifecycle && selectedDocIds.size > 0 ? (
-        <motion.div variants={staggerItem}>
-          <Card className="rounded-2xl border-dashed">
-            <CardContent className="flex flex-wrap items-center gap-3 p-4">
-              <Badge variant="secondary">{selectedDocIds.size} selected</Badge>
-              <Button variant="outline" size="sm" onClick={() => setBatchAction("archive")}>
-                <Archive className="mr-1 h-3.5 w-3.5" />
-                Archive
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => setBatchAction("retract")}>
-                <XCircle className="mr-1 h-3.5 w-3.5" />
-                Retract
-              </Button>
-              <Button size="sm" onClick={() => setBatchAction("reindex")}>
-                <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                Reindex
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto"
-                onClick={() => setSelectedDocIds(new Set())}
-              >
-                Clear selection
-              </Button>
-            </CardContent>
-          </Card>
-        </motion.div>
-      ) : null}
-
-      {lastBatchResult ? (
-        <motion.div variants={staggerItem}>
-          <Card className="rounded-2xl">
-            <CardContent className="space-y-3 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Total {lastBatchResult.total}</Badge>
-                <Badge variant="secondary">Succeeded {lastBatchResult.succeeded}</Badge>
-                <Badge variant={lastBatchResult.failed > 0 ? "destructive" : "outline"}>
-                  Failed {lastBatchResult.failed}
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                {lastBatchResult.items.slice(0, 8).map((item) => (
-                  <div
-                    key={`${item.doc_id}:${item.error_code || item.new_state || "ok"}`}
-                    className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/10 p-3 text-sm"
-                  >
-                    <span className="font-mono">{item.doc_id}</span>
-                    <Badge variant={item.success ? "secondary" : "destructive"}>
-                      {item.success ? item.new_state || "ok" : item.error_code || "ERROR"}
-                    </Badge>
-                    {!item.success && item.error_message ? (
-                      <span className="text-muted-foreground">{item.error_message}</span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      ) : null}
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-[96px] rounded-xl" />
-          ))}
-        </div>
-      ) : null}
-
-      {error &&
-        (isBackendGap(error) ? (
-          <BackendGap feature="Document Library" endpoint={error.endpoint} />
-        ) : (
-          <div className="glass rounded-xl border border-red-500/20 p-4 text-sm text-red-400">
-            {isApiError(error) ? error.message : getErrorMessage(error)}
-          </div>
-        ))}
-
-      {!isLoading && !error && filteredDocuments.length === 0 ? (
+  const renderDocumentList = () => {
+    if (!isLoading && !error && filteredDocuments.length === 0) {
+      return (
         <EmptyState
           icon={Database}
           title="No documents"
           description="No documents match the current filters."
         />
-      ) : null}
+      );
+    }
 
-      {!isLoading && !error && filteredDocuments.length > 0 ? (
+    if (viewMode === "list") {
+      return (
         <div className="space-y-2">
           <div className="flex items-center gap-3 rounded-xl border bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
             <input
@@ -566,6 +602,15 @@ export default function DocumentsPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => setPreviewDoc(doc)}
+                        title="Preview"
+                      >
+                        <Eye className="h-4 w-4 text-muted-foreground/50" />
+                      </Button>
                       <Badge
                         variant="outline"
                         className={`h-6 border text-[10px] ${stateConfig.border} ${stateConfig.bg}`}
@@ -577,6 +622,11 @@ export default function DocumentsPage() {
                           STALE
                         </Badge>
                       ) : null}
+                      <DocumentActionMenu
+                        doc={doc}
+                        canArchive={canManageLifecycle}
+                        onArchive={setSingleArchiveDoc}
+                      />
                       <Link href={`/documents/${doc.doc_id}`}>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
                           <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
@@ -589,53 +639,492 @@ export default function DocumentsPage() {
             );
           })}
         </div>
-      ) : null}
+      );
+    }
 
-      <Dialog open={batchAction !== null} onOpenChange={(open) => !open && setBatchAction(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {batchAction === "archive"
-                ? "Archive selected documents"
-                : batchAction === "retract"
-                ? "Retract selected documents"
-                : "Reindex selected documents"}
-            </DialogTitle>
-            <DialogDescription>
-              Actions are executed one document at a time and will return per-item results.
-            </DialogDescription>
-          </DialogHeader>
+    if (viewMode === "card") {
+      return (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredDocuments.map((doc, index) => {
+            const iconConfig = getDocIcon(doc.filename);
+            const stateConfig = getStateConfig(doc.document_state);
+            const Icon = iconConfig.icon;
+            const completeness =
+              doc.has_source_file && doc.has_parse_snapshot ? "Complete" : "Partial";
 
-          <div className="space-y-3">
-            <Textarea
-              placeholder="Reason"
-              value={batchReason}
-              onChange={(event) => setBatchReason(event.target.value)}
-              className="min-h-24"
+            return (
+              <motion.div
+                key={doc.doc_id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.03 }}
+              >
+                <Card interactive className="relative overflow-hidden">
+                  <CardContent className="space-y-3 p-4">
+                    <div className="flex items-start justify-between">
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconConfig.bg}`}
+                      >
+                        <Icon className={`h-6 w-6 ${iconConfig.color}`} />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-lg"
+                          onClick={() => setPreviewDoc(doc)}
+                          title="Preview"
+                        >
+                          <Eye className="h-4 w-4 text-muted-foreground/50" />
+                        </Button>
+                        <DocumentActionMenu
+                          doc={doc}
+                          canArchive={canManageLifecycle}
+                          onArchive={setSingleArchiveDoc}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Link href={`/documents/${doc.doc_id}`} className="text-sm font-medium hover:underline">
+                        {doc.filename || doc.doc_id}
+                      </Link>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={`h-5 border text-[10px] ${stateConfig.border} ${stateConfig.bg}`}
+                        >
+                          <span className={stateConfig.color}>{stateConfig.label}</span>
+                        </Badge>
+                        {doc.is_stale ? (
+                          <Badge variant="destructive" className="h-5 text-[10px]">
+                            STALE
+                          </Badge>
+                        ) : null}
+                        {doc.has_active_index ? (
+                          <Badge variant="outline" className="h-5 text-[10px]">
+                            Indexed
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div className="flex justify-between">
+                        <span>Collection</span>
+                        <span className="font-mono text-foreground">{doc.collection_id}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Chunks</span>
+                        <span className="text-foreground">{doc.chunk_count}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Pages</span>
+                        <span className="text-foreground">{doc.page_count || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Completeness</span>
+                        <span className="text-foreground">{completeness}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Updated</span>
+                        <span className="text-foreground">
+                          {formatRelativeTime(doc.latest_updated_at || doc.updated_at)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {doc.degraded_reason ? (
+                      <p className="text-xs text-amber-500">{doc.degraded_reason}</p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // grid view
+    return (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        {filteredDocuments.map((doc, index) => {
+          const iconConfig = getDocIcon(doc.filename);
+          const stateConfig = getStateConfig(doc.document_state);
+          const Icon = iconConfig.icon;
+
+          return (
+            <motion.div
+              key={doc.doc_id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.03 }}
+            >
+              <Card interactive className="relative overflow-hidden">
+                <CardContent className="space-y-2 p-3">
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconConfig.bg}`}
+                    >
+                      <Icon className={`h-4 w-4 ${iconConfig.color}`} />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg"
+                      onClick={() => setPreviewDoc(doc)}
+                      title="Preview"
+                    >
+                      <Eye className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    </Button>
+                  </div>
+                  <Link href={`/documents/${doc.doc_id}`} className="block truncate text-xs font-medium hover:underline">
+                    {doc.filename || doc.doc_id}
+                  </Link>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Badge
+                      variant="outline"
+                      className={`h-4 border px-1 text-[9px] ${stateConfig.border} ${stateConfig.bg}`}
+                    >
+                      <span className={stateConfig.color}>{stateConfig.label}</span>
+                    </Badge>
+                    {doc.is_stale ? (
+                      <Badge variant="destructive" className="h-4 px-1 text-[9px]">
+                        S
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>{doc.chunk_count}c</span>
+                    <span>{doc.page_count || 0}p</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <TooltipProvider>
+      <motion.div
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="space-y-6"
+      >
+        <motion.div variants={staggerItem} className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Document Library</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Manage document health, review linkage, index status, and lifecycle operations.
+            </p>
+          </div>
+          {canManageLifecycle ? (
+            <Badge variant="outline" className="h-7 px-3">
+              Admin lifecycle enabled
+            </Badge>
+          ) : null}
+        </motion.div>
+
+        {/* F4: Placeholder feature buttons */}
+        <motion.div variants={staggerItem} className="flex flex-wrap items-center gap-2">
+          <ComingSoonButton label="Tags">
+            <span className="h-3.5 w-3.5 rounded-full border border-current" />
+          </ComingSoonButton>
+          <ComingSoonButton label="Favorites">
+            <span className="h-3.5 w-3.5 rounded-full border border-current" />
+          </ComingSoonButton>
+          <ComingSoonButton label="Recent">
+            <span className="h-3.5 w-3.5 rounded-full border border-current" />
+          </ComingSoonButton>
+          <ComingSoonButton label="Quality">
+            <span className="h-3.5 w-3.5 rounded-full border border-current" />
+          </ComingSoonButton>
+          <ComingSoonButton label="Heat">
+            <span className="h-3.5 w-3.5 rounded-full border border-current" />
+          </ComingSoonButton>
+          <ComingSoonButton label="Graph">
+            <span className="h-3.5 w-3.5 rounded-full border border-current" />
+          </ComingSoonButton>
+        </motion.div>
+
+        <motion.div variants={staggerItem} className="flex flex-wrap items-center gap-2">
+          <div className="glass flex items-center gap-2 rounded-full px-1 py-1">
+            <Search className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search by filename or doc id..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="h-7 w-56 border-0 bg-transparent px-0 text-sm focus-visible:ring-0 focus-visible:shadow-none"
             />
-            {batchAction === "reindex" ? (
-              <Input
-                value={indexProfileId}
-                onChange={(event) => setIndexProfileId(event.target.value)}
-                placeholder="Index profile id"
-              />
-            ) : null}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBatchAction(null)} disabled={batchMutation.isPending}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => batchMutation.mutate()}
-              disabled={batchMutation.isPending}
-              variant={batchAction === "retract" ? "destructive" : "default"}
-            >
-              Confirm
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </motion.div>
+          <Select
+            value={collectionFilter}
+            onValueChange={(value) => setCollectionFilter(value ?? "ALL")}
+            disabled={collectionsLoading}
+          >
+            <SelectTrigger className="w-48 h-8 glass rounded-full border-white/10 text-xs">
+              <Database className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="Collection" />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/10">
+              <SelectItem value="ALL">All collections</SelectItem>
+              {collections.map((collection) => (
+                <SelectItem key={collection.collection_id} value={collection.collection_id}>
+                  {collection.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={stateFilter} onValueChange={(value) => setStateFilter(value ?? "ALL")}>
+            <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
+              <Filter className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="State" />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/10">
+              <SelectItem value="ALL">All states</SelectItem>
+              <SelectItem value="ACTIVE">Active</SelectItem>
+              <SelectItem value="PENDING">Pending</SelectItem>
+              <SelectItem value="ARCHIVED">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={reviewFilter} onValueChange={(value) => setReviewFilter(value ?? "ALL")}>
+            <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
+              <ShieldAlert className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="Review" />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/10">
+              <SelectItem value="ALL">All review</SelectItem>
+              <SelectItem value="PENDING">Pending</SelectItem>
+              <SelectItem value="APPROVED">Approved</SelectItem>
+              <SelectItem value="REJECTED">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={fileTypeFilter} onValueChange={(value) => setFileTypeFilter(value ?? "ALL")}>
+            <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
+              <FileText className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/10">
+              <SelectItem value="ALL">All types</SelectItem>
+              <SelectItem value="pdf">PDF</SelectItem>
+              <SelectItem value="doc">Document</SelectItem>
+              <SelectItem value="ppt">Presentation</SelectItem>
+              <SelectItem value="sheet">Spreadsheet</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={staleFilter} onValueChange={(value) => setStaleFilter(value ?? "ALL")}>
+            <SelectTrigger className="w-32 h-8 glass rounded-full border-white/10 text-xs">
+              <SelectValue placeholder="Stale" />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/10">
+              <SelectItem value="ALL">All freshness</SelectItem>
+              <SelectItem value="STALE">Stale only</SelectItem>
+              <SelectItem value="FRESH">Fresh only</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={indexFilter} onValueChange={(value) => setIndexFilter(value ?? "ALL")}>
+            <SelectTrigger className="w-36 h-8 glass rounded-full border-white/10 text-xs">
+              <Layers className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue placeholder="Index" />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/10">
+              <SelectItem value="ALL">All index</SelectItem>
+              <SelectItem value="INDEXED">Indexed</SelectItem>
+              <SelectItem value="NOT_INDEXED">Not indexed</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* F1: Sort dropdown */}
+          <SortDropdown
+            options={SORT_OPTIONS}
+            value={sortBy}
+            direction={sortDir}
+            onChange={handleSortChange}
+          />
+
+          {/* F2: View toggle */}
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+
+          <span className="ml-auto text-xs text-muted-foreground/50">
+            {filteredDocuments.length} visible
+          </span>
+        </motion.div>
+
+        {canManageLifecycle && selectedDocIds.size > 0 ? (
+          <motion.div variants={staggerItem}>
+            <Card className="rounded-2xl border-dashed">
+              <CardContent className="flex flex-wrap items-center gap-3 p-4">
+                <Badge variant="secondary">{selectedDocIds.size} selected</Badge>
+                <Button variant="outline" size="sm" onClick={() => setBatchAction("archive")}>
+                  <Archive className="mr-1 h-3.5 w-3.5" />
+                  Archive
+                </Button>
+                <Button variant="destructive" size="sm" onClick={() => setBatchAction("retract")}>
+                  <XCircle className="mr-1 h-3.5 w-3.5" />
+                  Retract
+                </Button>
+                <Button size="sm" onClick={() => setBatchAction("reindex")}>
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                  Reindex
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => setSelectedDocIds(new Set())}
+                >
+                  Clear selection
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ) : null}
+
+        {lastBatchResult ? (
+          <motion.div variants={staggerItem}>
+            <Card className="rounded-2xl">
+              <CardContent className="space-y-3 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">Total {lastBatchResult.total}</Badge>
+                  <Badge variant="secondary">Succeeded {lastBatchResult.succeeded}</Badge>
+                  <Badge variant={lastBatchResult.failed > 0 ? "destructive" : "outline"}>
+                    Failed {lastBatchResult.failed}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {lastBatchResult.items.slice(0, 8).map((item) => (
+                    <div
+                      key={`${item.doc_id}:${item.error_code || item.new_state || "ok"}`}
+                      className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/10 p-3 text-sm"
+                    >
+                      <span className="font-mono">{item.doc_id}</span>
+                      <Badge variant={item.success ? "secondary" : "destructive"}>
+                        {item.success ? item.new_state || "ok" : item.error_code || "ERROR"}
+                      </Badge>
+                      {!item.success && item.error_message ? (
+                        <span className="text-muted-foreground">{item.error_message}</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ) : null}
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="h-[96px] rounded-xl" />
+            ))}
+          </div>
+        ) : null}
+
+        {error &&
+          (isBackendGap(error) ? (
+            <BackendGap feature="Document Library" endpoint={error.endpoint} />
+          ) : (
+            <div className="glass rounded-xl border border-red-500/20 p-4 text-sm text-red-400">
+              {isApiError(error) ? error.message : getErrorMessage(error)}
+            </div>
+          ))}
+
+        {!isLoading && !error && renderDocumentList()}
+
+        {/* Batch action dialog */}
+        <Dialog open={batchAction !== null} onOpenChange={(open) => !open && setBatchAction(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {batchAction === "archive"
+                  ? "Archive selected documents"
+                  : batchAction === "retract"
+                  ? "Retract selected documents"
+                  : "Reindex selected documents"}
+              </DialogTitle>
+              <DialogDescription>
+                Actions are executed one document at a time and will return per-item results.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <Textarea
+                placeholder="Reason"
+                value={batchReason}
+                onChange={(event) => setBatchReason(event.target.value)}
+                className="min-h-24"
+              />
+              {batchAction === "reindex" ? (
+                <Input
+                  value={indexProfileId}
+                  onChange={(event) => setIndexProfileId(event.target.value)}
+                  placeholder="Index profile id"
+                />
+              ) : null}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBatchAction(null)} disabled={batchMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => batchMutation.mutate()}
+                disabled={batchMutation.isPending}
+                variant={batchAction === "retract" ? "destructive" : "default"}
+              >
+                Confirm
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* F3: Preview dialog */}
+        <DocumentPreviewDialog
+          doc={previewDoc}
+          open={previewDoc !== null}
+          onOpenChange={(open) => !open && setPreviewDoc(null)}
+        />
+
+        {/* F5: Single archive dialog */}
+        <Dialog open={singleArchiveDoc !== null} onOpenChange={(open) => !open && setSingleArchiveDoc(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Archive document</DialogTitle>
+              <DialogDescription>
+                Archive {singleArchiveDoc?.filename || singleArchiveDoc?.doc_id}
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              placeholder="Reason"
+              value={singleArchiveReason}
+              onChange={(event) => setSingleArchiveReason(event.target.value)}
+              className="min-h-24"
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSingleArchiveDoc(null)} disabled={singleArchiveMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => singleArchiveMutation.mutate()}
+                disabled={singleArchiveMutation.isPending}
+              >
+                Confirm
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </motion.div>
+    </TooltipProvider>
   );
 }

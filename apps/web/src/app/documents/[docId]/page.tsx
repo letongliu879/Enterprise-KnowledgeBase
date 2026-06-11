@@ -11,10 +11,23 @@ import {
   Database,
   FileText,
   Layers,
+  MessageSquare,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
   XCircle,
+  Share2,
+  History,
+  Users,
+  FileSearch,
+  FileDown,
+  FileType,
+  FileCode,
+  Link2,
+  Lock,
+  CalendarClock,
+  Copy,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentReviewPanel } from "@/features/workbench/components/agent-review";
@@ -37,8 +50,12 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import { workbenchApi } from "@/lib/api/client";
-import { isApiError, getErrorMessage } from "@/lib/api/errors";
+import { isApiError, isBackendGap, getErrorMessage } from "@/lib/api/errors";
+import { BackendGap } from "@/components/backend-gap";
 import type { Finding } from "@/features/workbench/types/finding";
 import {
   formatFailureStageLabel,
@@ -109,16 +126,93 @@ function LifecycleButton({
   );
 }
 
+function SidebarSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="rounded-[24px] shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
+      </CardHeader>
+      <CardContent className="space-y-3">{children}</CardContent>
+    </Card>
+  );
+}
+
+function PlaceholderBadge() {
+  return (
+    <Badge variant="outline" className="text-[10px]">
+      即将推出
+    </Badge>
+  );
+}
+
+const PLACEHOLDER_VERSIONS = [
+  { version: "v1.2", date: "2024-05-20", author: "系统", note: "自动解析更新" },
+  { version: "v1.1", date: "2024-04-12", author: "管理员", note: "内容修订" },
+  { version: "v1.0", date: "2024-03-01", author: "上传者", note: "初始版本" },
+];
+
+const PLACEHOLDER_ACCESSORS = [
+  { name: "张三", time: "2小时前", action: "查看" },
+  { name: "李四", time: "昨天", action: "下载" },
+  { name: "王五", time: "3天前", action: "查看" },
+  { name: "赵六", time: "1周前", action: "编辑" },
+  { name: "孙七", time: "2周前", action: "查看" },
+];
+
+const PLACEHOLDER_RELATED = [
+  { title: "相关文档 A", type: "PDF", similarity: "92%" },
+  { title: "相关文档 B", type: "DOCX", similarity: "85%" },
+  { title: "相关文档 C", type: "TXT", similarity: "78%" },
+];
+
+function downloadText(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadMarkdown(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function DocumentDetailPage() {
   const { docId } = useParams<{ docId: string }>();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("source");
   const [searchText, setSearchText] = useState("");
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [decisionReason, setDecisionReason] = useState("");
   const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null);
   const [lifecycleReason, setLifecycleReason] = useState("");
   const [indexProfileId, setIndexProfileId] = useState("ragflow");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareExpiry, setShareExpiry] = useState("7");
+  const [sharePassword, setSharePassword] = useState("");
+  const [shareReadOnly, setShareReadOnly] = useState(true);
 
   const {
     data: workspace,
@@ -150,7 +244,7 @@ export default function DocumentDetailPage() {
     document?.source_file_id || ticket?.source_file_id || task?.source_file_id || null;
   const effectiveParseSnapshotId =
     document?.parse_snapshot_id || ticket?.parse_snapshot_id || task?.parse_snapshot_id || "";
-  const isPendingReview = normalizeStatus(ticket?.status) === "pending";
+  const isPendingReview = normalizeStatus(ticket?.status) === "pending_review";
 
   const reviewFindings = useMemo<Finding[]>(
     () =>
@@ -249,6 +343,9 @@ export default function DocumentDetailPage() {
   }
 
   if (error) {
+    if (isBackendGap(error)) {
+      return <BackendGap feature="Document workspace" endpoint={error.endpoint} />;
+    }
     return (
       <Alert variant="destructive">
         <AlertTriangle className="h-4 w-4" />
@@ -352,6 +449,11 @@ export default function DocumentDetailPage() {
               placeholder="Search inside the document..."
               className="max-w-sm"
             />
+            <Switch
+              checked={searchCaseSensitive}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchCaseSensitive(e.target.checked)}
+              label="区分大小写"
+            />
             {searchText ? (
               <Button
                 variant="outline"
@@ -382,6 +484,10 @@ export default function DocumentDetailPage() {
                 <ShieldAlert className="mr-1 h-3.5 w-3.5" />
                 Agent Review
               </TabsTrigger>
+              <TabsTrigger value="annotations">
+                <MessageSquare className="mr-1 h-3.5 w-3.5" />
+                批注
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="source" className="space-y-4">
@@ -402,6 +508,7 @@ export default function DocumentDetailPage() {
                   warnings={parseSnapshot?.warnings ?? []}
                   chunks={chunks?.items ?? []}
                   searchText={searchText}
+                  searchCaseSensitive={searchCaseSensitive}
                   onSearchComplete={(found) => {
                     if (searchText.trim() && !found) {
                       toast.info("Text not found in current document view");
@@ -450,6 +557,14 @@ export default function DocumentDetailPage() {
                       }
                     : undefined
                 }
+              />
+            </TabsContent>
+
+            <TabsContent value="annotations" className="space-y-4">
+              <EmptyState
+                icon={MessageSquare}
+                title="批注功能即将推出"
+                description="文档批注与协作评论功能正在开发中，敬请期待。"
               />
             </TabsContent>
           </Tabs>
@@ -527,6 +642,175 @@ export default function DocumentDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          <SidebarSection title="分享" description="生成共享链接，控制访问权限与有效期。">
+            <Button variant="outline" className="w-full justify-start" onClick={() => setShareOpen(true)}>
+              <Share2 className="mr-2 h-4 w-4" />
+              分享文档
+            </Button>
+          </SidebarSection>
+
+          <SidebarSection title="导出" description="将当前文档内容导出为不同格式。">
+            <div className="grid grid-cols-2 gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Button variant="outline" size="sm" disabled>
+                      <FileDown className="mr-1.5 h-3.5 w-3.5" />
+                      PDF
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>PDF 导出需要后端支持，即将推出</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Button variant="outline" size="sm" disabled>
+                      <FileType className="mr-1.5 h-3.5 w-3.5" />
+                      Word
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Word 导出需要后端支持，即将推出</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const text = parseSnapshot?.preview_text?.trim() || "";
+                  if (!text) {
+                    toast.info("当前没有可导出的解析文本");
+                    return;
+                  }
+                  downloadText(displayTitle || "document", text);
+                  toast.success("文本已下载");
+                }}
+              >
+                <FileText className="mr-1.5 h-3.5 w-3.5" />
+                Text
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const text = parseSnapshot?.preview_text?.trim() || "";
+                  if (!text) {
+                    toast.info("当前没有可导出的解析文本");
+                    return;
+                  }
+                  const md = `# ${displayTitle || "Document"}\n\n${text}`;
+                  downloadMarkdown(displayTitle || "document", md);
+                  toast.success("Markdown 已下载");
+                }}
+              >
+                <FileCode className="mr-1.5 h-3.5 w-3.5" />
+                Markdown
+              </Button>
+            </div>
+          </SidebarSection>
+
+          <SidebarSection title="版本历史" description="查看文档的历史版本记录。">
+            <div className="space-y-2">
+              {PLACEHOLDER_VERSIONS.map((v) => (
+                <div
+                  key={v.version}
+                  className="flex items-center justify-between rounded-xl border bg-muted/10 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{v.version}</span>
+                      <span className="text-xs text-muted-foreground">{v.date}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {v.author} · {v.note}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2 shrink-0">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>恢复版本</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
+                            <FileSearch className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>对比版本</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SidebarSection>
+
+          <SidebarSection title="访问记录" description="最近查看过此文档的用户。">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">最近 10 位查看者</p>
+              {PLACEHOLDER_ACCESSORS.map((a, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between rounded-xl border bg-muted/10 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-sm truncate">{a.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <Badge variant="outline" className="text-[10px]">
+                      {a.action}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{a.time}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SidebarSection>
+
+          <SidebarSection title="相关文档" description="基于内容相似度推荐的相关文档。">
+            <div className="space-y-2">
+              {PLACEHOLDER_RELATED.map((r, i) => (
+                <div
+                  key={i}
+                  className="group flex items-center justify-between rounded-xl border bg-muted/10 px-3 py-2 cursor-pointer hover:bg-muted/20 transition-colors"
+                  onClick={() => toast.info("相关文档跳转功能即将推出")}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-sm font-medium truncate">{r.title}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      相似度 {r.similarity}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <Badge variant="outline" className="text-[10px]">
+                      {r.type}
+                    </Badge>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SidebarSection>
 
           <Card className="rounded-[24px]">
             <CardHeader className="pb-2">
@@ -642,6 +926,71 @@ export default function DocumentDetailPage() {
               Confirm
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>分享文档</DialogTitle>
+            <DialogDescription>
+              生成共享链接，设置访问权限与有效期。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl border bg-muted/10 p-3">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">只读链接</span>
+              </div>
+              <Switch
+                checked={shareReadOnly}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShareReadOnly(e.target.checked)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">有效期</label>
+              <div className="flex gap-2">
+                {[
+                  { label: "1天", value: "1" },
+                  { label: "7天", value: "7" },
+                  { label: "30天", value: "30" },
+                ].map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant={shareExpiry === opt.value ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => setShareExpiry(opt.value)}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">访问密码（可选）</label>
+              <Input
+                type="password"
+                placeholder="留空表示无需密码"
+                value={sharePassword}
+                onChange={(e) => setSharePassword(e.target.value)}
+              />
+            </div>
+            <Separator />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button className="w-full" disabled>
+                    <Link2 className="mr-2 h-4 w-4" />
+                    生成链接
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>分享功能需要后端 API 支持，即将推出</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

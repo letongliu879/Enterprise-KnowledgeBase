@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Database, Plus, AlertCircle, FolderOpen, Check } from "lucide-react";
+import {
+  Database,
+  Plus,
+  AlertCircle,
+  FolderOpen,
+  Check,
+  Search,
+  ArrowRight,
+} from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,11 +39,21 @@ import { useAppStore } from "@/lib/store";
 import { isApiError, isBackendGap } from "@/lib/api/errors";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
+import { SortDropdown } from "@/components/sort-dropdown";
+
+const SORT_OPTIONS = [
+  { value: "name", label: "名称" },
+  { value: "created_at", label: "创建时间" },
+];
 
 export default function CollectionsPage() {
   const { setCurrentCollectionId } = useAppStore();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
   const { data: me, isLoading: meLoading } = useQuery({
     queryKey: ["workbench-me"],
     queryFn: () => workbenchApi.me(),
@@ -57,7 +76,29 @@ export default function CollectionsPage() {
     queryFn: () => workbenchApi.listCollections(userTenantId),
     enabled: !!userTenantId,
   });
-  const collections = collectionResponse?.items ?? [];
+  const items = useMemo(() => collectionResponse?.items ?? [], [collectionResponse]);
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const filteredCollections = useMemo(() => {
+    let result = items;
+    if (normalizedSearch) {
+      result = result.filter((c) =>
+        c.name.toLowerCase().includes(normalizedSearch)
+      );
+    }
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "name") {
+        cmp = a.name.localeCompare(b.name, "zh-CN");
+      } else if (sortBy === "created_at") {
+        cmp =
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return result;
+  }, [items, normalizedSearch, sortBy, sortDir]);
 
   const createCollection = useMutation({
     mutationFn: workbenchApi.createCollection,
@@ -108,6 +149,31 @@ export default function CollectionsPage() {
         </Button>
       </motion.div>
 
+      {/* Search & Sort */}
+      <motion.div variants={staggerItem} className="flex items-center gap-3 flex-wrap">
+        <div className="glass flex items-center gap-2 rounded-full px-1 py-1 flex-1 max-w-sm">
+          <Search className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="搜索集合名称..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-7 border-0 bg-transparent px-0 text-sm focus-visible:ring-0 focus-visible:shadow-none"
+          />
+        </div>
+        <SortDropdown
+          options={SORT_OPTIONS}
+          value={sortBy}
+          direction={sortDir}
+          onChange={(value, direction) => {
+            setSortBy(value);
+            setSortDir(direction);
+          }}
+        />
+        <span className="text-xs text-muted-foreground/50 ml-auto">
+          {filteredCollections.length} 个集合
+        </span>
+      </motion.div>
+
       {/* Loading */}
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -133,9 +199,9 @@ export default function CollectionsPage() {
       {gap && <BackendGap feature={gap.feature} endpoint={gap.endpoint} />}
 
       {/* Collection Grid */}
-      {collections.length > 0 ? (
+      {filteredCollections.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {collections.map((c, i) => (
+          {filteredCollections.map((c, i) => (
             <motion.div
               key={c.collection_id}
               variants={staggerItem}
@@ -143,57 +209,74 @@ export default function CollectionsPage() {
               animate="visible"
               custom={i}
             >
-              <Card
-                interactive
-                className="relative overflow-hidden group"
-              >
-                {/* Hover gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+              <Link href={`/collections/${c.collection_id}`} className="block">
+                <Card
+                  interactive
+                  className="relative overflow-hidden group h-full"
+                >
+                  {/* Hover gradient overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
-                <CardHeader className="pb-3 relative">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
-                        <FolderOpen className="h-4 w-4 text-primary" />
+                  <CardHeader className="pb-3 relative">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                          <FolderOpen className="h-4 w-4 text-primary" />
+                        </div>
+                        <CardTitle className="text-base">{c.name}</CardTitle>
                       </div>
-                      <CardTitle className="text-base">{c.name}</CardTitle>
+                      <Badge
+                        variant={
+                          c.lifecycle_state === "active"
+                            ? "success"
+                            : "secondary"
+                        }
+                        className="text-[10px] h-5"
+                      >
+                        {c.lifecycle_state}
+                      </Badge>
                     </div>
-                    <Badge
-                      variant={
-                        c.lifecycle_state === "active"
-                          ? "success"
-                          : "secondary"
-                      }
-                      className="text-[10px] h-5"
-                    >
-                      {c.lifecycle_state}
-                    </Badge>
-                  </div>
-                  <CardDescription className="text-[10px] text-muted-foreground/50 mt-1.5 font-mono">
-                    {c.collection_id}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 relative">
-                  <p className="text-sm text-muted-foreground/70 line-clamp-2 min-h-[40px]">
-                    {c.description || "无描述"}
-                  </p>
-                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
-                    <span>租户: {c.tenant_id}</span>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full mt-2 glass border-white/10 hover:border-primary/30 hover:bg-primary/5 transition-all"
-                    onClick={() => {
-                      setCurrentCollectionId(c.collection_id);
-                      toast.success(`已选择集合: ${c.name}`);
-                    }}
-                  >
-                    <Check className="h-3.5 w-3.5 mr-1.5" />
-                    选择用于上传
-                  </Button>
-                </CardContent>
-              </Card>
+                    <CardDescription className="text-[10px] text-muted-foreground/50 mt-1.5 font-mono">
+                      {c.collection_id}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 relative">
+                    <p className="text-sm text-muted-foreground/70 line-clamp-2 min-h-[40px]">
+                      {c.description || "无描述"}
+                    </p>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+                      <span>租户: {c.tenant_id}</span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 glass border-white/10 hover:border-primary/30 hover:bg-primary/5 transition-all"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setCurrentCollectionId(c.collection_id);
+                          toast.success(`已选择集合: ${c.name}`);
+                        }}
+                      >
+                        <Check className="h-3.5 w-3.5 mr-1.5" />
+                        选择用于上传
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
             </motion.div>
           ))}
         </div>
@@ -202,16 +285,22 @@ export default function CollectionsPage() {
         !error && (
           <EmptyState
             icon={Database}
-            title="暂无集合"
-            description="创建第一个集合以开始上传文档。"
+            title={searchQuery ? "无匹配集合" : "暂无集合"}
+            description={
+              searchQuery
+                ? "没有符合搜索条件的集合，尝试其他关键词。"
+                : "创建第一个集合以开始上传文档。"
+            }
             action={
-              <Button
-                onClick={() => setCreateOpen(true)}
-                className="shadow-glow"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                创建集合
-              </Button>
+              !searchQuery ? (
+                <Button
+                  onClick={() => setCreateOpen(true)}
+                  className="shadow-glow"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  创建集合
+                </Button>
+              ) : undefined
             }
           />
         )

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   KeyRound,
@@ -8,16 +8,74 @@ import {
   Save,
   Shield,
   Building2,
+  User,
+  Settings,
+  Lock,
+  Database,
+  Bell,
+  Keyboard,
+  Trash2,
+  Info,
+  Monitor,
+  Sun,
+  Moon,
+  LayoutTemplate,
+  PanelLeft,
+  PanelLeftClose,
+  Zap,
+  Download,
+  Upload,
+  HardDrive,
+  ExternalLink,
+  Clock,
+  FileText,
+  X,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioItem } from "@/components/ui/radio-group";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
+import { workbenchApi } from "@/lib/api/client";
 
-type TabValue = "auth" | "scope";
+type TabValue =
+  | "auth"
+  | "scope"
+  | "profile"
+  | "preferences"
+  | "security"
+  | "data"
+  | "notifications"
+  | "shortcuts"
+  | "account"
+  | "about";
+
+interface UserInfo {
+  user_id: string;
+  email: string;
+  display_name?: string;
+  roles: string[];
+  tenant_id: string;
+  allowed_collections: string[];
+}
+
+function ComingSoonTooltip({ children }: { children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipContent>即将推出</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export default function SettingsPage() {
   const {
@@ -27,6 +85,10 @@ export default function SettingsPage() {
     setDemoApiKey,
     accessScope,
     setAccessScope,
+    sidebarOpen,
+    setSidebarOpen,
+    uiDensity,
+    setUiDensity,
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<TabValue>("auth");
@@ -43,6 +105,34 @@ export default function SettingsPage() {
     customer: accessScope?.customer || "",
     app: accessScope?.app || "",
   });
+
+  // Profile
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [userInfoError, setUserInfoError] = useState(false);
+
+  // Preferences
+  const [language, setLanguage] = useState<"zh" | "en">("zh");
+  const [theme, setTheme] = useState<"dark" | "light" | "system">("dark");
+
+  useEffect(() => {
+    workbenchApi
+      .me()
+      .then((data) => {
+        setUserInfo(data);
+        setUserInfoError(false);
+      })
+      .catch(() => {
+        setUserInfoError(true);
+      });
+  }, []);
+
+  useEffect(() => {
+    const storedLang = localStorage.getItem("ekb-language");
+    if (storedLang === "zh" || storedLang === "en") setLanguage(storedLang);
+    const storedTheme = localStorage.getItem("ekb-theme");
+    if (storedTheme === "dark" || storedTheme === "light" || storedTheme === "system")
+      setTheme(storedTheme);
+  }, []);
 
   const saveAuth = () => {
     setDemoToken(tokenInput || null);
@@ -71,9 +161,68 @@ export default function SettingsPage() {
     toast.success("权限范围已保存");
   };
 
+  const handleLanguageChange = (value: string) => {
+    const lang = value as "zh" | "en";
+    setLanguage(lang);
+    localStorage.setItem("ekb-language", lang);
+    toast.success(lang === "zh" ? "语言已切换为中文" : "Language switched to English");
+  };
+
+  const handleThemeChange = (value: string) => {
+    const t = value as "dark" | "light" | "system";
+    setTheme(t);
+    localStorage.setItem("ekb-theme", t);
+    const root = document.documentElement;
+    if (t === "dark") {
+      root.classList.add("dark");
+    } else if (t === "light") {
+      root.classList.remove("dark");
+    } else {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (prefersDark) root.classList.add("dark");
+      else root.classList.remove("dark");
+    }
+    toast.success("主题已更新");
+  };
+
+  const clearLocalCache = () => {
+    const keysToRemove = Object.keys(localStorage).filter(
+      (k) =>
+        k.startsWith("ekb-") ||
+        k.startsWith("ekb_workbench") ||
+        k.startsWith("zustand")
+    );
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+    toast.success("本地缓存已清除");
+  };
+
   const tabs: { value: TabValue; label: string; icon: typeof KeyRound }[] = [
     { value: "auth", label: "认证", icon: KeyRound },
     { value: "scope", label: "权限范围", icon: Shield },
+    { value: "profile", label: "个人资料", icon: User },
+    { value: "preferences", label: "偏好设置", icon: Settings },
+    { value: "security", label: "安全设置", icon: Lock },
+    { value: "data", label: "数据管理", icon: Database },
+    { value: "notifications", label: "通知偏好", icon: Bell },
+    { value: "shortcuts", label: "快捷键", icon: Keyboard },
+    { value: "account", label: "账户管理", icon: Trash2 },
+    { value: "about", label: "关于", icon: Info },
+  ];
+
+  const notificationEvents = [
+    { key: "upload", label: "文档上传完成" },
+    { key: "review", label: "审核任务分配" },
+    { key: "decision", label: "审核结果通知" },
+    { key: "system", label: "系统公告" },
+  ];
+
+  const shortcutsList = [
+    { action: "全局搜索", key: "Ctrl + K" },
+    { action: "新建上传", key: "Ctrl + U" },
+    { action: "打开设置", key: "Ctrl + ," },
+    { action: "切换侧边栏", key: "Ctrl + B" },
+    { action: "返回上一页", key: "Alt + ←" },
+    { action: "前进下一页", key: "Alt + →" },
   ];
 
   return (
@@ -87,13 +236,13 @@ export default function SettingsPage() {
       <motion.div variants={staggerItem}>
         <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          配置演示认证令牌和上传权限范围。
+          配置演示认证令牌、权限范围和个人偏好。
         </p>
       </motion.div>
 
       {/* Custom Tabs */}
       <motion.div variants={staggerItem}>
-        <div className="glass rounded-xl p-1 inline-flex gap-1 mb-4">
+        <div className="glass rounded-xl p-1 inline-flex flex-wrap gap-1 mb-4">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.value;
             return (
@@ -101,7 +250,7 @@ export default function SettingsPage() {
                 key={tab.value}
                 onClick={() => setActiveTab(tab.value)}
                 className={
-                  "relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 " +
+                  "relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 " +
                   (isActive
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground")
@@ -128,8 +277,8 @@ export default function SettingsPage() {
         </div>
       </motion.div>
 
-      {/* Auth Tab */}
       <AnimatePresence mode="wait">
+        {/* ── Auth Tab ── */}
         {activeTab === "auth" && (
           <motion.div
             key="auth"
@@ -185,10 +334,8 @@ export default function SettingsPage() {
             </Card>
           </motion.div>
         )}
-      </AnimatePresence>
 
-      {/* Scope Tab */}
-      <AnimatePresence mode="wait">
+        {/* ── Scope Tab ── */}
         {activeTab === "scope" && (
           <motion.div
             key="scope"
@@ -208,7 +355,6 @@ export default function SettingsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Scope Type — Segmented Control */}
                 <div className="space-y-2">
                   <Label>范围类型</Label>
                   <div className="glass rounded-xl p-1 flex gap-1">
@@ -362,6 +508,422 @@ export default function SettingsPage() {
                 <Button onClick={saveScope} className="shadow-glow">
                   <Save className="h-4 w-4 mr-2" />
                   保存权限范围
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Profile Tab ── */}
+        {activeTab === "profile" && (
+          <motion.div
+            key="profile"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <User className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">个人资料</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {userInfoError ? (
+                  <p className="text-sm text-muted-foreground">
+                    无法获取用户信息，请检查认证设置。
+                  </p>
+                ) : userInfo ? (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <Label className="text-muted-foreground">用户 ID</Label>
+                      <p className="font-medium">{userInfo.user_id}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">邮箱</Label>
+                      <p className="font-medium">{userInfo.email}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">角色</Label>
+                      <p className="font-medium">{userInfo.roles.join(", ")}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">租户 ID</Label>
+                      <p className="font-medium">{userInfo.tenant_id}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">加载中...</p>
+                )}
+
+                <div className="space-y-3 pt-2 border-t border-white/5">
+                  <ComingSoonTooltip>
+                    <div className="space-y-2">
+                      <Label>头像</Label>
+                      <Input disabled placeholder="头像 URL" />
+                    </div>
+                  </ComingSoonTooltip>
+                  <ComingSoonTooltip>
+                    <div className="space-y-2">
+                      <Label>昵称</Label>
+                      <Input disabled placeholder="您的昵称" />
+                    </div>
+                  </ComingSoonTooltip>
+                  <ComingSoonTooltip>
+                    <div className="space-y-2">
+                      <Label>部门</Label>
+                      <Input disabled placeholder="所属部门" />
+                    </div>
+                  </ComingSoonTooltip>
+                  <ComingSoonTooltip>
+                    <div className="space-y-2">
+                      <Label>联系方式</Label>
+                      <Input disabled placeholder="电话 / 其他联系方式" />
+                    </div>
+                  </ComingSoonTooltip>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Preferences Tab ── */}
+        {activeTab === "preferences" && (
+          <motion.div
+            key="preferences"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Settings className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">偏好设置</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label>语言</Label>
+                  <RadioGroup
+                    value={language}
+                    onValueChange={handleLanguageChange}
+                  >
+                    <RadioItem value="zh" label="中文" />
+                    <RadioItem value="en" label="English" />
+                  </RadioGroup>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>主题</Label>
+                  <RadioGroup value={theme} onValueChange={handleThemeChange}>
+                    <RadioItem value="dark" label="深色" />
+                    <RadioItem value="light" label="浅色" />
+                    <RadioItem value="system" label="跟随系统" />
+                  </RadioGroup>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>界面密度</Label>
+                  <RadioGroup
+                    value={uiDensity}
+                    onValueChange={(v) =>
+                      setUiDensity(v as "compact" | "comfortable")
+                    }
+                  >
+                    <RadioItem value="compact" label="紧凑" />
+                    <RadioItem value="comfortable" label="舒适" />
+                  </RadioGroup>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>默认侧边栏状态</Label>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant={sidebarOpen ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSidebarOpen(true)}
+                      className="gap-2"
+                    >
+                      <PanelLeft className="h-4 w-4" />
+                      展开
+                    </Button>
+                    <Button
+                      variant={!sidebarOpen ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSidebarOpen(false)}
+                      className="gap-2"
+                    >
+                      <PanelLeftClose className="h-4 w-4" />
+                      收起
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Security Tab ── */}
+        {activeTab === "security" && (
+          <motion.div
+            key="security"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Lock className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">安全设置</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <KeyRound className="h-4 w-4" />
+                    修改密码
+                  </Button>
+                </ComingSoonTooltip>
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <Shield className="h-4 w-4" />
+                    双重认证 (2FA)
+                  </Button>
+                </ComingSoonTooltip>
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <Monitor className="h-4 w-4" />
+                    设备管理
+                  </Button>
+                </ComingSoonTooltip>
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <Clock className="h-4 w-4" />
+                    登录历史
+                  </Button>
+                </ComingSoonTooltip>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Data Tab ── */}
+        {activeTab === "data" && (
+          <motion.div
+            key="data"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Database className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">数据管理</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  variant="destructive"
+                  onClick={clearLocalCache}
+                  className="w-full justify-start gap-2"
+                >
+                  <X className="h-4 w-4" />
+                  清除本地缓存
+                </Button>
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <Download className="h-4 w-4" />
+                    导出个人数据
+                  </Button>
+                </ComingSoonTooltip>
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <Upload className="h-4 w-4" />
+                    导入设置
+                  </Button>
+                </ComingSoonTooltip>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Notifications Tab ── */}
+        {activeTab === "notifications" && (
+          <motion.div
+            key="notifications"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Bell className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">通知偏好</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {notificationEvents.map((evt) => (
+                    <ComingSoonTooltip key={evt.key}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">{evt.label}</span>
+                        <Switch disabled />
+                      </div>
+                    </ComingSoonTooltip>
+                  ))}
+                </div>
+                <div className="pt-2 border-t border-white/5">
+                  <ComingSoonTooltip>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">邮件通知</span>
+                      <Switch disabled />
+                    </div>
+                  </ComingSoonTooltip>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Shortcuts Tab ── */}
+        {activeTab === "shortcuts" && (
+          <motion.div
+            key="shortcuts"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Keyboard className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">快捷键</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {shortcutsList.map((s) => (
+                  <ComingSoonTooltip key={s.action}>
+                    <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                      <span className="text-sm">{s.action}</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-xs font-mono">
+                        {s.key}
+                      </kbd>
+                    </div>
+                  </ComingSoonTooltip>
+                ))}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── Account Tab ── */}
+        {activeTab === "account" && (
+          <motion.div
+            key="account"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Trash2 className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">账户管理</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <X className="h-4 w-4" />
+                    申请注销账户
+                  </Button>
+                </ComingSoonTooltip>
+                <ComingSoonTooltip>
+                  <Button disabled className="w-full justify-start gap-2">
+                    <HardDrive className="h-4 w-4" />
+                    请求删除个人数据
+                  </Button>
+                </ComingSoonTooltip>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── About Tab ── */}
+        {activeTab === "about" && (
+          <motion.div
+            key="about"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4"
+          >
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Info className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">关于</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <div className="flex items-center justify-between py-2 border-b border-white/5">
+                  <span className="text-muted-foreground">产品版本</span>
+                  <span className="font-medium">v2.4.0</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-white/5">
+                  <span className="text-muted-foreground">构建时间</span>
+                  <span className="font-medium">2026-06-11</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-white/5">
+                  <span className="text-muted-foreground">许可证</span>
+                  <span className="font-medium">Enterprise License</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() =>
+                    window.open("/health", "_blank")
+                  }
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  查看服务健康状态
                 </Button>
               </CardContent>
             </Card>
