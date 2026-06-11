@@ -17,6 +17,7 @@ import {
   Search,
   ZoomIn,
   ZoomOut,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { workbenchApi } from "@/lib/api/client";
@@ -30,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type PreviewMode = "pdf" | "image" | "html" | "text";
+type PreviewMode = "pdf" | "image" | "html" | "text" | "unsupported";
 
 interface DocumentViewerProps {
   sourceFileId?: string | null;
@@ -41,6 +42,7 @@ interface DocumentViewerProps {
   warnings?: string[];
   chunks?: ChunkView[];
   searchText?: string;
+  searchCaseSensitive?: boolean;
   onSearchComplete?: (found: boolean) => void;
 }
 
@@ -56,10 +58,13 @@ function extOf(name?: string | null) {
   return dot >= 0 ? raw.slice(dot + 1) : raw;
 }
 
+const UNSUPPORTED_PREVIEW_EXTS = new Set(["docx", "doc", "pptx", "ppt"]);
+
 function inferMode(ext: string, contentType: string): PreviewMode {
   if (contentType.startsWith("image/")) return "image";
   if (contentType.includes("pdf") || ext === "pdf") return "pdf";
   if (contentType.includes("html") || ext === "html") return "html";
+  if (UNSUPPORTED_PREVIEW_EXTS.has(ext)) return "unsupported";
   return "text";
 }
 
@@ -79,24 +84,45 @@ function collectAnchoredPages(chunks?: ChunkView[]) {
   return Array.from(pages).sort((a, b) => a - b);
 }
 
-function HighlightText({ text, highlight }: { text: string; highlight: string }) {
+function HighlightText({
+  text,
+  highlight,
+  caseSensitive = false,
+}: {
+  text: string;
+  highlight: string;
+  caseSensitive?: boolean;
+}) {
   if (!highlight.trim()) return <>{text}</>;
 
-  const parts = text.split(
-    new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
-  );
+  const keywords = highlight
+    .split(/\s+/)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+
+  if (keywords.length === 0) return <>{text}</>;
+
+  const flags = caseSensitive ? "g" : "gi";
+  const pattern = keywords
+    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+
+  const parts = text.split(new RegExp(`(${pattern})`, flags));
 
   return (
     <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === highlight.toLowerCase() ? (
+      {parts.map((part, i) => {
+        const isMatch = caseSensitive
+          ? keywords.includes(part)
+          : keywords.some((k) => k.toLowerCase() === part.toLowerCase());
+        return isMatch ? (
           <mark key={i} className="rounded bg-amber-200 px-0.5 text-amber-900">
             {part}
           </mark>
         ) : (
           <span key={i}>{part}</span>
-        )
-      )}
+        );
+      })}
     </>
   );
 }
@@ -256,6 +282,7 @@ function DocumentViewerContent({
   parserBackend,
   chunks = [],
   searchText,
+  searchCaseSensitive = false,
   onSearchComplete,
   anchoredPages,
   effectiveWarnings,
@@ -371,11 +398,27 @@ function DocumentViewerContent({
       return;
     }
 
-    const index = text.toLowerCase().indexOf(searchHighlight.toLowerCase());
-    if (index < 0) {
+    const keywords = searchHighlight
+      .split(/\s+/)
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    const searchFn = (haystack: string) => {
+      if (keywords.length === 0) return -1;
+      if (searchCaseSensitive) {
+        return keywords.some((k) => haystack.includes(k)) ? 0 : -1;
+      }
+      const lower = haystack.toLowerCase();
+      return keywords.some((k) => lower.includes(k.toLowerCase())) ? 0 : -1;
+    };
+    if (searchFn(text) < 0) {
       onSearchComplete?.(false);
       return;
     }
+    // Find first keyword occurrence for scroll focus
+    const firstKeyword = keywords[0];
+    const index = searchCaseSensitive
+      ? text.indexOf(firstKeyword)
+      : text.toLowerCase().indexOf(firstKeyword.toLowerCase());
 
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     let currentIndex = 0;
@@ -418,6 +461,7 @@ function DocumentViewerContent({
     mode,
     onSearchComplete,
     parsedTextValue,
+    searchCaseSensitive,
     searchHighlight,
     searchableTab,
     sourceTextValue,
@@ -626,6 +670,25 @@ function DocumentViewerContent({
               src={directPreviewUrl}
               className="h-[780px] w-full rounded-lg border bg-white"
             />
+          ) : mode === "unsupported" ? (
+            <EmptyState
+              icon={EyeOff}
+              title="此格式暂不支持原生预览"
+              description="DOCX / PPTX 文件目前无法直接在浏览器中预览。请下载后使用本地应用打开。"
+              action={
+                directPreviewUrl ? (
+                  <a
+                    href={directPreviewUrl}
+                    download={filename || "source-preview"}
+                  >
+                    <Button variant="outline" size="sm">
+                      <Download className="mr-1 h-3.5 w-3.5" />
+                      下载文件
+                    </Button>
+                  </a>
+                ) : null
+              }
+            />
           ) : mode === "text" ? (
             <div
               ref={sourceTextRef}
@@ -634,7 +697,7 @@ function DocumentViewerContent({
             >
               {sourceTextValue ? (
                 searchHighlight ? (
-                  <HighlightText text={sourceTextValue} highlight={searchHighlight} />
+                  <HighlightText text={sourceTextValue} highlight={searchHighlight} caseSensitive={searchCaseSensitive} />
                 ) : (
                   sourceTextValue
                 )
@@ -659,7 +722,7 @@ function DocumentViewerContent({
               className="max-h-[780px] overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-4 text-sm leading-7"
             >
               {searchHighlight ? (
-                <HighlightText text={parsedTextValue} highlight={searchHighlight} />
+                <HighlightText text={parsedTextValue} highlight={searchHighlight} caseSensitive={searchCaseSensitive} />
               ) : (
                 parsedTextValue
               )}

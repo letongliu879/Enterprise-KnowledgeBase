@@ -15,6 +15,7 @@ import {
   Activity,
   Shield,
   Library,
+  Command,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -32,6 +33,10 @@ import { workbenchApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { overlayFade, slideInFromLeft, staggerItem } from "@/lib/animations";
+import { NotificationCenter } from "@/features/notifications/notification-center";
+import { Breadcrumb } from "@/components/breadcrumb";
+import { OfflineToast } from "@/components/offline-toast";
+import { CommandPalette } from "@/components/command-palette";
 
 const navItems = [
   { href: "/upload", label: "批量入库", icon: Upload },
@@ -368,6 +373,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             <CollectionSelector />
+            <NotificationCenter />
+            <button
+              onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+              className="hidden md:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all"
+              title="Cmd+K 全局搜索"
+            >
+              <Command className="h-3 w-3" />
+              <span>搜索</span>
+              <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 font-mono text-[10px]">⌘K</kbd>
+            </button>
             <Link href="/settings">
               <Button
                 variant="ghost"
@@ -390,9 +405,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
             className="mx-auto max-w-7xl"
           >
+            {/* Breadcrumb */}
+            <div className="mb-4">
+              <Breadcrumb />
+            </div>
             {children}
           </motion.div>
         </main>
+
+        {/* Global Overlays */}
+        <CommandPalette />
+        <OfflineToast />
       </div>
     </div>
   );
