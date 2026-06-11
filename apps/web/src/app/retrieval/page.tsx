@@ -546,7 +546,7 @@ export default function RetrievalPage() {
                 </TooltipProvider>
 
                 <Button
-                  onClick={handleSearch}
+                  onClick={() => handleSearch()}
                   disabled={
                     !isSearchEnabled || searching || (compareMode && compareSearching)
                   }

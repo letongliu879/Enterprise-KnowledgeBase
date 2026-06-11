@@ -25,11 +25,20 @@ import {
   Zap,
   Download,
   Upload,
-  HardDrive,
   ExternalLink,
   Clock,
-  FileText,
   X,
+  Smartphone,
+  MapPin,
+  LogOut,
+  AlertTriangle,
+  Check,
+  Eye,
+  EyeOff,
+  Package,
+  Heart,
+  Code2,
+  Mail,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -43,6 +52,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { workbenchApi } from "@/lib/api/client";
@@ -76,6 +86,48 @@ function ComingSoonTooltip({ children }: { children: React.ReactNode }) {
     </Tooltip>
   );
 }
+
+const notificationEvents = [
+  { key: "upload", label: "文档上传完成" },
+  { key: "review", label: "审核任务分配" },
+  { key: "decision", label: "审核结果通知" },
+  { key: "system", label: "系统公告" },
+];
+
+const shortcutsList = [
+  { action: "全局搜索", key: "Ctrl + K", scope: "全局" },
+  { action: "新建上传", key: "Ctrl + U", scope: "全局" },
+  { action: "打开设置", key: "Ctrl + ,", scope: "全局" },
+  { action: "切换侧边栏", key: "Ctrl + B", scope: "全局" },
+  { action: "返回上一页", key: "Alt + ←", scope: "全局" },
+  { action: "前进下一页", key: "Alt + →", scope: "全局" },
+  { action: "刷新页面", key: "Ctrl + R", scope: "全局" },
+  { action: "打开命令面板", key: "Ctrl + Shift + P", scope: "全局" },
+];
+
+const mockDevices = [
+  { id: "d1", name: "Windows Chrome", location: "北京", lastActive: "2026-06-11 09:30", current: true },
+  { id: "d2", name: "macOS Safari", location: "上海", lastActive: "2026-06-10 18:45", current: false },
+  { id: "d3", name: "iPhone App", location: "深圳", lastActive: "2026-06-09 14:20", current: false },
+];
+
+const mockLoginHistory = [
+  { time: "2026-06-11 09:30", device: "Windows Chrome", location: "北京", ip: "192.168.1.100", status: "success" as const },
+  { time: "2026-06-10 18:45", device: "macOS Safari", location: "上海", ip: "192.168.2.50", status: "success" as const },
+  { time: "2026-06-09 14:20", device: "iPhone App", location: "深圳", ip: "10.0.0.15", status: "success" as const },
+  { time: "2026-06-08 08:10", device: "Windows Edge", location: "北京", ip: "192.168.1.101", status: "failed" as const },
+  { time: "2026-06-07 22:30", device: "Android Chrome", location: "广州", ip: "172.16.0.20", status: "success" as const },
+];
+
+const licenses = [
+  { name: "Next.js", license: "MIT", url: "https://github.com/vercel/next.js" },
+  { name: "React", license: "MIT", url: "https://github.com/facebook/react" },
+  { name: "Tailwind CSS", license: "MIT", url: "https://github.com/tailwindlabs/tailwindcss" },
+  { name: "Framer Motion", license: "MIT", url: "https://github.com/framer/motion" },
+  { name: "Zustand", license: "MIT", url: "https://github.com/pmndrs/zustand" },
+  { name: "Lucide Icons", license: "ISC", url: "https://github.com/lucide-icons/lucide" },
+  { name: "Base UI", license: "MIT", url: "https://github.com/mui/base-ui" },
+];
 
 export default function SettingsPage() {
   const {
@@ -119,10 +171,14 @@ export default function SettingsPage() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [userInfoError, setUserInfoError] = useState(false);
 
-  // Password change
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  // Security
+  const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
+  const [showPassword, setShowPassword] = useState({ current: false, new: false, confirm: false });
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Account
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     workbenchApi
@@ -179,23 +235,29 @@ export default function SettingsPage() {
     toast.success("主题已更新");
   };
 
-  const handlePasswordChange = () => {
-    if (!currentPassword || !newPassword) {
-      toast.error("请填写完整密码信息");
+  const handleChangePassword = async () => {
+    if (!passwordForm.current || !passwordForm.new || !passwordForm.confirm) {
+      toast.error("请填写所有密码字段");
       return;
     }
-    if (newPassword !== confirmPassword) {
-      toast.error("两次输入的新密码不一致");
+    if (passwordForm.new !== passwordForm.confirm) {
+      toast.error("新密码与确认密码不一致");
       return;
     }
-    if (newPassword.length < 8) {
-      toast.error("新密码长度至少 8 位");
+    if (passwordForm.new.length < 8) {
+      toast.error("新密码至少需要 8 位");
       return;
     }
-    toast.success("密码修改成功（演示模式）");
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
+    setPasswordLoading(true);
+    try {
+      await workbenchApi.me();
+      toast.success("密码修改成功（演示模式）");
+      setPasswordForm({ current: "", new: "", confirm: "" });
+    } catch {
+      toast.error("密码修改失败，请检查当前密码");
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const clearLocalCache = () => {
@@ -209,6 +271,37 @@ export default function SettingsPage() {
     toast.success("本地缓存已清除");
   };
 
+  const handleExportData = () => {
+    const data = {
+      userInfo,
+      exportTime: new Date().toISOString(),
+      preferences: {
+        theme: storeTheme,
+        language: storeLanguage,
+        uiDensity,
+        sidebarOpen,
+        notificationPrefs,
+      },
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ekb-user-data-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("个人数据已导出");
+  };
+
+  const handleDeleteAccount = () => {
+    setDeleteLoading(true);
+    setTimeout(() => {
+      setDeleteLoading(false);
+      setDeleteDialogOpen(false);
+      toast.success("账户注销申请已提交");
+    }, 1500);
+  };
+
   const tabs: { value: TabValue; label: string; icon: typeof KeyRound }[] = [
     { value: "auth", label: "认证", icon: KeyRound },
     { value: "scope", label: "权限范围", icon: Shield },
@@ -220,22 +313,6 @@ export default function SettingsPage() {
     { value: "shortcuts", label: "快捷键", icon: Keyboard },
     { value: "account", label: "账户管理", icon: Trash2 },
     { value: "about", label: "关于", icon: Info },
-  ];
-
-  const notificationEvents = [
-    { key: "upload", label: "文档上传完成" },
-    { key: "review", label: "审核任务分配" },
-    { key: "decision", label: "审核结果通知" },
-    { key: "system", label: "系统公告" },
-  ];
-
-  const shortcutsList = [
-    { action: "全局搜索", key: "Ctrl + K" },
-    { action: "新建上传", key: "Ctrl + U" },
-    { action: "打开设置", key: "Ctrl + ," },
-    { action: "切换侧边栏", key: "Ctrl + B" },
-    { action: "返回上一页", key: "Alt + ←" },
-    { action: "前进下一页", key: "Alt + →" },
   ];
 
   return (
@@ -625,8 +702,25 @@ export default function SettingsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Theme */}
                 <div className="space-y-2">
-                  <Label>语言</Label>
+                  <Label className="flex items-center gap-2">
+                    <Sun className="h-3.5 w-3.5 text-muted-foreground" />
+                    主题
+                  </Label>
+                  <RadioGroup value={storeTheme} onValueChange={handleThemeChange}>
+                    <RadioItem value="dark" label="深色" />
+                    <RadioItem value="light" label="浅色" />
+                    <RadioItem value="system" label="跟随系统" />
+                  </RadioGroup>
+                </div>
+
+                {/* Language */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                    语言
+                  </Label>
                   <RadioGroup
                     value={storeLanguage}
                     onValueChange={(v) => setLanguage(v as "zh" | "en")}
@@ -636,17 +730,12 @@ export default function SettingsPage() {
                   </RadioGroup>
                 </div>
 
+                {/* UI Density */}
                 <div className="space-y-2">
-                  <Label>主题</Label>
-                  <RadioGroup value={storeTheme} onValueChange={handleThemeChange}>
-                    <RadioItem value="dark" label="深色" />
-                    <RadioItem value="light" label="浅色" />
-                    <RadioItem value="system" label="跟随系统" />
-                  </RadioGroup>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>界面密度</Label>
+                  <Label className="flex items-center gap-2">
+                    <LayoutTemplate className="h-3.5 w-3.5 text-muted-foreground" />
+                    界面密度
+                  </Label>
                   <RadioGroup
                     value={uiDensity}
                     onValueChange={(v) =>
@@ -658,8 +747,12 @@ export default function SettingsPage() {
                   </RadioGroup>
                 </div>
 
+                {/* Sidebar Default */}
                 <div className="space-y-2">
-                  <Label>默认侧边栏状态</Label>
+                  <Label className="flex items-center gap-2">
+                    <PanelLeft className="h-3.5 w-3.5 text-muted-foreground" />
+                    默认侧边栏状态
+                  </Label>
                   <div className="flex items-center gap-3">
                     <Button
                       variant={sidebarOpen ? "default" : "outline"}
@@ -696,63 +789,224 @@ export default function SettingsPage() {
             transition={{ duration: 0.2 }}
             className="space-y-4"
           >
+            {/* Change Password */}
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
-                    <Lock className="h-4 w-4 text-primary" />
+                    <KeyRound className="h-4 w-4 text-primary" />
                   </div>
-                  <CardTitle className="text-base">安全设置</CardTitle>
+                  <CardTitle className="text-base">修改密码</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  <h3 className="text-sm font-medium">修改密码</h3>
-                  <div className="space-y-2">
+                <div className="space-y-2">
+                  <Label>当前密码</Label>
+                  <div className="relative">
                     <Input
-                      type="password"
-                      placeholder="当前密码"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      type={showPassword.current ? "text" : "password"}
+                      value={passwordForm.current}
+                      onChange={(e) =>
+                        setPasswordForm((f) => ({ ...f, current: e.target.value }))
+                      }
+                      placeholder="输入当前密码"
                     />
-                    <Input
-                      type="password"
-                      placeholder="新密码（至少 8 位）"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                    <Input
-                      type="password"
-                      placeholder="确认新密码"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword((s) => ({ ...s, current: !s.current }))
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword.current ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
                   </div>
-                  <Button onClick={handlePasswordChange} size="sm">
-                    <KeyRound className="h-4 w-4 mr-2" />
-                    修改密码
-                  </Button>
                 </div>
-                <div className="pt-3 border-t border-white/5 space-y-3">
+                <div className="space-y-2">
+                  <Label>新密码</Label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword.new ? "text" : "password"}
+                      value={passwordForm.new}
+                      onChange={(e) =>
+                        setPasswordForm((f) => ({ ...f, new: e.target.value }))
+                      }
+                      placeholder="至少 8 位字符"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword((s) => ({ ...s, new: !s.new }))
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword.new ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>确认新密码</Label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword.confirm ? "text" : "password"}
+                      value={passwordForm.confirm}
+                      onChange={(e) =>
+                        setPasswordForm((f) => ({ ...f, confirm: e.target.value }))
+                      }
+                      placeholder="再次输入新密码"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword((s) => ({ ...s, confirm: !s.confirm }))
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword.confirm ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleChangePassword}
+                  disabled={passwordLoading}
+                  className="shadow-glow"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {passwordLoading ? "保存中..." : "修改密码"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* 2FA */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Shield className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">双重认证 (2FA)</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                  <div className="flex items-center gap-3">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">双重认证</p>
+                      <p className="text-xs text-muted-foreground">
+                        通过验证码或安全密钥增强账户安全
+                      </p>
+                    </div>
+                  </div>
                   <ComingSoonTooltip>
-                    <Button disabled className="w-full justify-start gap-2">
-                      <Shield className="h-4 w-4" />
-                      双重认证 (2FA)
-                    </Button>
-                  </ComingSoonTooltip>
-                  <ComingSoonTooltip>
-                    <Button disabled className="w-full justify-start gap-2">
-                      <Monitor className="h-4 w-4" />
-                      设备管理
-                    </Button>
-                  </ComingSoonTooltip>
-                  <ComingSoonTooltip>
-                    <Button disabled className="w-full justify-start gap-2">
-                      <Clock className="h-4 w-4" />
-                      登录历史
+                    <Button size="sm" variant="outline" disabled>
+                      配置
                     </Button>
                   </ComingSoonTooltip>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Device Management */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Monitor className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">登录设备</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {mockDevices.map((device) => (
+                  <div
+                    key={device.id}
+                    className="flex items-center justify-between py-3 px-4 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium flex items-center gap-2">
+                          {device.name}
+                          {device.current && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
+                              当前
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {device.location} · {device.lastActive}
+                        </p>
+                      </div>
+                    </div>
+                    {!device.current && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        onClick={() => toast.success(`已踢出设备：${device.name}`)}
+                      >
+                        <LogOut className="h-3.5 w-3.5 mr-1" />
+                        踢出
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Login History */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Clock className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">登录历史</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {mockLoginHistory.map((log, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between py-2.5 px-4 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={
+                          "w-2 h-2 rounded-full " +
+                          (log.status === "success" ? "bg-emerald-400" : "bg-red-400")
+                        }
+                      />
+                      <div>
+                        <p className="text-sm">
+                          {log.device} · {log.location}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {log.time} · {log.ip}
+                        </p>
+                      </div>
+                    </div>
+                    {log.status === "success" ? (
+                      <Check className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                      <X className="h-4 w-4 text-red-400" />
+                    )}
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </motion.div>
@@ -813,84 +1067,115 @@ export default function SettingsPage() {
             transition={{ duration: 0.2 }}
             className="space-y-4"
           >
+            {/* Site Notifications */}
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
                     <Bell className="h-4 w-4 text-primary" />
                   </div>
-                  <CardTitle className="text-base">通知偏好</CardTitle>
+                  <CardTitle className="text-base">站内通知</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  <h3 className="text-sm font-medium">站内通知</h3>
-                  {notificationEvents.map((evt) => (
-                    <div key={evt.key} className="flex items-center justify-between">
-                      <span className="text-sm">{evt.label}</span>
-                      <Switch
-                        checked={notificationPrefs.site[evt.key] ?? true}
-                        onCheckedChange={(v) => setSiteNotification(evt.key, v)}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="pt-3 border-t border-white/5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">邮件通知总开关</span>
+              <CardContent className="space-y-3">
+                {notificationEvents.map((evt) => (
+                  <div
+                    key={evt.key}
+                    className="flex items-center justify-between py-2"
+                  >
+                    <span className="text-sm">{evt.label}</span>
                     <Switch
-                      checked={notificationPrefs.email.enabled}
-                      onCheckedChange={(v) => setEmailEnabled(v)}
-                    />
-                  </div>
-                  {notificationPrefs.email.enabled && (
-                    <div className="space-y-2 pl-4 border-l-2 border-white/5">
-                      {notificationEvents.map((evt) => (
-                        <div key={evt.key} className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">{evt.label}</span>
-                          <Switch
-                            checked={notificationPrefs.email.events[evt.key] ?? false}
-                            onCheckedChange={(v) => setEmailNotification(evt.key, v)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="pt-3 border-t border-white/5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">免打扰时段</span>
-                    <Switch
-                      checked={notificationPrefs.dnd.enabled}
-                      onCheckedChange={(v) =>
-                        setDnd({ ...notificationPrefs.dnd, enabled: v })
+                      checked={notificationPrefs.site[evt.key] ?? true}
+                      onChange={(e) =>
+                        setSiteNotification(evt.key, e.target.checked)
                       }
                     />
                   </div>
-                  {notificationPrefs.dnd.enabled && (
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 space-y-1">
-                        <Label className="text-xs text-muted-foreground">开始时间</Label>
-                        <Input
-                          type="time"
-                          value={notificationPrefs.dnd.start}
-                          onChange={(e) =>
-                            setDnd({ ...notificationPrefs.dnd, start: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <Label className="text-xs text-muted-foreground">结束时间</Label>
-                        <Input
-                          type="time"
-                          value={notificationPrefs.dnd.end}
-                          onChange={(e) =>
-                            setDnd({ ...notificationPrefs.dnd, end: e.target.value })
-                          }
-                        />
-                      </div>
-                    </div>
-                  )}
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Email Notifications */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Mail className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">邮件通知</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between py-2 border-b border-white/5">
+                  <span className="text-sm font-medium">启用邮件通知</span>
+                  <Switch
+                    checked={notificationPrefs.email.enabled}
+                    onChange={(e) => setEmailEnabled(e.target.checked)}
+                  />
+                </div>
+                {notificationEvents.map((evt) => (
+                  <div
+                    key={evt.key}
+                    className="flex items-center justify-between py-2"
+                  >
+                    <span className="text-sm text-muted-foreground">
+                      {evt.label}
+                    </span>
+                    <Switch
+                      checked={notificationPrefs.email.events[evt.key] ?? false}
+                      disabled={!notificationPrefs.email.enabled}
+                      onChange={(e) =>
+                        setEmailNotification(evt.key, e.target.checked)
+                      }
+                    />
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* DND */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Moon className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">免打扰时段</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">启用免打扰</span>
+                  <Switch
+                    checked={notificationPrefs.dnd.enabled}
+                    onChange={(e) =>
+                      setDnd({ ...notificationPrefs.dnd, enabled: e.target.checked })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">开始时间</Label>
+                    <Input
+                      type="time"
+                      value={notificationPrefs.dnd.start}
+                      disabled={!notificationPrefs.dnd.enabled}
+                      onChange={(e) =>
+                        setDnd({ ...notificationPrefs.dnd, start: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">结束时间</Label>
+                    <Input
+                      type="time"
+                      value={notificationPrefs.dnd.end}
+                      disabled={!notificationPrefs.dnd.enabled}
+                      onChange={(e) =>
+                        setDnd({ ...notificationPrefs.dnd, end: e.target.value })
+                      }
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -913,18 +1198,49 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
                     <Keyboard className="h-4 w-4 text-primary" />
                   </div>
-                  <CardTitle className="text-base">快捷键</CardTitle>
+                  <CardTitle className="text-base">快捷键一览</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {shortcutsList.map((s) => (
-                  <div key={s.action} className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                    <span className="text-sm">{s.action}</span>
-                    <kbd className="px-2 py-0.5 rounded bg-white/10 text-xs font-mono">
-                      {s.key}
-                    </kbd>
-                  </div>
-                ))}
+              <CardContent>
+                <div className="overflow-hidden rounded-lg border border-white/[0.05]">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-white/[0.03] border-b border-white/[0.05]">
+                        <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">
+                          操作
+                        </th>
+                        <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">
+                          快捷键
+                        </th>
+                        <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">
+                          作用域
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shortcutsList.map((s, idx) => (
+                        <tr
+                          key={s.action}
+                          className={
+                            idx < shortcutsList.length - 1
+                              ? "border-b border-white/[0.03]"
+                              : ""
+                          }
+                        >
+                          <td className="px-4 py-3">{s.action}</td>
+                          <td className="px-4 py-3">
+                            <kbd className="px-2 py-0.5 rounded bg-white/10 text-xs font-mono">
+                              {s.key}
+                            </kbd>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground text-xs">
+                            {s.scope}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
@@ -940,49 +1256,102 @@ export default function SettingsPage() {
             transition={{ duration: 0.2 }}
             className="space-y-4"
           >
+            {/* Account Info */}
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
-                    <Trash2 className="h-4 w-4 text-primary" />
+                    <User className="h-4 w-4 text-primary" />
                   </div>
-                  <CardTitle className="text-base">账户管理</CardTitle>
+                  <CardTitle className="text-base">账户信息</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 text-sm">
                 {userInfo ? (
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between py-1">
+                  <>
+                    <div className="flex justify-between py-2 border-b border-white/5">
                       <span className="text-muted-foreground">用户 ID</span>
                       <span className="font-medium">{userInfo.user_id}</span>
                     </div>
-                    <div className="flex justify-between py-1">
+                    <div className="flex justify-between py-2 border-b border-white/5">
                       <span className="text-muted-foreground">邮箱</span>
                       <span className="font-medium">{userInfo.email}</span>
                     </div>
-                    <div className="flex justify-between py-1">
+                    <div className="flex justify-between py-2 border-b border-white/5">
                       <span className="text-muted-foreground">角色</span>
-                      <span className="font-medium">{userInfo.roles.join(", ")}</span>
+                      <span className="font-medium">
+                        {userInfo.roles.join(", ")}
+                      </span>
                     </div>
-                  </div>
+                  </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">加载中...</p>
+                  <p className="text-muted-foreground">加载中...</p>
                 )}
-                <div className="pt-3 border-t border-white/5 space-y-3">
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <Download className="h-4 w-4" />
-                    导出个人数据 (JSON)
-                  </Button>
-                  <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-3">
-                    <p className="text-sm text-destructive font-medium">危险区域</p>
-                    <p className="text-xs text-muted-foreground">注销账户将删除您的所有数据，此操作不可撤销。</p>
-                    <Button variant="destructive" size="sm" className="w-full">
-                      申请注销账户
-                    </Button>
-                  </div>
-                </div>
               </CardContent>
             </Card>
+
+            {/* Data Export */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Download className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">数据导出</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  导出您的个人数据，包括偏好设置和账户信息。
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={handleExportData}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  导出个人数据
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Danger Zone */}
+            <Card className="glass-card border-red-500/20">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10">
+                    <AlertTriangle className="h-4 w-4 text-red-400" />
+                  </div>
+                  <CardTitle className="text-base text-red-400">危险区域</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  账户注销后，您的所有数据将被标记为删除，此操作不可撤销。
+                </p>
+                <Button
+                  variant="destructive"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  申请注销账户
+                </Button>
+              </CardContent>
+            </Card>
+
+            <ConfirmDialog
+              open={deleteDialogOpen}
+              onOpenChange={setDeleteDialogOpen}
+              title="确认注销账户"
+              description="此操作将永久删除您的账户及所有关联数据，无法恢复。"
+              consequence="此操作不可撤销"
+              confirmLabel="确认注销"
+              cancelLabel="取消"
+              variant="destructive"
+              isLoading={deleteLoading}
+              onConfirm={handleDeleteAccount}
+            />
           </motion.div>
         )}
 
@@ -996,16 +1365,17 @@ export default function SettingsPage() {
             transition={{ duration: 0.2 }}
             className="space-y-4"
           >
+            {/* Version */}
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
-                    <Info className="h-4 w-4 text-primary" />
+                    <Package className="h-4 w-4 text-primary" />
                   </div>
-                  <CardTitle className="text-base">关于</CardTitle>
+                  <CardTitle className="text-base">版本信息</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4 text-sm">
+              <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center justify-between py-2 border-b border-white/5">
                   <span className="text-muted-foreground">产品版本</span>
                   <span className="font-medium">v2.4.0</span>
@@ -1015,20 +1385,86 @@ export default function SettingsPage() {
                   <span className="font-medium">2026-06-11</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-white/5">
-                  <span className="text-muted-foreground">许可证</span>
-                  <span className="font-medium">Enterprise License</span>
+                  <span className="text-muted-foreground">前端框架</span>
+                  <span className="font-medium">Next.js 16 + React 19</span>
                 </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-muted-foreground">样式方案</span>
+                  <span className="font-medium">Tailwind CSS v4</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Licenses */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Code2 className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">开源许可证</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {licenses.map((lic) => (
+                  <a
+                    key={lic.name}
+                    href={lic.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors group"
+                  >
+                    <span className="text-sm group-hover:text-foreground transition-colors">
+                      {lic.name}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {lic.license}
+                      </span>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  </a>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Service Status */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Zap className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">服务状态</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
                 <Button
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  onClick={() =>
-                    window.open("/health", "_blank")
-                  }
+                  onClick={() => window.open("/health", "_blank")}
                 >
                   <ExternalLink className="h-4 w-4" />
                   查看服务健康状态
                 </Button>
+              </CardContent>
+            </Card>
+
+            {/* Team */}
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                    <Heart className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-base">团队</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Enterprise Knowledge Base — 由知识工程团队倾力打造。
+                </p>
               </CardContent>
             </Card>
           </motion.div>
