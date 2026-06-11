@@ -97,6 +97,16 @@ export function ChunkEditorWorkbench({
     patchChunk.mutate({ evidenceId: editingChunk.evidence_id, data });
   };
 
+  const handleSubmit = (data: ChunkEditData) => {
+    if (!editingChunk) return;
+    patchChunk.mutate({ evidenceId: editingChunk.evidence_id, data });
+  };
+
+  const handleSaveDraft = (data: ChunkEditData) => {
+    if (!editingChunk) return;
+    patchChunk.mutate({ evidenceId: editingChunk.evidence_id, data });
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -171,6 +181,8 @@ export function ChunkEditorWorkbench({
         mode={mode}
         chunk={editingChunk}
         onSave={mode === "post-publish" ? handleSave : undefined}
+        onSubmit={mode === "pre-publish" ? handleSubmit : undefined}
+        onSaveDraft={mode === "pre-publish" ? handleSaveDraft : undefined}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingChunk(null);

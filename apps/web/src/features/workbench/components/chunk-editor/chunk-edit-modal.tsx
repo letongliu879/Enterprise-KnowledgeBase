@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Braces, FileText, Info, Layers3, PencilLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useFormAutosave } from "@/hooks/use-form-autosave";
 import type { ChunkView, ChunkEditData } from "../../types/chunk";
 
 interface ChunkEditModalProps {
@@ -25,6 +26,13 @@ interface ChunkEditModalProps {
   onSave?: (data: ChunkEditData) => void;
   onCancel: () => void;
   isSubmitting?: boolean;
+}
+
+interface ChunkFormState {
+  content: string;
+  sectionPath: string;
+  metadata: string;
+  editReason: string;
 }
 
 export function ChunkEditModal({
@@ -64,6 +72,8 @@ function ChunkEditModalBody({
   onCancel,
   isSubmitting = false,
 }: ChunkEditModalProps & { chunk: ChunkView }) {
+  const autosaveKey = `chunk-edit:${chunk.evidence_id}`;
+
   const [content, setContent] = useState(chunk?.content || "");
   const [sectionPath, setSectionPath] = useState(
     JSON.stringify(chunk?.section_path || [], null, 2)
@@ -72,6 +82,29 @@ function ChunkEditModalBody({
     JSON.stringify(chunk?.metadata || {}, null, 2)
   );
   const [editReason, setEditReason] = useState("");
+  const [restored, setRestored] = useState(false);
+
+  const formState: ChunkFormState = {
+    content,
+    sectionPath,
+    metadata,
+    editReason,
+  };
+
+  const handleRestore = useCallback((saved: ChunkFormState) => {
+    setContent(saved.content);
+    setSectionPath(saved.sectionPath);
+    setMetadata(saved.metadata);
+    setEditReason(saved.editReason);
+    setRestored(true);
+  }, []);
+
+  const { clear: clearAutosave } = useFormAutosave<ChunkFormState>({
+    key: autosaveKey,
+    value: formState,
+    debounceMs: 1000,
+    onRestore: handleRestore,
+  });
 
   const titleColor =
     mode === "pre-publish" ? "text-orange-600" : "text-blue-600";
@@ -120,17 +153,24 @@ function ChunkEditModalBody({
   const handleSubmit = () => {
     if (onSubmit) {
       onSubmit(buildData());
+      clearAutosave();
     }
   };
 
   const handleSave = () => {
     if (onSave) {
       onSave(buildData());
+      clearAutosave();
     }
   };
 
+  const handleCancel = () => {
+    clearAutosave();
+    onCancel();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
+    <Dialog open={open} onOpenChange={(v) => !v && handleCancel()}>
       <DialogContent className="max-h-[90vh] max-w-[calc(100%-2rem)] overflow-y-auto p-0 sm:max-w-5xl">
         <DialogHeader>
           <div className="border-b px-6 py-5">
@@ -158,6 +198,11 @@ function ChunkEditModalBody({
                   ) : null}
                 </div>
               </div>
+              {restored && (
+                <div className="rounded-xl border bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+                  已恢复自动保存的草稿
+                </div>
+              )}
             </div>
           </div>
         </DialogHeader>
@@ -262,7 +307,7 @@ function ChunkEditModalBody({
         </div>
 
         <div className="flex justify-end gap-2 border-t bg-muted/5 px-6 py-4">
-          <Button variant="outline" onClick={onCancel} disabled={isSubmitting}>
+          <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
             Cancel
           </Button>
 
