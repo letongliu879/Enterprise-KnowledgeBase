@@ -198,6 +198,18 @@ function downloadMarkdown(filename: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
+function downloadJSON(filename: string, content: unknown) {
+  const blob = new Blob([JSON.stringify(content, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function DocumentDetailPage() {
   const { docId } = useParams<{ docId: string }>();
   const queryClient = useQueryClient();
@@ -710,6 +722,30 @@ export default function DocumentDetailPage() {
               >
                 <FileCode className="mr-1.5 h-3.5 w-3.5" />
                 Markdown
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const payload = {
+                    doc_id: document?.doc_id,
+                    filename: displayTitle,
+                    collection_id: document?.collection_id,
+                    document_state: document?.document_state,
+                    chunk_count: document?.chunk_count,
+                    page_count: document?.page_count,
+                    preview_text: parseSnapshot?.preview_text,
+                    parser_id: parseSnapshot?.parser_id,
+                    parser_backend: parseSnapshot?.parser_backend,
+                    warnings: parseSnapshot?.warnings,
+                    exported_at: new Date().toISOString(),
+                  };
+                  downloadJSON(displayTitle || "document", payload);
+                  toast.success("JSON 已下载");
+                }}
+              >
+                <FileCode className="mr-1.5 h-3.5 w-3.5" />
+                JSON
               </Button>
             </div>
           </SidebarSection>

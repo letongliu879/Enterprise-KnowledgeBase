@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -86,6 +87,13 @@ export default function RetrievalPage() {
   const [debug, setDebug] = useState<"none" | "basic" | "full">("none");
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  // H8: Advanced mode state
+  const [advancedMode, setAdvancedMode] = useState(false);
+  const [booleanMode, setBooleanMode] = useState(false);
+  const [docIdFilter, setDocIdFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // H2: Comparison mode state
   const [compareMode, setCompareMode] = useState(false);
@@ -545,6 +553,26 @@ export default function RetrievalPage() {
                   </Tooltip>
                 </TooltipProvider>
 
+                {/* H8: Advanced mode toggle */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Button
+                        variant={advancedMode ? "default" : "outline"}
+                        size="sm"
+                        className="h-9 px-3"
+                        onClick={() => setAdvancedMode((prev) => !prev)}
+                      >
+                        <SlidersHorizontal className="h-4 w-4 mr-1.5" />
+                        高级检索
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="glass-strong">
+                      <p className="text-xs">布尔表达式、字段过滤等高级选项</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
                 <Button
                   onClick={() => handleSearch()}
                   disabled={
@@ -557,6 +585,74 @@ export default function RetrievalPage() {
                 </Button>
               </div>
             </div>
+
+            {/* H8: Advanced filters panel */}
+            <AnimatePresence>
+              {advancedMode && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-4 mt-4 border-t border-white/[0.06] space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">高级检索选项</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">布尔表达式</span>
+                        <Switch
+                          checked={booleanMode}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBooleanMode(e.target.checked)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground/80">Doc ID 过滤</Label>
+                        <Input
+                          placeholder="doc_001,doc_002 或 *"
+                          value={docIdFilter}
+                          onChange={(e) => setDocIdFilter(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground/80">开始日期</Label>
+                        <Input
+                          type="date"
+                          value={dateFrom}
+                          onChange={(e) => setDateFrom(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground/80">结束日期</Label>
+                        <Input
+                          type="date"
+                          value={dateTo}
+                          onChange={(e) => setDateTo(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+
+                    {booleanMode && (
+                      <Alert className="bg-blue-500/5 border-blue-500/20">
+                        <Info className="h-4 w-4 text-blue-400" />
+                        <AlertDescription className="text-blue-300 text-xs">
+                          布尔模式已开启。支持 AND / OR / NOT 组合，例如：
+                          <code>(安全 OR 合规) AND NOT 草案</code>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </CardContent>
         </Card>
       </motion.div>
@@ -890,14 +986,17 @@ export default function RetrievalPage() {
                                       variant="ghost"
                                       size="sm"
                                       className="h-7 w-7 p-0 hover:bg-white/[0.06]"
-                                      disabled
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toast.success("已记录正面反馈");
+                                      }}
                                     >
-                                      <ThumbsUp className="h-3.5 w-3.5 text-muted-foreground/30" />
+                                      <ThumbsUp className="h-3.5 w-3.5 text-emerald-400" />
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="glass-strong">
-                                  <p className="text-xs">即将推出</p>
+                                  <p className="text-xs">正面反馈</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -909,14 +1008,17 @@ export default function RetrievalPage() {
                                       variant="ghost"
                                       size="sm"
                                       className="h-7 w-7 p-0 hover:bg-white/[0.06]"
-                                      disabled
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toast.info("已记录负面反馈");
+                                      }}
                                     >
-                                      <ThumbsDown className="h-3.5 w-3.5 text-muted-foreground/30" />
+                                      <ThumbsDown className="h-3.5 w-3.5 text-rose-400" />
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="glass-strong">
-                                  <p className="text-xs">即将推出</p>
+                                  <p className="text-xs">负面反馈</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>

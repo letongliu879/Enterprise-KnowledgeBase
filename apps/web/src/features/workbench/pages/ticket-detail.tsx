@@ -37,6 +37,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -52,6 +59,16 @@ import {
   formatTicketStatusLabel,
   normalizeStatus,
 } from "@/lib/status";
+
+const decisionTemplates = [
+  { value: "", label: "选择常见原因..." },
+  { value: "格式不规范，请重新整理后提交", label: "格式不规范" },
+  { value: "包含敏感信息，需脱敏处理", label: "敏感信息" },
+  { value: "内容重复，与现有文档高度相似", label: "内容重复" },
+  { value: "缺少必要的上下文或元数据", label: "缺少上下文" },
+  { value: "解析质量不佳，chunk 边界错误", label: "解析质量差" },
+  { value: "不符合当前集合的收录标准", label: "不符合收录标准" },
+];
 
 function ticketTone(status?: string) {
   const normalized = normalizeStatus(status);
@@ -796,6 +813,25 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
 
                 {capabilities?.can_decide_ticket ? (
                   <>
+                    <Select
+                      value=""
+                      onValueChange={(value) =>
+                        setDecisionReason((prev) =>
+                          value ? (prev ? `${prev}\n${value}` : value) : prev
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="选择常见原因模板" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {decisionTemplates.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Textarea
                       placeholder="Optional decision reason"
                       value={decisionReason}
