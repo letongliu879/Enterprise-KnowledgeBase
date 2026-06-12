@@ -559,10 +559,10 @@ def _service_env_overrides(name: str) -> dict[str, str]:
 
 
 try:
-    from scripts.ekb_svc_utils import _convert_to_jdbc_url
+    from scripts.ekb_svc_utils import _convert_to_jdbc_url, _validate_required_endpoints
 except ModuleNotFoundError:
     # When running directly (python scripts/ekb-svc.py), fall back to local import
-    from ekb_svc_utils import _convert_to_jdbc_url
+    from ekb_svc_utils import _convert_to_jdbc_url, _validate_required_endpoints
 
 
 def _topo_sort(services: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -1044,6 +1044,17 @@ def cmd_start(args: argparse.Namespace) -> int:
                 if not _build_java_service(svc):
                     return 2
 
+    # Validate configured infrastructure URLs first (catches port mismatches early)
+    if not args.no_infra_check:
+        url_errors = _validate_required_endpoints()
+        if url_errors:
+            print(_color("red", "ERROR: Configured infrastructure endpoints are unreachable:"))
+            for err in url_errors:
+                print(f"  - {err}")
+            print("\nStart infrastructure with:")
+            print("  docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis")
+            return 2
+
     # Check infrastructure
     if not args.no_infra_check:
         infra = {"PostgreSQL": 5432, "OpenSearch": 19201, "Qdrant": 6333, "Redis": 6379}
@@ -1056,6 +1067,21 @@ def cmd_start(args: argparse.Namespace) -> int:
             print("  docker compose -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis")
             return 2
         print(_color("green", "Infrastructure OK (PostgreSQL, OpenSearch, Qdrant, Redis)\n"))
+
+    # Run database migrations before starting services
+    if not args.no_infra_check:
+        print(_color("cyan", "[migrate]"), "Running Alembic migrations...")
+        migrate = subprocess.run(
+            [PYTHON, "-m", "alembic", "-c", str(ROOT / "packages" / "persistence" / "migrations" / "alembic.ini"), "upgrade", "head"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if migrate.returncode != 0:
+            print(_color("red", "ERROR: Alembic migration failed:"))
+            print(migrate.stderr)
+            return 2
+        print(_color("green", "[migrate]"), "Database schema up to date\n")
 
     # Check Maven
     if java_svcs and not MAVEN_CMD:

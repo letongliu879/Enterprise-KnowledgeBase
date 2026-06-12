@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.realityrag.retrieval.AbstractPostgresTestBase;
 import com.realityrag.retrieval.support.DbBackedRetrievalTestConfig;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,15 +15,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = {
-    "spring.datasource.url=jdbc:h2:mem:retrieval-cache-purge;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-    "spring.datasource.driver-class-name=org.h2.Driver",
-    "spring.datasource.username=sa",
-    "spring.datasource.password=",
-    "retrieval.cache.provider=noop"
-})
+@SpringBootTest
 @AutoConfigureMockMvc
-class CachePurgeControllerTest {
+class CachePurgeControllerTest extends AbstractPostgresTestBase {
 
     @Autowired
     private MockMvc mockMvc;

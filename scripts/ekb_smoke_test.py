@@ -27,7 +27,7 @@ TOKEN = (
 )
 
 WORKBENCH = "http://127.0.0.1:18083"
-ACCESS = "http://127.0.0.1:18181"
+ACCESS = "http://127.0.0.1:18081"
 ADMIN = "http://127.0.0.1:18084"
 
 
@@ -113,7 +113,55 @@ def ensure_api_key() -> str:
     return key_id
 
 
+def find_source_file_by_filename(collection_id: str, filename: str) -> str | None:
+    """Find an existing source file in the collection by filename."""
+    try:
+        resp = api_get(f"/workbench/collections/{collection_id}/sources")
+        sources = resp.get("sources", resp if isinstance(resp, list) else [])
+        for source in sources:
+            if source.get("original_name") == filename:
+                return source.get("source_file_id")
+    except Exception:
+        pass
+    return None
+
+
+def upload_document(collection_id: str, filename: str, content: bytes) -> str:
+    """Create upload session, upload content, and return source_file_id (handles dedup)."""
+    create = api_post("/workbench/uploads", json.dumps({
+        "collection_id": collection_id, "filename": filename,
+        "mime_type": "text/markdown", "size_bytes": len(content),
+    }))
+    upload_id = create["upload_id"]
+
+    tmp = ROOT / "tmp" / filename
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_bytes(content)
+    try:
+        uploaded = curl("POST", f"{WORKBENCH}/workbench/uploads/{upload_id}/content",
+            headers={"Authorization": TOKEN},
+            file_upload=("file", str(tmp), "text/markdown"))
+    finally:
+        tmp.unlink()
+
+    source_file_id = uploaded.get("source_file_id")
+    if not source_file_id:
+        # Backend deduplicated by content hash; look up existing source.
+        source_file_id = find_source_file_by_filename(collection_id, filename)
+    if not source_file_id:
+        raise RuntimeError(f"Upload failed and no existing source found: {uploaded}")
+    return source_file_id
+
+
 def start_svc():
+    print("[smoke] Seeding smoke data...")
+    seed_result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "seed_smoke_data.py")],
+        cwd=str(ROOT), capture_output=True, text=True)
+    if seed_result.returncode != 0:
+        print(seed_result.stderr)
+        raise RuntimeError("Smoke seed failed")
+    print(seed_result.stdout.strip())
     print("[smoke] Starting services...")
     proc = subprocess.Popen(
         [sys.executable, str(EKB_SVC), "start"],
@@ -173,24 +221,12 @@ def test_full_pipeline() -> bool:
 
         # 2. Upload document
         print("\n[2/5] Uploading document...")
-        create = api_post("/workbench/uploads", json.dumps({
-            "collection_id": "test1", "filename": "smoke-retrieval-test.md",
-            "mime_type": "text/markdown", "size_bytes": 64,
-        }))
-        upload_id = create["upload_id"]
-        print(f"  upload_id={upload_id}")
-
-        tmp = ROOT / "tmp" / "smoke-upload.md"
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text("# Smoke Retrieval Test\n\nContent for search verification.")
-        try:
-            uploaded = curl("POST", f"{WORKBENCH}/workbench/uploads/{upload_id}/content",
-                headers={"Authorization": TOKEN},
-                file_upload=("file", str(tmp), "text/markdown"))
-        finally:
-            tmp.unlink()
-        assert uploaded.get("source_file_id"), f"Upload failed: {uploaded}"
-        print(f"  source_file_id={uploaded['source_file_id']}")
+        source_file_id = upload_document(
+            "test1",
+            "smoke-retrieval-test.md",
+            b"# Smoke Retrieval Test\n\nContent for search verification.",
+        )
+        print(f"  source_file_id={source_file_id}")
 
         # 3. Wait for published
         print("\n[3/5] Waiting for publish...")

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.realityrag.retrieval.contracts.IndexProjectionSyncRequest;
 import com.realityrag.retrieval.contracts.IndexProjectionSyncResponse;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -31,12 +32,39 @@ public class IndexProjectionSyncController {
         this.objectMapper = objectMapper;
     }
 
+    @PostConstruct
+    void validateSchema() {
+        List<String> requiredTables = List.of(
+            "index_projection_idempotency", "index_versions", "index_registry", "published_documents", "chunk_registry"
+        );
+        List<String> missing = requiredTables.stream()
+            .filter(name -> !_tableExists(name))
+            .toList();
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(
+                "Required retrieval projection tables are missing: " + missing +
+                ". Run 'uv run alembic -c packages/persistence/migrations/alembic.ini upgrade head' before starting the retrieval service."
+            );
+        }
+    }
+
+    private boolean _tableExists(String tableName) {
+        try {
+            jdbcTemplate.queryForObject(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = ? LIMIT 1",
+                Integer.class,
+                tableName
+            );
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @PostMapping("/internal/index-projections/sync")
     public ResponseEntity<IndexProjectionSyncResponse> syncProjection(
         @Valid @RequestBody IndexProjectionSyncRequest request
     ) {
-        ensureIdempotencyTableExists();
-
         // Idempotency check
         boolean alreadyProcessed = checkIdempotency(request.idempotencyKey());
         if (alreadyProcessed) {
@@ -50,7 +78,6 @@ public class IndexProjectionSyncController {
 
             if ("full_replace".equals(payload.syncMode())) {
                 // Upsert index registry and published document metadata
-                ensureIndexTablesExist();
                 upsertIndexVersion(payload);
                 upsertIndexRegistry(payload);
                 upsertPublishedDocument(payload);
@@ -265,15 +292,6 @@ public class IndexProjectionSyncController {
         return Map.of();
     }
 
-    private void ensureIdempotencyTableExists() {
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS index_projection_idempotency (
-                idempotency_key VARCHAR(512) PRIMARY KEY,
-                processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """);
-    }
-
     private boolean checkIdempotency(String idempotencyKey) {
         List<String> results = jdbcTemplate.query(
             "SELECT idempotency_key FROM index_projection_idempotency WHERE idempotency_key = ?",
@@ -288,57 +306,6 @@ public class IndexProjectionSyncController {
             "INSERT INTO index_projection_idempotency (idempotency_key, processed_at) VALUES (?, ?)",
             idempotencyKey, Timestamp.from(Instant.now())
         );
-    }
-
-    private void ensureIndexTablesExist() {
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS index_versions (
-                index_version_id VARCHAR(64) PRIMARY KEY,
-                tenant_id VARCHAR(64) NOT NULL,
-                collection_id VARCHAR(64) NOT NULL,
-                status VARCHAR(32) NOT NULL,
-                schema_version VARCHAR(32) NOT NULL,
-                index_profile_id VARCHAR(64) NOT NULL,
-                chunk_profile_id VARCHAR(64) NOT NULL,
-                embedding_model VARCHAR(128) NOT NULL,
-                opensearch_index VARCHAR(128) NOT NULL,
-                qdrant_collection VARCHAR(128) NOT NULL,
-                chunk_count INTEGER NOT NULL,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            )
-            """);
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS index_registry (
-                collection_id VARCHAR(64) PRIMARY KEY,
-                index_version VARCHAR(64) NOT NULL,
-                previous_index_version VARCHAR(64),
-                target_index_version VARCHAR(64),
-                status VARCHAR(32),
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            )
-            """);
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS published_documents (
-                published_document_id VARCHAR(64) PRIMARY KEY,
-                final_doc_id VARCHAR(128) NOT NULL,
-                logical_document_id VARCHAR(128) NOT NULL,
-                tenant_id VARCHAR(64) NOT NULL,
-                collection_id VARCHAR(64) NOT NULL,
-                version INTEGER NOT NULL,
-                source_content_hash VARCHAR(128) NOT NULL,
-                canonical_hash VARCHAR(128) NOT NULL,
-                state VARCHAR(32) NOT NULL,
-                active_index_version VARCHAR(64) NOT NULL,
-                previous_state VARCHAR(32),
-                supersedes_final_doc_id VARCHAR(128),
-                created_by_ticket_id VARCHAR(64),
-                asset_paths TEXT,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            )
-            """);
     }
 
     private void upsertIndexVersion(IndexProjectionSyncRequest.IndexProjectionPayload payload) {

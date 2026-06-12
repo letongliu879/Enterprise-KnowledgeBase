@@ -37,30 +37,25 @@ public class ApiKeyProjectionSyncController {
     }
 
     @PostConstruct
-    void initSchema() {
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS api_key_projection (
-                api_key_id VARCHAR(128) PRIMARY KEY,
-                tenant_id VARCHAR(64) NOT NULL,
-                agent_type_id VARCHAR(128) NOT NULL,
-                knowledge_scopes VARCHAR(2048),
-                roles VARCHAR(2048),
-                debug_permission BOOLEAN NOT NULL DEFAULT FALSE,
-                token_budget_limit INTEGER NOT NULL DEFAULT 4096,
-                state VARCHAR(32) NOT NULL DEFAULT 'active',
-                expires_at TIMESTAMP,
-                projection_version INTEGER NOT NULL DEFAULT 1,
-                last_updated_at TIMESTAMP NOT NULL,
-                synced_at TIMESTAMP,
-                runtime_synced BOOLEAN NOT NULL DEFAULT FALSE
-            )
-            """);
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS api_key_projection_idempotency (
-                idempotency_key VARCHAR(256) PRIMARY KEY,
-                processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """);
+    void validateSchema() {
+        if (!_tableExists("api_key_projection") || !_tableExists("api_key_projection_idempotency")) {
+            throw new IllegalStateException(
+                "Required API key projection tables are missing. Run 'uv run alembic -c packages/persistence/migrations/alembic.ini upgrade head' before starting the access service."
+            );
+        }
+    }
+
+    private boolean _tableExists(String tableName) {
+        try {
+            jdbcTemplate.queryForObject(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = ? LIMIT 1",
+                Integer.class,
+                tableName
+            );
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Transactional

@@ -6,15 +6,35 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.realityrag.access.support.AccessException;
 import com.realityrag.access.support.TestAgentAuthFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+@Testcontainers
 class AccessAuthenticatorTest {
-    private final AccessAuthenticator authenticator = new AccessAuthenticator(apiKeyRegistry());
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    private static ApiKeyRegistry sharedRegistry;
+
+    @BeforeAll
+    static void beforeAll() throws Exception {
+        sharedRegistry = createApiKeyRegistry();
+    }
+
+    private final AccessAuthenticator authenticator = new AccessAuthenticator(sharedRegistry);
 
     @Test
     void apiKeyAuthenticatesAgentInstance() {
@@ -92,34 +112,30 @@ class AccessAuthenticatorTest {
         assertEquals(2048, context.maxContextTokens());
     }
 
-    private ApiKeyRegistry apiKeyRegistry() {
-        var dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.h2.Driver");
-        dataSource.setUrl("jdbc:h2:mem:access-authenticator;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
-        dataSource.setUsername("sa");
-        dataSource.setPassword("");
+    private static ApiKeyRegistry createApiKeyRegistry() throws Exception {
+        var config = new HikariConfig();
+        config.setJdbcUrl(postgres.getJdbcUrl());
+        config.setUsername(postgres.getUsername());
+        config.setPassword(postgres.getPassword());
+        config.setDriverClassName("org.postgresql.Driver");
+        config.setMaximumPoolSize(2);
+        var dataSource = new HikariDataSource(config);
 
         var jdbcTemplate = new JdbcTemplate(dataSource);
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS api_key_projection (
-                api_key_id VARCHAR(128) PRIMARY KEY,
-                tenant_id VARCHAR(64) NOT NULL,
-                agent_type_id VARCHAR(128) NOT NULL,
-                knowledge_scopes VARCHAR(2048),
-                roles VARCHAR(2048),
-                debug_permission BOOLEAN NOT NULL DEFAULT FALSE,
-                token_budget_limit INTEGER NOT NULL DEFAULT 4096,
-                state VARCHAR(32) NOT NULL DEFAULT 'active',
-                expires_at TIMESTAMP,
-                projection_version INTEGER NOT NULL DEFAULT 1,
-                last_updated_at TIMESTAMP NOT NULL,
-                synced_at TIMESTAMP,
-                runtime_synced BOOLEAN NOT NULL DEFAULT FALSE
-            )
-            """);
+
+        // Load schema.sql to create tables
+        try (InputStream is = AccessAuthenticatorTest.class.getClassLoader().getResourceAsStream("schema.sql")) {
+            if (is != null) {
+                String sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(sql);
+            }
+        }
+
         jdbcTemplate.update("DELETE FROM api_key_projection");
 
         Instant now = Instant.now();
+        Timestamp nowTs = Timestamp.from(now);
+        Timestamp yesterdayTs = Timestamp.from(now.minus(1, ChronoUnit.DAYS));
         // Active key
         jdbcTemplate.update(
             """
@@ -139,7 +155,7 @@ class AccessAuthenticatorTest {
             "active",
             null,
             1,
-            now,
+            nowTs,
             true
         );
         // Disabled key
@@ -152,7 +168,7 @@ class AccessAuthenticatorTest {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             "key-disabled", "tnt_default", "kb_assistant", "[]", "[]",
-            false, 4096, "disabled", null, 1, now, true
+            false, 4096, "disabled", null, 1, nowTs, true
         );
         // Revoked key
         jdbcTemplate.update(
@@ -164,7 +180,7 @@ class AccessAuthenticatorTest {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             "key-revoked", "tnt_default", "kb_assistant", "[]", "[]",
-            false, 4096, "revoked", null, 1, now, true
+            false, 4096, "revoked", null, 1, nowTs, true
         );
         // Expired key
         jdbcTemplate.update(
@@ -176,7 +192,7 @@ class AccessAuthenticatorTest {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             "key-expired", "tnt_default", "kb_assistant", "[]", "[]",
-            false, 4096, "active", now.minus(1, ChronoUnit.DAYS), 1, now, true
+            false, 4096, "active", yesterdayTs, 1, nowTs, true
         );
         // Low budget key
         jdbcTemplate.update(
@@ -188,7 +204,7 @@ class AccessAuthenticatorTest {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             "key-low-budget", "tnt_default", "kb_assistant", "[]", "[]",
-            false, 2048, "active", null, 1, now, true
+            false, 2048, "active", null, 1, nowTs, true
         );
 
         return new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(),

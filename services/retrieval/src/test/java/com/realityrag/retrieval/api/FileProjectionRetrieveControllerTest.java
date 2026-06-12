@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.realityrag.retrieval.AbstractPostgresTestBase;
 import com.realityrag.retrieval.support.FileFixtureRetrievalTestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
     "retrieval.data.indexed-chunks-file=src/test/resources/projections/indexed_chunks.jsonl",
     "retrieval.data.document-toc-file=src/test/resources/projections-ragflow/document_toc.jsonl"
 })
-class FileProjectionRetrieveControllerTest {
+class FileProjectionRetrieveControllerTest extends AbstractPostgresTestBase {
     @Autowired
     private MockMvc mockMvc;
 

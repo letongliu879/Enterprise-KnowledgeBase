@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.realityrag.access.AbstractPostgresTestBase;
 import com.realityrag.access.contracts.ApiKeyProjection;
 import com.realityrag.access.contracts.ApiKeyProjectionSyncRequest;
 import com.realityrag.access.security.ApiKeyRegistry;
@@ -20,16 +21,9 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(
-    properties = {
-        "spring.datasource.url=jdbc:h2:mem:access-projection-sync;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-        "spring.datasource.driver-class-name=org.h2.Driver",
-        "spring.datasource.username=sa",
-        "spring.datasource.password=",
-    }
-)
+@SpringBootTest
 @AutoConfigureMockMvc
-class ApiKeyProjectionSyncControllerTest {
+class ApiKeyProjectionSyncControllerTest extends AbstractPostgresTestBase {
 
     @Autowired
     private MockMvc mockMvc;

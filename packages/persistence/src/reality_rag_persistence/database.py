@@ -66,7 +66,11 @@ def _ensure_column_exists(table_name: str, column_name: str, column_type: str) -
 
 
 def create_all() -> None:
-    """Create all tables. For dev/seed usage only — not for production migrations."""
+    """Create all tables. For dev/seed/test usage only — not for production migrations."""
+    if os.environ.get("ENV", "").lower() == "production":
+        raise RuntimeError(
+            "create_all() is disabled in production. Use Alembic migrations instead."
+        )
     from .models import Base
     Base.metadata.create_all(bind=_get_engine())
     # Sync columns added after initial table creation

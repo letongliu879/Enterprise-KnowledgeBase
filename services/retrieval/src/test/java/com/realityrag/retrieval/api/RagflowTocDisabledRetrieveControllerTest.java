@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.realityrag.retrieval.AbstractPostgresTestBase;
 import com.realityrag.retrieval.support.FileFixtureRetrievalTestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
     "retrieval.search.enable-ragflow-children-aggregation=false",
     "retrieval.search.enable-ragflow-toc-aggregation=false"
 })
-class RagflowTocDisabledRetrieveControllerTest {
+class RagflowTocDisabledRetrieveControllerTest extends AbstractPostgresTestBase {
     @Autowired
     private MockMvc mockMvc;
 

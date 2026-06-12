@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.realityrag.access.AccessApplication;
+import com.realityrag.access.AbstractPostgresTestBase;
 import com.realityrag.access.contracts.KnowledgeContext;
 import com.realityrag.access.service.AccessGatewayService;
 import com.realityrag.access.support.TestAgentAuthFactory;
@@ -14,6 +15,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -30,15 +33,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
     classes = AccessApplication.class,
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
-        "spring.datasource.url=jdbc:h2:mem:access-mcp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-        "spring.datasource.driver-class-name=org.h2.Driver",
-        "spring.datasource.username=sa",
-        "spring.datasource.password=",
         "server.shutdown=immediate",
         "spring.lifecycle.timeout-per-shutdown-phase=1s"
     }
 )
-class SpringAiMcpServerTest {
+class SpringAiMcpServerTest extends AbstractPostgresTestBase {
     @LocalServerPort
     private int port;
 
@@ -64,23 +63,6 @@ class SpringAiMcpServerTest {
         this.httpClient = HttpClient.newHttpClient();
         this.mcpEndpoint = "http://127.0.0.1:" + port + "/mcp";
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS api_key_projection (
-                api_key_id VARCHAR(128) PRIMARY KEY,
-                tenant_id VARCHAR(64) NOT NULL,
-                agent_type_id VARCHAR(128) NOT NULL,
-                knowledge_scopes VARCHAR(2048),
-                roles VARCHAR(2048),
-                debug_permission BOOLEAN NOT NULL DEFAULT FALSE,
-                token_budget_limit INTEGER NOT NULL DEFAULT 4096,
-                state VARCHAR(32) NOT NULL DEFAULT 'active',
-                expires_at TIMESTAMP,
-                projection_version INTEGER NOT NULL DEFAULT 1,
-                last_updated_at TIMESTAMP NOT NULL,
-                synced_at TIMESTAMP,
-                runtime_synced BOOLEAN NOT NULL DEFAULT FALSE
-            )
-            """);
         jdbcTemplate.update("DELETE FROM api_key_projection");
         jdbcTemplate.update(
             """
@@ -100,7 +82,7 @@ class SpringAiMcpServerTest {
             "active",
             null,
             1,
-            java.time.Instant.now(),
+            java.sql.Timestamp.from(java.time.Instant.now()),
             true
         );
     }

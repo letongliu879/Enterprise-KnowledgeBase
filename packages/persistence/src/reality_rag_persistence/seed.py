@@ -5,6 +5,7 @@ Usage:
 """
 
 import json
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -30,6 +31,25 @@ from reality_rag_contracts import (
 )
 
 from .database import create_all, get_session
+
+
+def _seed_assets_root() -> Path:
+    """Return the root directory for seed asset files.
+
+    Defaults to a sibling ``Reality-RAG`` directory next to this repository,
+    falls back to ``data/seed-assets`` inside this repo, and can be overridden
+    with the ``REALITY_RAG_SEED_ASSETS`` environment variable.
+    """
+    if env_path := os.environ.get("REALITY_RAG_SEED_ASSETS"):
+        return Path(env_path)
+    repo_root = Path(__file__).resolve().parents[3]
+    sibling = repo_root.parent / "Reality-RAG"
+    if sibling.exists():
+        return sibling
+    return repo_root / "data" / "seed-assets"
+
+
+_SEED_ASSETS_ROOT = _seed_assets_root()
 from .repositories.application_profiles import ApplicationProfileRepository
 from .repositories.api_key_registry import ApiKeyRegistryRepository
 from .repositories.collections import CollectionRepository
@@ -137,36 +157,36 @@ def _seed_collections(session):
 def _seed_documents(session):
     repo = DocumentRepository(session)
     doc_001_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/quality_report.json",
-        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/agent_review.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/processing_record.json",
+        "canonical_md": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/canonical.md"),
+        "canonical_meta": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/canonical.meta.json"),
+        "quality_report": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/quality_report.json"),
+        "agent_review": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/agent_review.json"),
+        "processing_record": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/processing_record.json"),
     }
     doc_002_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/quality_report.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/processing_record.json",
+        "canonical_md": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-002/canonical.md"),
+        "canonical_meta": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-002/canonical.meta.json"),
+        "quality_report": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-002/quality_report.json"),
+        "processing_record": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-002/processing_record.json"),
     }
     doc_003_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/quality_report.json",
-        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/agent_review.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/processing_record.json",
+        "canonical_md": str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/canonical.md"),
+        "canonical_meta": str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/canonical.meta.json"),
+        "quality_report": str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/quality_report.json"),
+        "agent_review": str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/agent_review.json"),
+        "processing_record": str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/processing_record.json"),
     }
     doc_004_asset_paths = {
-        "canonical_md": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.md",
-        "canonical_meta": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.meta.json",
-        "quality_report": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/quality_report.json",
-        "agent_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/agent_review.json",
-        "review_context": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/review_context.json",
-        "human_review": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/human_review.json",
-        "processing_record": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/processing_record.json",
-        "chunk_manifest": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/chunk_manifest.json",
-        "opensearch_records": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/opensearch_records.json",
-        "qdrant_points": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/qdrant_points.json",
+        "canonical_md": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/canonical.md"),
+        "canonical_meta": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/canonical.meta.json"),
+        "quality_report": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/quality_report.json"),
+        "agent_review": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/agent_review.json"),
+        "review_context": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/review_context.json"),
+        "human_review": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/human_review.json"),
+        "processing_record": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/processing_record.json"),
+        "chunk_manifest": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/chunk_manifest.json"),
+        "opensearch_records": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/opensearch_records.json"),
+        "qdrant_points": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/qdrant_points.json"),
     }
 
     if repo.get("doc-001") is None:
@@ -438,7 +458,7 @@ def _seed_documents(session):
         },
     )
 
-    source_doc_004 = Path("E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md")
+    source_doc_004 = _SEED_ASSETS_ROOT / "datasets/raw/finance/manual-review-policy.md"
     source_doc_004.parent.mkdir(parents=True, exist_ok=True)
     source_doc_004.write_text(
         "# Travel Exception Policy\n\n"
@@ -777,7 +797,7 @@ def _seed_ingestion(session):
                     source_file_path="datasets/raw/finance/2025-q1-report.docx",
                     conversion_status=ConversionStatus.SUCCESS,
                     doc_id="doc-001",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.md",
+                    canonical_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/canonical.md"),
                     canonical_md="## Q1 2025 Financial Report\n\nRevenue: $12.4M (up 8% YoY)\n\n### Highlights\n- Net income grew 12%\n- Operating margin expanded to 24%\n\nFull report follows...",
                     metadata={"pages": 14, "format": "docx"},
                 ),
@@ -793,7 +813,7 @@ def _seed_ingestion(session):
                     source_file_path="datasets/raw/finance/2025-q1-audit-letter.docx",
                     conversion_status=ConversionStatus.SUCCESS,
                     doc_id="doc-002",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.md",
+                    canonical_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-002/canonical.md"),
                     canonical_md="## Independent Auditor's Letter\n\nWe have audited the financial statements of Example Corp for Q1 2025.\n\nOpinion: Unqualified.",
                     metadata={"pages": 3, "format": "docx"},
                 ),
@@ -809,7 +829,7 @@ def _seed_ingestion(session):
                 "datasets/raw/finance/2025-q1-audit-letter.docx",
             ],
             conversion_report=report,
-            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-001/conversion_report.json",
+            report_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/ingest-001/conversion_report.json"),
             created_at=now, updated_at=datetime(2025, 5, 10, 9, 35, tzinfo=timezone.utc),
         ))
     if repo.get("ingest-002") is None:
@@ -825,7 +845,7 @@ def _seed_ingestion(session):
                     source_file_path="datasets/raw/legal/contract-v3-scanned.pdf",
                     conversion_status=ConversionStatus.FAILED,
                     doc_id="doc-003",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.md",
+                    canonical_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/canonical.md"),
                     canonical_md="",
                     error_message="Scanned image PDF with no OCR layer — requires manual OCR preprocessing",
                     metadata={"pages": 45, "format": "pdf"},
@@ -838,7 +858,7 @@ def _seed_ingestion(session):
             status=JobStatus.FAILED, collection_id=COL_HANDBOOK,
             source_files=["datasets/raw/legal/contract-v3-scanned.pdf"],
             conversion_report=report,
-            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/ingest-002/conversion_report.json",
+            report_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/ingest-002/conversion_report.json"),
             created_at=now, updated_at=datetime(2025, 5, 11, 14, 2, tzinfo=timezone.utc),
             error_message="Ingestion failed: no convertible files in batch",
         ))
@@ -863,10 +883,10 @@ def _seed_ingestion(session):
             warnings=["Human confirmation required before publication"],
             details=[
                 ConversionResult(
-                    source_file_path="E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md",
+                    source_file_path=str(_SEED_ASSETS_ROOT / "datasets/raw/finance/manual-review-policy.md"),
                     conversion_status=ConversionStatus.SUCCESS,
                     doc_id="doc-004",
-                    canonical_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.md",
+                    canonical_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/canonical.md"),
                     canonical_md="## Travel Exception Policy\n\nExpenses over 500 USD require director approval.\n\nA written exception explanation is required before reimbursement.\n",
                     metadata={"pages": 1, "format": "md"},
                 ),
@@ -876,14 +896,14 @@ def _seed_ingestion(session):
         repo.save(IngestionJob(
             job_id="ingest-004", job_type="ingestion",
             status=JobStatus.COMPLETED, collection_id=COL_POLICY,
-            source_files=["E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md"],
+            source_files=[str(_SEED_ASSETS_ROOT / "datasets/raw/finance/manual-review-policy.md")],
             conversion_report=report,
-            report_asset_path="E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-004/conversion_report.json",
+            report_asset_path=str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/ingest-004/conversion_report.json"),
             created_at=now, updated_at=now,
         ))
 
     ingest_001_created_at = datetime(2025, 5, 10, 9, 30, tzinfo=timezone.utc)
-    ingest_001_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-001/conversion_report.json"
+    ingest_001_report_asset_path = str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/ingest-001/conversion_report.json")
     _write_json_asset(
         ingest_001_report_asset_path,
         {
@@ -902,7 +922,7 @@ def _seed_ingestion(session):
                     "source_file_path": "datasets/raw/finance/2025-q1-report.docx",
                     "conversion_status": "success",
                     "doc_id": "doc-001",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-001/canonical.md",
+                    "canonical_asset_path": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-001/canonical.md"),
                     "canonical_md": "## Q1 2025 Financial Report\n\nRevenue: $12.4M (up 8% YoY)\n\n### Highlights\n- Net income grew 12%\n- Operating margin expanded to 24%\n\nFull report follows...",
                     "error_message": "",
                     "warnings": [],
@@ -922,7 +942,7 @@ def _seed_ingestion(session):
                     "source_file_path": "datasets/raw/finance/2025-q1-audit-letter.docx",
                     "conversion_status": "success",
                     "doc_id": "doc-002",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-002/canonical.md",
+                    "canonical_asset_path": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-002/canonical.md"),
                     "canonical_md": "## Independent Auditor's Letter\n\nWe have audited the financial statements of Example Corp for Q1 2025.\n\nOpinion: Unqualified.",
                     "error_message": "",
                     "warnings": [],
@@ -934,7 +954,7 @@ def _seed_ingestion(session):
     )
 
     ingest_002_created_at = datetime(2025, 5, 11, 14, 0, tzinfo=timezone.utc)
-    ingest_002_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/ingest-002/conversion_report.json"
+    ingest_002_report_asset_path = str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/ingest-002/conversion_report.json")
     _write_json_asset(
         ingest_002_report_asset_path,
         {
@@ -953,7 +973,7 @@ def _seed_ingestion(session):
                     "source_file_path": "datasets/raw/legal/contract-v3-scanned.pdf",
                     "conversion_status": "failed",
                     "doc_id": "doc-003",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_handbook/doc-003/canonical.md",
+                    "canonical_asset_path": str(_SEED_ASSETS_ROOT / ".sidecar/col_handbook/doc-003/canonical.md"),
                     "canonical_md": "",
                     "error_message": "Scanned image PDF with no OCR layer — requires manual OCR preprocessing",
                     "warnings": [],
@@ -965,7 +985,7 @@ def _seed_ingestion(session):
     )
 
     ingest_004_created_at = datetime(2025, 5, 12, 11, 0, tzinfo=timezone.utc)
-    ingest_004_report_asset_path = "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/ingest-004/conversion_report.json"
+    ingest_004_report_asset_path = str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/ingest-004/conversion_report.json")
     _write_json_asset(
         ingest_004_report_asset_path,
         {
@@ -981,10 +1001,10 @@ def _seed_ingestion(session):
             "warnings": ["Human confirmation required before publication"],
             "details": [
                 {
-                    "source_file_path": "E:/AI/My-Project/Reality-RAG/datasets/raw/finance/manual-review-policy.md",
+                    "source_file_path": str(_SEED_ASSETS_ROOT / "datasets/raw/finance/manual-review-policy.md"),
                     "conversion_status": "success",
                     "doc_id": "doc-004",
-                    "canonical_asset_path": "E:/AI/My-Project/Reality-RAG/.sidecar/col_policy/doc-004/canonical.md",
+                    "canonical_asset_path": str(_SEED_ASSETS_ROOT / ".sidecar/col_policy/doc-004/canonical.md"),
                     "canonical_md": "## Travel Exception Policy\n\nExpenses over 500 USD require director approval.\n\nA written exception explanation is required before reimbursement.\n",
                     "error_message": "",
                     "warnings": ["Human confirmation required before publication"],

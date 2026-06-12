@@ -41,5 +41,12 @@ jobs:
           distribution: "temurin"
           cache: "maven"
 
+      - name: Check Alembic migrations and Java test schema alignment
+        run: |
+          pip install uv
+          uv sync --all-packages --group dev
+          uv run python scripts/check_migrations.py
+          uv run python scripts/generate_java_test_schema.py --check
+
       - name: Run Maven tests
         run: mvn -B test

@@ -1,0 +1,6 @@
+# Test YAML — database properties are provided by @DynamicPropertySource in AbstractPostgresTestBase.
+# spring.sql.init creates the tables before @PostConstruct validateSchema() runs.
+spring:
+  sql:
+    init:
+      mode: always

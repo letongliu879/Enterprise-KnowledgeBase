@@ -8,46 +8,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.realityrag.access.support.AccessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 
+@Testcontainers
 class ApiKeyRegistryProjectionTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    private static javax.sql.DataSource sharedDataSource;
 
     private JdbcTemplate jdbcTemplate;
     private ApiKeyRegistry registry;
 
+    @BeforeAll
+    static void beforeAll() throws Exception {
+        var config = new HikariConfig();
+        config.setJdbcUrl(postgres.getJdbcUrl());
+        config.setUsername(postgres.getUsername());
+        config.setPassword(postgres.getPassword());
+        config.setDriverClassName("org.postgresql.Driver");
+        config.setMaximumPoolSize(2);
+        sharedDataSource = new HikariDataSource(config);
+
+        // Load schema.sql to create tables
+        var jdbc = new JdbcTemplate(sharedDataSource);
+        try (InputStream is = ApiKeyRegistryProjectionTest.class.getClassLoader().getResourceAsStream("schema.sql")) {
+            if (is != null) {
+                String sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                jdbc.execute(sql);
+            }
+        }
+    }
+
     @BeforeEach
     void setUp() {
-        var dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.h2.Driver");
-        dataSource.setUrl("jdbc:h2:mem:access-registry-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
-        dataSource.setUsername("sa");
-        dataSource.setPassword("");
-
-        jdbcTemplate = new JdbcTemplate(dataSource);
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS api_key_projection (
-                api_key_id VARCHAR(128) PRIMARY KEY,
-                tenant_id VARCHAR(64) NOT NULL,
-                agent_type_id VARCHAR(128) NOT NULL,
-                knowledge_scopes VARCHAR(2048),
-                roles VARCHAR(2048),
-                debug_permission BOOLEAN NOT NULL DEFAULT FALSE,
-                token_budget_limit INTEGER NOT NULL DEFAULT 4096,
-                state VARCHAR(32) NOT NULL DEFAULT 'active',
-                expires_at TIMESTAMP,
-                projection_version INTEGER NOT NULL DEFAULT 1,
-                last_updated_at TIMESTAMP NOT NULL,
-                synced_at TIMESTAMP,
-                runtime_synced BOOLEAN NOT NULL DEFAULT FALSE
-            )
-            """);
+        jdbcTemplate = new JdbcTemplate(sharedDataSource);
         jdbcTemplate.update("DELETE FROM api_key_projection");
         registry = new ApiKeyRegistry(jdbcTemplate, new ObjectMapper(),
             new com.realityrag.access.config.AccessProperties(),
@@ -124,7 +135,7 @@ class ApiKeyRegistryProjectionTest {
             "key-full", "tnt_default", "kb_assistant",
             "[\"col_policy\",\"col_handbook\"]",
             "[\"agent\",\"developer\"]",
-            true, 8192, "active", null, 1, Instant.now(), true
+            true, 8192, "active", null, 1, Timestamp.from(Instant.now()), true
         );
 
         var reg = registry.resolve("key-full");
@@ -144,7 +155,7 @@ class ApiKeyRegistryProjectionTest {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             apiKeyId, "tnt_default", "kb_assistant", "[]", "[]",
-            false, budget, state, expiresAt, 1, lastUpdated, true
+            false, budget, state, expiresAt != null ? Timestamp.from(expiresAt) : null, 1, Timestamp.from(lastUpdated), true
         );
     }
 
