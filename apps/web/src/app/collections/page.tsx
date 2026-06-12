@@ -12,6 +12,7 @@ import {
   Check,
   Search,
   ArrowRight,
+  Pencil,
 } from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ import { isApiError, isBackendGap } from "@/lib/api/errors";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { SortDropdown } from "@/components/sort-dropdown";
+import type { AdminCollection } from "@/lib/api/types";
 
 const SORT_OPTIONS = [
   { value: "name", label: "名称" },
@@ -50,6 +52,9 @@ export default function CollectionsPage() {
   const { setCurrentCollectionId } = useAppStore();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingCollection, setEditingCollection] = useState<AdminCollection | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", description: "" });
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -121,6 +126,40 @@ export default function CollectionsPage() {
       }
     },
   });
+
+  const updateCollection = useMutation({
+    mutationFn: (payload: {
+      collection_id: string;
+      name?: string;
+      description?: string;
+    }) =>
+      workbenchApi.updateCollection(payload.collection_id, {
+        name: payload.name,
+        description: payload.description,
+      }),
+    onSuccess: () => {
+      toast.success("集合已更新");
+      setEditOpen(false);
+      setEditingCollection(null);
+      queryClient.invalidateQueries({ queryKey: ["workbench-collections"] });
+    },
+    onError: (err) => {
+      if (isBackendGap(err)) {
+        setGap({ feature: "更新集合", endpoint: err.endpoint });
+      } else {
+        toast.error(isApiError(err) ? err.message : "更新集合失败");
+      }
+    },
+  });
+
+  function openEditDialog(collection: AdminCollection) {
+    setEditingCollection(collection);
+    setEditForm({
+      name: collection.name,
+      description: collection.description || "",
+    });
+    setEditOpen(true);
+  }
 
   return (
     <motion.div
@@ -269,6 +308,18 @@ export default function CollectionsPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
+                          openEditDialog(c);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4 text-muted-foreground/50" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                         }}
                       >
                         <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
@@ -363,6 +414,57 @@ export default function CollectionsPage() {
               }
             >
               {createCollection.isPending ? "创建中..." : "创建"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="glass-strong rounded-2xl border-white/10 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg">编辑集合</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-coll-name">名称</Label>
+              <Input
+                id="edit-coll-name"
+                value={editForm.name}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, name: e.target.value }))
+                }
+                placeholder="集合名称"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-coll-desc">描述</Label>
+              <Input
+                id="edit-coll-desc"
+                value={editForm.description}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, description: e.target.value }))
+                }
+                placeholder="可选描述"
+              />
+            </div>
+            <Button
+              className="w-full shadow-glow"
+              disabled={
+                updateCollection.isPending ||
+                !editForm.name ||
+                !editingCollection
+              }
+              onClick={() => {
+                if (!editingCollection) return;
+                updateCollection.mutate({
+                  collection_id: editingCollection.collection_id,
+                  name: editForm.name,
+                  description: editForm.description,
+                });
+              }}
+            >
+              {updateCollection.isPending ? "保存中..." : "保存"}
             </Button>
           </div>
         </DialogContent>

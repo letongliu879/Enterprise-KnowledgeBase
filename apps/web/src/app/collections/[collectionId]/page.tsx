@@ -22,6 +22,9 @@ import {
   FolderOpen,
   AlertCircle,
   Search,
+  CheckCircle2,
+  Clock3,
+  Archive,
 } from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";

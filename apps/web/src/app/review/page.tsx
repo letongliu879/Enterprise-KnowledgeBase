@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { workbenchApi } from "@/lib/api/client";
+import type { AgentReviewView } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ import { EmptyState } from "@/components/empty-state";
 import { BackendGap } from "@/components/backend-gap";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { PopoverProvider, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { SortDropdown } from "@/components/sort-dropdown";
 import { isBackendGap, isApiError, getErrorMessage } from "@/lib/api/errors";
 import { normalizeStatus } from "@/lib/status";
@@ -136,6 +138,197 @@ const SORT_OPTIONS = [
   { value: "created_at", label: "创建时间" },
   { value: "filename", label: "文件名" },
 ];
+
+const severityOrder = ["critical", "high", "medium", "low", "info"];
+
+const severityConfig: Record<
+  string,
+  { label: string; className: string }
+> = {
+  critical: { label: "Critical", className: "bg-red-500/15 text-red-400 border-red-500/30" },
+  high: { label: "High", className: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+  medium: { label: "Medium", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+  low: { label: "Low", className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+  info: { label: "Info", className: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
+};
+
+function AgentReviewPreview({ ticketId }: { ticketId: string }) {
+  const { data, isLoading } = useQuery<AgentReviewView>({
+    queryKey: ["agent-review-preview", ticketId],
+    queryFn: () => workbenchApi.getAgentReview(ticketId),
+    enabled: Boolean(ticketId),
+    staleTime: 60_000,
+  });
+
+  const counts = useMemo(() => {
+    const initial: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    if (!data?.findings) return initial;
+    return data.findings.reduce((acc, f) => {
+      const key = f.severity?.toLowerCase() || "info";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, initial);
+  }, [data]);
+
+  const total = data?.findings?.length ?? 0;
+
+  return (
+    <div className="w-64 p-3 space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">Agent Review 摘要</div>
+      {isLoading ? (
+        <div className="space-y-1.5">
+          <Skeleton className="h-5 w-full" />
+          <Skeleton className="h-5 w-full" />
+        </div>
+      ) : total === 0 ? (
+        <p className="text-xs text-muted-foreground">暂无 findings</p>
+      ) : (
+        <div className="space-y-1.5">
+          {severityOrder.map((sev) =>
+            counts[sev] > 0 ? (
+              <div key={sev} className="flex items-center justify-between">
+                <Badge variant="outline" className={`h-5 text-[10px] ${severityConfig[sev].className}`}>
+                  {severityConfig[sev].label}
+                </Badge>
+                <span className="text-xs font-medium">{counts[sev]}</span>
+              </div>
+            ) : null
+          )}
+          <div className="pt-1 border-t border-white/5 flex items-center justify-between text-xs text-muted-foreground">
+            <span>合计</span>
+            <span>{total}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TicketCard({
+  ticket,
+  index,
+  selected,
+  onToggle,
+}: {
+  ticket: {
+    ticket_id: string;
+    status: string;
+    filename?: string | null;
+    title?: string | null;
+    doc_id?: string | null;
+    collection_id?: string | null;
+    updated_at?: string | null;
+    priority?: string | null;
+  };
+  index: number;
+  selected: boolean;
+  onToggle: (checked: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const config = getTicketStatusConfig(ticket.status);
+  const StatusIcon = config.icon;
+  const displayTitle =
+    ticket.filename?.trim() || ticket.title?.trim() || ticket.doc_id?.trim() || ticket.ticket_id;
+  const priorityConfig = getPriorityConfig(ticket.priority);
+  const isPending = normalizeStatus(ticket.status) === "pending";
+
+  return (
+    <PopoverProvider open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className="w-full text-left">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.04 }}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <Link href={`/review/${ticket.ticket_id}`} className="block">
+            <Card interactive className="relative overflow-hidden">
+              <div
+                className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-xl ${config.dotColor}`}
+                style={{ opacity: 0.5 }}
+              />
+
+              <CardContent className="flex items-center gap-4 p-4 pl-5">
+                {isPending && (
+                  <Checkbox
+                    checked={selected}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onToggle((e.target as HTMLInputElement).checked);
+                    }}
+                    className="shrink-0"
+                  />
+                )}
+                {!isPending && <div className="w-4 shrink-0" />}
+
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${config.bgColor}`}
+                >
+                  <StatusIcon className={`h-5 w-5 ${config.color}`} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground/40" />
+                    <span className="truncate text-sm font-medium">{displayTitle}</span>
+                    {priorityConfig && (
+                      <Badge
+                        variant="outline"
+                        className={`h-5 text-[10px] ${priorityConfig.className}`}
+                      >
+                        {priorityConfig.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <Badge
+                      variant="outline"
+                      className="h-5 border-white/10 text-[10px]"
+                    >
+                      {ticket.collection_id}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-muted-foreground/50">
+                      {ticket.ticket_id}
+                    </span>
+                    <span
+                      className="text-[11px] text-muted-foreground/50"
+                      title={ticket.updated_at ? new Date(ticket.updated_at).toLocaleString() : undefined}
+                    >
+                      {formatRelativeTime(ticket.updated_at)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`h-6 border text-[10px] ${config.borderColor} ${config.bgColor}`}
+                  >
+                    {config.label === "待复核" && (
+                      <span className="relative mr-1 flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
+                      </span>
+                    )}
+                    <span className={config.color}>{config.label}</span>
+                  </Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 transition-transform duration-200 group-hover/card:translate-x-0.5" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </motion.div>
+      </PopoverTrigger>
+      <PopoverContent
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        <AgentReviewPreview ticketId={ticket.ticket_id} />
+      </PopoverContent>
+    </PopoverProvider>
+  );
+}
 
 export default function ReviewQueuePage() {
   const queryClient = useQueryClient();
@@ -622,112 +815,15 @@ export default function ReviewQueuePage() {
             </span>
           </div>
 
-          {filteredTickets.map((ticket, index) => {
-            const config = getTicketStatusConfig(ticket.status);
-            const StatusIcon = config.icon;
-            const displayTitle =
-              ticket.filename?.trim() ||
-              ticket.title?.trim() ||
-              ticket.doc_id?.trim() ||
-              ticket.ticket_id;
-            const priorityConfig = getPriorityConfig(ticket.priority);
-            const isPending = normalizeStatus(ticket.status) === "pending";
-
-            return (
-              <motion.div
-                key={ticket.ticket_id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.04 }}
-              >
-                <Link href={`/review/${ticket.ticket_id}`} className="block">
-                <Card interactive className="relative overflow-hidden">
-                  <div
-                    className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-xl ${config.dotColor}`}
-                    style={{ opacity: 0.5 }}
-                  />
-
-                  <CardContent className="flex items-center gap-4 p-4 pl-5">
-                    {isPending && (
-                      <Checkbox
-                        checked={selectedTicketIds.has(ticket.ticket_id)}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          handleSelectTicket(
-                            ticket.ticket_id,
-                            (e.target as HTMLInputElement).checked
-                          );
-                        }}
-                        className="shrink-0"
-                      />
-                    )}
-                    {!isPending && <div className="w-4 shrink-0" />}
-
-                    <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${config.bgColor}`}
-                    >
-                      <StatusIcon className={`h-5 w-5 ${config.color}`} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground/40" />
-                        <span className="truncate text-sm font-medium">
-                          {displayTitle}
-                        </span>
-                        {priorityConfig && (
-                          <Badge
-                            variant="outline"
-                            className={`h-5 text-[10px] ${priorityConfig.className}`}
-                          >
-                            {priorityConfig.label}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <Badge
-                          variant="outline"
-                          className="h-5 border-white/10 text-[10px]"
-                        >
-                          {ticket.collection_id}
-                        </Badge>
-                        <span className="font-mono text-[11px] text-muted-foreground/50">
-                          {ticket.ticket_id}
-                        </span>
-                        <span
-                          className="text-[11px] text-muted-foreground/50"
-                          title={
-                            ticket.updated_at
-                              ? new Date(ticket.updated_at).toLocaleString()
-                              : undefined
-                          }
-                        >
-                          {formatRelativeTime(ticket.updated_at)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={`h-6 border text-[10px] ${config.borderColor} ${config.bgColor}`}
-                      >
-                        {config.label === "待复核" && (
-                          <span className="relative mr-1 flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
-                          </span>
-                        )}
-                        <span className={config.color}>{config.label}</span>
-                      </Badge>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 transition-transform duration-200 group-hover/card:translate-x-0.5" />
-                    </div>
-                  </CardContent>
-                </Card>
-                </Link>
-              </motion.div>
-            );
-          })}
+          {filteredTickets.map((ticket, index) => (
+            <TicketCard
+              key={ticket.ticket_id}
+              ticket={ticket}
+              index={index}
+              selected={selectedTicketIds.has(ticket.ticket_id)}
+              onToggle={(checked) => handleSelectTicket(ticket.ticket_id, checked)}
+            />
+          ))}
         </div>
       )}
 

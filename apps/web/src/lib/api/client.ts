@@ -218,6 +218,15 @@ export const workbenchApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateCollection: (collection_id: string, payload: {
+    name?: string;
+    description?: string;
+    lifecycle_state?: string;
+  }) =>
+    request<Record<string, unknown>>(WORKBENCH_BASE, `/workbench/collections/${collection_id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   listRetrievalProfiles: (state?: string) =>
     request<{ items: RetrievalProfileDetail[]; total: number }>(
       WORKBENCH_BASE,

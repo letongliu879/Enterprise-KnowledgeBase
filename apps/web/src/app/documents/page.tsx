@@ -7,11 +7,13 @@ import { motion } from "framer-motion";
 import {
   Archive,
   ChevronRight,
+  Clock,
   Database,
   Eye,
   FileSpreadsheet,
   FileText,
   Filter,
+  History,
   Layers,
   Link as LinkIcon,
   MoreHorizontal,
@@ -20,9 +22,11 @@ import {
   Search,
   Share2,
   ShieldAlert,
+  Star,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import { workbenchApi } from "@/lib/api/client";
 import type { BatchDocumentActionResult, DocumentProjectionItem } from "@/lib/api/types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -275,17 +279,51 @@ function DocumentPreviewDialog({
   );
 }
 
-function ComingSoonButton({ children, label }: { children: React.ReactNode; label: string }) {
+function QuickAccessSection({
+  title,
+  icon: Icon,
+  docIds,
+  documents,
+  emptyText,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  docIds: string[];
+  documents: DocumentProjectionItem[];
+  emptyText?: string;
+}) {
+  const items = useMemo(() => {
+    return docIds
+      .map((id) => documents.find((d) => d.doc_id === id))
+      .filter((d): d is DocumentProjectionItem => Boolean(d));
+  }, [docIds, documents]);
+
+  if (items.length === 0) return null;
+
   return (
-    <Tooltip>
-      <TooltipTrigger>
-        <Button variant="ghost" size="sm" disabled className="h-7 gap-1 text-xs opacity-60">
-          {children}
-          <span className="hidden sm:inline">{label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>即将推出</TooltipContent>
-    </Tooltip>
+    <motion.div variants={staggerItem} className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        <span>{title}</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((doc) => (
+          <Link key={doc.doc_id} href={`/documents/${doc.doc_id}`}>
+            <Badge
+              variant="outline"
+              className="cursor-pointer gap-1.5 py-1.5 pl-2 pr-3 hover:bg-white/[0.06]"
+            >
+              {docIds[0] === doc.doc_id ? (
+                <Clock className="h-3 w-3" />
+              ) : (
+                <Star className="h-3 w-3 text-amber-400 fill-amber-400" />
+              )}
+              <span className="max-w-[180px] truncate text-xs">{doc.filename || doc.doc_id}</span>
+            </Badge>
+          </Link>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
@@ -355,6 +393,30 @@ export default function DocumentsPage() {
   // F5: Single archive dialog
   const [singleArchiveDoc, setSingleArchiveDoc] = useState<DocumentProjectionItem | null>(null);
   const [singleArchiveReason, setSingleArchiveReason] = useState("");
+
+  // Recently viewed documents (max 5)
+  const [recentDocIds, setRecentDocIds] = useLocalStorage<string[]>("ekb-recent-docs", []);
+
+  // Favorite documents
+  const [favoriteDocIds, setFavoriteDocIds] = useLocalStorage<string[]>("ekb-favorite-docs", []);
+
+  // Helper: record recently viewed document
+  const recordRecentView = (docId: string) => {
+    setRecentDocIds((prev) => {
+      const filtered = prev.filter((id) => id !== docId);
+      return [docId, ...filtered].slice(0, 5);
+    });
+  };
+
+  // Helper: toggle favorite
+  const toggleFavorite = (docId: string) => {
+    setFavoriteDocIds((prev) => {
+      if (prev.includes(docId)) {
+        return prev.filter((id) => id !== docId);
+      }
+      return [...prev, docId];
+    });
+  };
 
   const { data: me } = useQuery({
     queryKey: ["workbench-me"],
@@ -561,7 +623,11 @@ export default function DocumentsPage() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <Link href={`/documents/${doc.doc_id}`} className="truncate text-sm font-medium hover:underline">
+                        <Link
+                          href={`/documents/${doc.doc_id}`}
+                          className="truncate text-sm font-medium hover:underline"
+                          onClick={() => recordRecentView(doc.doc_id)}
+                        >
                           {doc.filename || doc.doc_id}
                         </Link>
                         {doc.ticket_status ? (
@@ -606,6 +672,17 @@ export default function DocumentsPage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 rounded-lg"
+                        onClick={() => toggleFavorite(doc.doc_id)}
+                        title={favoriteDocIds.includes(doc.doc_id) ? "Remove from favorites" : "Add to favorites"}
+                      >
+                        <Star
+                          className={`h-4 w-4 ${favoriteDocIds.includes(doc.doc_id) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/50"}`}
+                        />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg"
                         onClick={() => setPreviewDoc(doc)}
                         title="Preview"
                       >
@@ -627,7 +704,7 @@ export default function DocumentsPage() {
                         canArchive={canManageLifecycle}
                         onArchive={setSingleArchiveDoc}
                       />
-                      <Link href={`/documents/${doc.doc_id}`}>
+                      <Link href={`/documents/${doc.doc_id}`} onClick={() => recordRecentView(doc.doc_id)}>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
                           <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
                         </Button>
@@ -672,6 +749,17 @@ export default function DocumentsPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 rounded-lg"
+                          onClick={() => toggleFavorite(doc.doc_id)}
+                          title={favoriteDocIds.includes(doc.doc_id) ? "Remove from favorites" : "Add to favorites"}
+                        >
+                          <Star
+                            className={`h-4 w-4 ${favoriteDocIds.includes(doc.doc_id) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/50"}`}
+                          />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-lg"
                           onClick={() => setPreviewDoc(doc)}
                           title="Preview"
                         >
@@ -686,7 +774,11 @@ export default function DocumentsPage() {
                     </div>
 
                     <div>
-                      <Link href={`/documents/${doc.doc_id}`} className="text-sm font-medium hover:underline">
+                      <Link
+                        href={`/documents/${doc.doc_id}`}
+                        className="text-sm font-medium hover:underline"
+                        onClick={() => recordRecentView(doc.doc_id)}
+                      >
                         {doc.filename || doc.doc_id}
                       </Link>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -769,17 +861,34 @@ export default function DocumentsPage() {
                     >
                       <Icon className={`h-4 w-4 ${iconConfig.color}`} />
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-lg"
-                      onClick={() => setPreviewDoc(doc)}
-                      title="Preview"
-                    >
-                      <Eye className="h-3.5 w-3.5 text-muted-foreground/50" />
-                    </Button>
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-lg"
+                        onClick={() => toggleFavorite(doc.doc_id)}
+                        title={favoriteDocIds.includes(doc.doc_id) ? "Remove from favorites" : "Add to favorites"}
+                      >
+                        <Star
+                          className={`h-3.5 w-3.5 ${favoriteDocIds.includes(doc.doc_id) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/50"}`}
+                        />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-lg"
+                        onClick={() => setPreviewDoc(doc)}
+                        title="Preview"
+                      >
+                        <Eye className="h-3.5 w-3.5 text-muted-foreground/50" />
+                      </Button>
+                    </div>
                   </div>
-                  <Link href={`/documents/${doc.doc_id}`} className="block truncate text-xs font-medium hover:underline">
+                  <Link
+                    href={`/documents/${doc.doc_id}`}
+                    className="block truncate text-xs font-medium hover:underline"
+                    onClick={() => recordRecentView(doc.doc_id)}
+                  >
                     {doc.filename || doc.doc_id}
                   </Link>
                   <div className="flex flex-wrap items-center gap-1">
@@ -830,26 +939,29 @@ export default function DocumentsPage() {
           ) : null}
         </motion.div>
 
-        {/* F4: Placeholder feature buttons */}
+        {/* Quick access: Recent + Favorites */}
+        {(recentDocIds.length > 0 || favoriteDocIds.length > 0) && (
+          <motion.div variants={staggerItem} className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <QuickAccessSection
+              title="最近访问"
+              icon={History}
+              docIds={recentDocIds}
+              documents={data?.items ?? []}
+            />
+            <QuickAccessSection
+              title="我的收藏"
+              icon={Star}
+              docIds={favoriteDocIds}
+              documents={data?.items ?? []}
+            />
+          </motion.div>
+        )}
+
         <motion.div variants={staggerItem} className="flex flex-wrap items-center gap-2">
-          <ComingSoonButton label="Tags">
-            <span className="h-3.5 w-3.5 rounded-full border border-current" />
-          </ComingSoonButton>
-          <ComingSoonButton label="Favorites">
-            <span className="h-3.5 w-3.5 rounded-full border border-current" />
-          </ComingSoonButton>
-          <ComingSoonButton label="Recent">
-            <span className="h-3.5 w-3.5 rounded-full border border-current" />
-          </ComingSoonButton>
-          <ComingSoonButton label="Quality">
-            <span className="h-3.5 w-3.5 rounded-full border border-current" />
-          </ComingSoonButton>
-          <ComingSoonButton label="Heat">
-            <span className="h-3.5 w-3.5 rounded-full border border-current" />
-          </ComingSoonButton>
-          <ComingSoonButton label="Graph">
-            <span className="h-3.5 w-3.5 rounded-full border border-current" />
-          </ComingSoonButton>
+          <Badge variant="outline" className="h-7 gap-1 text-xs text-muted-foreground">
+            <span className="h-3.5 w-3.5 rounded-full border border-dashed border-current" />
+            Tags / Quality / Heat / Graph 即将推出
+          </Badge>
         </motion.div>
 
         <motion.div variants={staggerItem} className="flex flex-wrap items-center gap-2">
