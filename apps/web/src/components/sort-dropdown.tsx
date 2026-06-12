@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   PopoverProvider,
   PopoverTrigger,
@@ -27,12 +26,26 @@ export function SortDropdown({ options, value, direction, onChange, className }:
 
   return (
     <PopoverProvider>
-      <PopoverTrigger>
-        <Button variant="outline" size="sm" className={cn("h-8 gap-1.5 text-xs", className)}>
-          <ArrowUpDown className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{currentLabel}</span>
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={(
+          { className: triggerClassName, ...props },
+          state
+        ) => (
+          <button
+            type="button"
+            {...props}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-[min(var(--radius-md),12px)] border border-white/10 bg-white/[0.03] px-2.5 text-xs font-medium whitespace-nowrap transition-all hover:bg-white/[0.08] hover:text-foreground hover:border-primary/30",
+              state.open && "bg-white/[0.08] text-foreground",
+              className,
+              triggerClassName
+            )}
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{currentLabel}</span>
+          </button>
+        )}
+      />
       <PopoverContent className="w-48 p-1.5">
         <div className="space-y-0.5">
           {options.map((option) => {
