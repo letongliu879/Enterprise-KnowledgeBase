@@ -37,6 +37,7 @@ vi.mock("@/lib/api/client", () => ({
     createUpload: vi.fn(),
     uploadFileContent: vi.fn(),
     listTasks: vi.fn(),
+    cancelTask: vi.fn().mockResolvedValue({ status: "cancelled", task_id: "task-001" }),
   },
   WORKBENCH_BASE: "/api/workbench",
 }));
@@ -1028,6 +1029,24 @@ describe("UploadPage", () => {
 
       const card = getFileCardByName("huge.pdf");
       expect(within(card).getByText(/1048576\.0 KB/)).toBeInTheDocument();
+    });
+  });
+
+  describe("C4 - Cancel upload task", () => {
+    it("shows cancel button for uploading files", async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<UploadPage />, { wrapper: Wrapper });
+
+      await waitFor(() => expect(screen.getByText("就绪")).toBeInTheDocument());
+
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(input, createFile("test.pdf", "application/pdf", 1024));
+
+      await waitFor(() => {
+        const card = getFileCardByName("test.pdf");
+        expect(within(card).getByTitle("取消任务")).toBeInTheDocument();
+      });
     });
   });
 });

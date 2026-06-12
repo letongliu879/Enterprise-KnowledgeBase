@@ -115,6 +115,7 @@ const KNOWN_UPLOAD_STATUSES = new Set<FileStatus>([
   "archived",
   "retracted",
   "rejected",
+  "cancelled",
   "failed",
 ]);
 
@@ -281,6 +282,14 @@ function getStatusConfig(status: FileStatus) {
         borderColor: "border-red-500/20",
         label: "已驳回",
       };
+    case "cancelled":
+      return {
+        icon: Ban,
+        color: "text-slate-400",
+        bgColor: "bg-slate-500/10",
+        borderColor: "border-slate-500/20",
+        label: "已取消",
+      };
     case "failed":
       return {
         icon: AlertTriangle,
@@ -446,6 +455,25 @@ export default function UploadPage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const cancelUpload = useMutation({
+    mutationFn: (fileId: string) => {
+      const item = filesRef.current.find((f) => f.id === fileId);
+      if (item?.uploadId) {
+        return workbenchApi.cancelTask(item.uploadId);
+      }
+      return Promise.resolve(null);
+    },
+    onSuccess: (_data, fileId) => {
+      setFiles((prev) =>
+        prev.map((f) => (f.id === fileId ? { ...f, status: "cancelled" as FileStatus } : f))
+      );
+      toast.success("任务已取消");
+    },
+    onError: (err) => {
+      toast.error(isApiError(err) ? err.message : "取消失败");
+    },
+  });
 
   const createUpload = useMutation({
     mutationFn: async (item: FileItem) => {
@@ -894,12 +922,17 @@ export default function UploadPage() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    onClick={() => window.open("/templates/upload-template.csv")}
+                  >
                     <FileUp className="h-3.5 w-3.5" />
                     上传模板
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>即将推出</TooltipContent>
+                <TooltipContent>下载 CSV 上传模板</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <TooltipProvider>
@@ -1150,7 +1183,7 @@ export default function UploadPage() {
 
                             {/* Actions */}
                             <div className="flex items-center gap-1 shrink-0">
-                              {/* C4: Cancel button (disabled with tooltip) */}
+                              {/* C4: Cancel button */}
                               {(item.status === "uploading" ||
                                 item.status === "parsing" ||
                                 item.status === "indexing" ||
@@ -1162,13 +1195,17 @@ export default function UploadPage() {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8 rounded-lg"
-                                        disabled
+                                        className="h-8 w-8 rounded-lg hover:bg-red-500/10 hover:text-red-400"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          cancelUpload.mutate(item.id);
+                                        }}
+                                        disabled={cancelUpload.isPending}
                                       >
-                                        <Square className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <Square className="h-3.5 w-3.5" />
                                       </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>暂不支持取消任务</TooltipContent>
+                                    <TooltipContent>取消任务</TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
                               )}

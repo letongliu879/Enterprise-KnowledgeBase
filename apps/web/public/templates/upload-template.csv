@@ -1,0 +1,5 @@
+filename,collection_id,mime_type,description
+example.pdf,col_my_docs,application/pdf,示例文档描述
+report.docx,col_my_docs,application/vnd.openxmlformats-officedocument.wordprocessingml.document,季度报告
+slides.pptx,col_my_docs,application/vnd.openxmlformats-officedocument.presentationml.presentation,演示文稿
+data.xlsx,col_my_docs,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,数据表格
