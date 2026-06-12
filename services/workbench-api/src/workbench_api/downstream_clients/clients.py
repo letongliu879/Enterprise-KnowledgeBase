@@ -80,7 +80,7 @@ class AdminClient(BaseHttpClient):
         )
 
     async def get_collection(self, collection_id: str, *, headers: dict | None = None) -> dict:
-        return await self._request("get", f"/admin/collections/{collection_id}", headers=headers)
+        return await self._request_document_op("get", f"/admin/collections/{collection_id}", headers=headers)
 
     async def list_collections(self, tenant_id: str | None = None, *, headers: dict | None = None) -> dict:
         params = {"tenant_id": tenant_id} if tenant_id else {}
@@ -89,6 +89,31 @@ class AdminClient(BaseHttpClient):
     async def create_collection(self, payload: dict, *, headers: dict | None = None) -> dict:
         return await self._request("post", "/admin/collections", json=payload, headers=headers)
 
+    async def patch_collection(self, collection_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request_document_op("patch", f"/admin/collections/{collection_id}", json=payload, headers=headers)
+
+    async def delete_collection(self, collection_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request_document_op("delete", f"/admin/collections/{collection_id}", headers=headers)
+
+    async def list_audit_logs(self, payload: dict | None = None, *, headers: dict | None = None) -> dict:
+        return await self._request("post", "/admin/ops/audit-log", json=payload or {}, headers=headers)
+
+    async def list_api_keys(self, tenant_id: str | None = None, *, headers: dict | None = None) -> dict:
+        params = {"tenant_id": tenant_id} if tenant_id else {}
+        return await self._request("get", "/admin/api-keys", params=params, headers=headers)
+
+    async def create_api_key(self, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("post", "/admin/api-keys", json=payload, headers=headers)
+
+    async def get_api_key(self, api_key_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("get", f"/admin/api-keys/{api_key_id}", headers=headers)
+
+    async def update_api_key(self, api_key_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("patch", f"/admin/api-keys/{api_key_id}", json=payload, headers=headers)
+
+    async def delete_api_key(self, api_key_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("delete", f"/admin/api-keys/{api_key_id}", headers=headers)
+
     async def list_parser_profiles(self, *, headers: dict | None = None) -> list[dict]:
         return await self._request("get", "/admin/parser-profiles", headers=headers)
 
@@ -96,11 +121,50 @@ class AdminClient(BaseHttpClient):
         params = {"state": state} if state else {}
         return await self._request("get", "/admin/retrieval-profiles", params=params, headers=headers)
 
+    async def create_retrieval_profile(self, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("post", "/admin/retrieval-profiles", json=payload, headers=headers)
+
+    async def get_retrieval_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("get", f"/admin/retrieval-profiles/{profile_id}", headers=headers)
+
+    async def update_retrieval_profile(self, profile_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("patch", f"/admin/retrieval-profiles/{profile_id}", json=payload, headers=headers)
+
+    async def delete_retrieval_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("delete", f"/admin/retrieval-profiles/{profile_id}", headers=headers)
+
+    async def publish_retrieval_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("post", f"/admin/retrieval-profiles/{profile_id}/publish", headers=headers)
+
+    async def clone_retrieval_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("post", f"/admin/retrieval-profiles/{profile_id}/transition", headers=headers)
+
+    async def create_parser_profile(self, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("post", "/admin/parser-profiles", json=payload, headers=headers)
+
+    async def get_parser_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("get", f"/admin/parser-profiles/{profile_id}", headers=headers)
+
+    async def update_parser_profile(self, profile_id: str, payload: dict, *, headers: dict | None = None) -> dict:
+        return await self._request("patch", f"/admin/parser-profiles/{profile_id}", json=payload, headers=headers)
+
+    async def delete_parser_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("delete", f"/admin/parser-profiles/{profile_id}", headers=headers)
+
+    async def publish_parser_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("post", f"/admin/parser-profiles/{profile_id}/publish", headers=headers)
+
+    async def clone_parser_profile(self, profile_id: str, *, headers: dict | None = None) -> dict:
+        return await self._request("post", f"/admin/parser-profiles/{profile_id}/transition", headers=headers)
+
     async def _request_document_op(self, method: str, path: str, *, headers: dict | None = None, json: dict | None = None) -> dict:
         url = f"{self._base_url}{path}"
         request_headers = headers or {}
         try:
-            response = await getattr(self._http_client, method)(url, headers=request_headers, json=json)
+            kwargs = {}
+            if json is not None:
+                kwargs["json"] = json
+            response = await getattr(self._http_client, method)(url, headers=request_headers, **kwargs)
         except httpx.ConnectError as e:
             raise DownstreamError.unavailable(f"{self._service_name} service unreachable: {e}")
         except httpx.TimeoutException as e:

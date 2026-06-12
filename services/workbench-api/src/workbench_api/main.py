@@ -11,6 +11,8 @@ from .parse_preview.routes import router as preview_router
 from .parse_snapshot.routes import router as snapshot_router
 from .chunks.routes import router as chunk_router
 from .tickets.routes import router as ticket_router
+from .tickets.comments_routes import router as ticket_comments_router
+from .tickets.transfer_routes import router as ticket_transfer_router
 from .chunk_edits.routes import router as chunk_edit_router
 from .task_projection.routes import router as task_router
 from .workspace.routes import (
@@ -24,7 +26,12 @@ from .events import router as event_router
 from .projections.routes import router as projection_router
 from .documents.routes import router as document_router
 from .collections.routes import router as collections_router
+from .dashboard.routes import router as dashboard_router
 from .retrieval_profiles.routes import router as retrieval_profiles_router
+from .notifications.routes import router as notifications_router
+from .audit.routes import router as audit_router
+from .api_keys.routes import router as api_keys_router
+from .trash.routes import router as trash_router
 from .health.routes import router as health_router
 
 
@@ -56,6 +63,8 @@ def create_app() -> FastAPI:
     application.include_router(snapshot_router)
     application.include_router(chunk_router)
     application.include_router(ticket_router)
+    application.include_router(ticket_comments_router)
+    application.include_router(ticket_transfer_router)
     application.include_router(chunk_edit_router)
     application.include_router(task_router)
     application.include_router(workspace_router)
@@ -65,7 +74,12 @@ def create_app() -> FastAPI:
     application.include_router(document_router)
     application.include_router(projection_router)
     application.include_router(collections_router)
+    application.include_router(dashboard_router)
     application.include_router(retrieval_profiles_router)
+    application.include_router(notifications_router)
+    application.include_router(audit_router)
+    application.include_router(api_keys_router)
+    application.include_router(trash_router)
     application.include_router(health_router)
 
     @application.get("/workbench/health")

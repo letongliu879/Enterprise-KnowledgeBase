@@ -1221,6 +1221,25 @@ class WorkbenchUserPreferenceModel(Base):
     )
 
 
+class TicketCommentModel(Base):
+    """Ticket comment for workbench. Owner: workbench-api."""
+
+    __tablename__ = "ticket_comments"
+
+    comment_id = Column(String(64), primary_key=True)
+    ticket_id = Column(String(64), nullable=False)
+    tenant_id = Column(String(64), nullable=False)
+    collection_id = Column(String(64), nullable=False)
+    user_id = Column(String(128), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_ticket_comments_ticket", "ticket_id", "created_at"),
+    )
+
+
 class WorkbenchChunkEditModel(Base):
     """Workbench chunk edit intent. Owner: workbench-api.
     Uses canonical wire fields: base_evidence_id, content.
