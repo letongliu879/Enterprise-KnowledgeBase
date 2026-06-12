@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/table";
 import { isApiError } from "@/lib/api/errors";
 import { staggerContainer, staggerItem, fadeInUp } from "@/lib/animations";
+import { CollectionPermissionsDialog } from "@/features/collections/collection-permissions-dialog";
 
 function formatRelativeTime(value?: string | null) {
   if (!value) return "-";
@@ -104,6 +105,7 @@ export default function CollectionDetailPage() {
   const params = useParams();
   const collectionId = params.collectionId as string;
   const [searchQuery, setSearchQuery] = useState("");
+  const [permOpen, setPermOpen] = useState(false);
 
   const { data: me } = useQuery({
     queryKey: ["workbench-me"],
@@ -313,7 +315,10 @@ export default function CollectionDetailPage() {
           <motion.div variants={staggerItem} className="flex flex-wrap items-center gap-2">
             <ActionButton icon={Edit} label="编辑集合" />
             <ActionButton icon={Trash2} label="删除集合" />
-            <ActionButton icon={Shield} label="权限" />
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setPermOpen(true)}>
+              <Shield className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">权限</span>
+            </Button>
             <ActionButton icon={LogIn} label="访问日志" />
             <ActionButton icon={Upload} label="导入" />
             <ActionButton icon={Download} label="导出" />
@@ -452,6 +457,13 @@ export default function CollectionDetailPage() {
           </motion.div>
         )}
       </motion.div>
+
+      <CollectionPermissionsDialog
+        open={permOpen}
+        onClose={() => setPermOpen(false)}
+        collectionId={collectionId}
+        tenantId={userTenantId}
+      />
     </TooltipProvider>
   );
 }

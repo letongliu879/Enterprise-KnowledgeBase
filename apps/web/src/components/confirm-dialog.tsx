@@ -1,5 +1,35 @@
 "use client";
 
+/**
+ * ConfirmDialog — standardised confirmation modal for destructive or
+ * high-impact operations.
+ *
+ * Usage guidelines:
+ *   - DESTRUCTIVE (delete, archive, revert): use variant="destructive"
+ *     to show a red confirm button and alert-triangle icon.
+ *   - DEFAULT (save, publish, confirm): use variant="default" (or omit)
+ *     for the primary-action glow button.
+ *   - Always pass `consequence` for destructive operations so users
+ *     understand what they're about to lose ("此操作不可撤销").
+ *   - Pass `isLoading` to show a loading state and prevent double-clicks.
+ *   - The dialog closes on Escape, overlay click, and the cancel button.
+ *
+ * @example
+ * ```tsx
+ * <ConfirmDialog
+ *   open={deleteDialogOpen}
+ *   onOpenChange={setDeleteDialogOpen}
+ *   title="确认删除"
+ *   description="将永久删除此文档，无法恢复。"
+ *   consequence="此操作不可撤销"
+ *   confirmLabel="确认删除"
+ *   variant="destructive"
+ *   isLoading={isDeleting}
+ *   onConfirm={handleDelete}
+ * />
+ * ```
+ */
+
 import {
   Dialog,
   DialogContent,

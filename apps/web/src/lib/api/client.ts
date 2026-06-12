@@ -136,6 +136,13 @@ async function request<T>(
   }
 
   if (!res.ok) {
+    // Dispatch custom event on 401 so AppShell can show auth-failed feedback
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("ekb:auth-failed", { detail: { status: 401 } })
+      );
+    }
+
     let body: {
       code?: string;
       message?: string;

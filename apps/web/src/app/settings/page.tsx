@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   KeyRound,
@@ -56,6 +56,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { workbenchApi } from "@/lib/api/client";
+import { useFormAutosave } from "@/hooks/use-form-autosave";
 
 type TabValue =
   | "auth"
@@ -180,6 +181,39 @@ export default function SettingsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // Autosave tracking
+  const [authSaved, setAuthSaved] = useState(false);
+  const [scopeSaved, setScopeSaved] = useState(false);
+
+  // Wire form autosave hooks for auth and scope forms
+  useFormAutosave({
+    key: "ekb-settings-auth-token",
+    value: authSaved ? tokenInput : null,
+    debounceMs: 2000,
+    onRestore: (saved) => {
+      if (saved) setTokenInput(saved);
+    },
+  });
+  useFormAutosave({
+    key: "ekb-settings-auth-api-key",
+    value: authSaved ? apiKeyInput : null,
+    debounceMs: 2000,
+    onRestore: (saved) => {
+      if (saved) setApiKeyInput(saved);
+    },
+  });
+  useFormAutosave({
+    key: "ekb-settings-scope-form",
+    value: scopeSaved ? scopeForm : null,
+    debounceMs: 2000,
+    onRestore: (saved) => {
+      if (saved) setScopeForm(saved as typeof scopeForm);
+    },
+  });
+
+  // Show a subtle success indicator for autosave
+  const [autoSaved, setAutoSaved] = useState<string | null>(null);
+
   useEffect(() => {
     workbenchApi
       .me()
@@ -195,6 +229,7 @@ export default function SettingsPage() {
   const saveAuth = () => {
     setDemoToken(tokenInput || null);
     setDemoApiKey(apiKeyInput || null);
+    setAuthSaved(true);
     toast.success("认证设置已保存");
   };
 
@@ -216,6 +251,7 @@ export default function SettingsPage() {
           }),
     };
     setAccessScope(scope);
+    setScopeSaved(true);
     toast.success("权限范围已保存");
   };
 
@@ -416,10 +452,18 @@ export default function SettingsPage() {
                     用于通过访问服务进行检索（X-API-Key 请求头）。
                   </p>
                 </div>
-                <Button onClick={saveAuth} className="shadow-glow">
-                  <Save className="h-4 w-4 mr-2" />
-                  保存认证设置
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button onClick={saveAuth} className="shadow-glow">
+                    <Save className="h-4 w-4 mr-2" />
+                    保存认证设置
+                  </Button>
+                  {authSaved && (
+                    <span className="flex items-center gap-1 text-[11px] text-emerald-500">
+                      <Check className="h-3 w-3" />
+                      已自动保存
+                    </span>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </motion.div>
@@ -595,10 +639,18 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <Button onClick={saveScope} className="shadow-glow">
-                  <Save className="h-4 w-4 mr-2" />
-                  保存权限范围
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button onClick={saveScope} className="shadow-glow">
+                    <Save className="h-4 w-4 mr-2" />
+                    保存权限范围
+                  </Button>
+                  {scopeSaved && (
+                    <span className="flex items-center gap-1 text-[11px] text-emerald-500">
+                      <Check className="h-3 w-3" />
+                      已自动保存
+                    </span>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </motion.div>

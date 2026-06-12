@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -18,6 +18,7 @@ import {
   Command,
   Trash2,
   HelpCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -30,10 +31,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import { useAppStore } from "@/lib/store";
 import { workbenchApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-media-query";
+import { useAuthGuard } from "@/hooks/use-auth-guard";
+import { useLoadingTimeout } from "@/hooks/use-loading-timeout";
+import { useBroadcastSync } from "@/hooks/use-broadcast-sync";
+import { toast } from "sonner";
 import { overlayFade, slideInFromLeft, staggerItem } from "@/lib/animations";
 import { NotificationCenter } from "@/features/notifications/notification-center";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -87,6 +96,18 @@ function BackendHealth() {
     refetchInterval: 30000,
   });
 
+  const { timedOut, reset } = useLoadingTimeout({
+    isLoading: healthAll.isLoading,
+    timeoutMs: 10000,
+  });
+
+  // Reset the timeout when data arrives or error occurs
+  useEffect(() => {
+    if (healthAll.data || healthAll.error) {
+      reset();
+    }
+  }, [healthAll.data, healthAll.error, reset]);
+
   const services = [
     { name: "Admin", status: healthAll.data?.services?.admin?.status },
     { name: "Workbench", status: healthAll.data?.workbench?.status },
@@ -106,25 +127,31 @@ function BackendHealth() {
         </span>
       </div>
       <div className="flex items-center gap-2">
-        {services.map((s) => (
-          <div
-            key={s.name}
-            className="flex items-center gap-1"
-            title={`${s.name}: ${s.status || "checking"}`}
-          >
-            {healthAll.isLoading ? (
-              <Skeleton className="h-2 w-2 rounded-full" />
-            ) : (
-              <HealthDot
-                status={s.status || (healthAll.error ? "down" : "ok")}
-                title={s.name}
-              />
-            )}
-            <span className="text-[10px] text-muted-foreground hidden lg:inline">
-              {s.name}
-            </span>
-          </div>
-        ))}
+        {timedOut ? (
+          <span className="text-[10px] text-muted-foreground/60">
+            Loading timeout
+          </span>
+        ) : (
+          services.map((s) => (
+            <div
+              key={s.name}
+              className="flex items-center gap-1"
+              title={`${s.name}: ${s.status || "checking"}`}
+            >
+              {healthAll.isLoading ? (
+                <Skeleton className="h-2 w-2 rounded-full" />
+              ) : (
+                <HealthDot
+                  status={s.status || (healthAll.error ? "down" : "ok")}
+                  title={s.name}
+                />
+              )}
+              <span className="text-[10px] text-muted-foreground hidden lg:inline">
+                {s.name}
+              </span>
+            </div>
+          ))
+        )}
       </div>
       {allHealthy && (
         <Badge
@@ -144,23 +171,25 @@ function BackendHealth() {
 
 function CollectionSelector() {
   const { currentCollectionId, setCurrentCollectionId } = useAppStore();
+  const { isAuthenticated, message } = useAuthGuard();
   const { data: me } = useQuery({
     queryKey: ["workbench-me"],
     queryFn: () => workbenchApi.me(),
+    enabled: isAuthenticated,
   });
   const userTenantId = me?.tenant_id ?? "";
   const { data: collectionResponse, isLoading } = useQuery({
     queryKey: ["workbench-collections", userTenantId],
     queryFn: () => workbenchApi.listCollections(userTenantId),
-    enabled: !!userTenantId,
+    enabled: !!userTenantId && isAuthenticated,
   });
   const collections = collectionResponse?.items ?? [];
 
-  return (
+  const trigger = (
     <Select
       value={currentCollectionId || ""}
       onValueChange={(value) => setCurrentCollectionId(value || null)}
-      disabled={isLoading || collections.length === 0}
+      disabled={!isAuthenticated || isLoading || collections.length === 0}
     >
       <SelectTrigger
         className={cn(
@@ -170,7 +199,13 @@ function CollectionSelector() {
       >
         <Database className="h-3.5 w-3.5 text-primary" />
         <SelectValue
-          placeholder={isLoading ? "Loading..." : "Select Collection"}
+          placeholder={
+            !isAuthenticated
+              ? "请先配置令牌"
+              : isLoading
+              ? "Loading..."
+              : "Select Collection"
+          }
           className="max-w-[140px] truncate"
         />
       </SelectTrigger>
@@ -208,6 +243,17 @@ function CollectionSelector() {
       </SelectContent>
     </Select>
   );
+
+  if (!isAuthenticated) {
+    return (
+      <Tooltip>
+        <div>{trigger}</div>
+        <TooltipContent>{message}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return trigger;
 }
 
 function SidebarContent({
@@ -231,7 +277,7 @@ function SidebarContent({
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="主导航">
         {navItems.map((item) => {
           const active = item.href === "/trash"
             ? pathname === "/trash"
@@ -245,6 +291,8 @@ function SidebarContent({
                     ? "bg-primary/10 text-primary font-medium border border-primary/10"
                     : "text-sidebar-foreground hover:bg-accent hover:text-foreground border border-transparent"
                 )}
+                role="navigation"
+                aria-current={active ? "page" : undefined}
               >
                 <item.icon
                   className={cn(
@@ -281,9 +329,16 @@ function SidebarContent({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
+  const router = useRouter();
+  const mainRef = useRef<HTMLElement>(null);
+  const skipLinkRef = useRef<HTMLAnchorElement>(null);
+
+  // Cross-tab state synchronisation
+  useBroadcastSync();
 
   const closeSidebar = () => {
     if (isMobile) {
@@ -300,8 +355,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setDesktopSidebarOpen((open) => !open);
   };
 
+  const triggerCommandPalette = useCallback(() => {
+    setCommandPaletteOpen(true);
+  }, []);
+
+  // Listen for 401 events from the API client and show auth feedback
+  useEffect(() => {
+    const handleAuthFailure = () => {
+      toast.error("认证令牌已过期或无效，请前往设置页面重新配置", {
+        action: {
+          label: "前往设置",
+          onClick: () => router.push("/settings"),
+        },
+        duration: 5000,
+      });
+    };
+
+    window.addEventListener("ekb:auth-failed", handleAuthFailure);
+    return () => window.removeEventListener("ekb:auth-failed", handleAuthFailure);
+  }, [router]);
+
+  // Show auth warning toaster on mount if no token configured
+  const { isAuthenticated } = useAuthGuard();
+  const [authWarned, setAuthWarned] = useState(false);
+  useEffect(() => {
+    if (!isAuthenticated && !authWarned) {
+      setAuthWarned(true);
+      toast("尚未配置认证令牌，部分功能将不可用", {
+        action: {
+          label: "去配置",
+          onClick: () => router.push("/settings"),
+        },
+        duration: 8000,
+      });
+    }
+  }, [isAuthenticated, authWarned, router]);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
+      {/* Skip-to-content link for keyboard/a11y users */}
+      <a
+        ref={skipLinkRef}
+        href="#main-content"
+        className="fixed left-2 top-2 z-[200] -translate-y-full focus:translate-y-0 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg transition-transform focus:outline-none focus-visible:outline-none"
+        onClick={(e) => {
+          e.preventDefault();
+          mainRef.current?.focus();
+        }}
+      >
+        跳转到内容
+      </a>
+
       {/* Desktop Sidebar */}
       {!isMobile && (
         <AnimatePresence initial={false}>
@@ -384,16 +488,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             <CollectionSelector />
+
+            {/* Token warning badge — subtle indicator when unauthenticated */}
+            {!isAuthenticated && (
+              <Link href="/settings">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-xl hover:bg-amber-500/10 hover:text-amber-400 transition-colors relative"
+                  aria-label="请配置认证令牌"
+                >
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                </Button>
+              </Link>
+            )}
+
             <NotificationCenter />
+
+            {/* Search trigger: desktop shows full button, mobile shows icon only */}
             <button
-              onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
-              className="hidden md:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all"
+              onClick={triggerCommandPalette}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all"
               title="Cmd+K 全局搜索"
             >
-              <Command className="h-3 w-3" />
-              <span>搜索</span>
-              <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 font-mono text-[10px]">⌘K</kbd>
+              <Search className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">搜索</span>
+              <kbd className="hidden md:inline-flex rounded border border-white/10 bg-white/[0.03] px-1 font-mono text-[10px]">⌘K</kbd>
             </button>
+
             <Link href="/help">
               <Button
                 variant="ghost"
@@ -418,7 +540,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-auto p-6">
+        <main
+          ref={mainRef}
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 overflow-auto p-6 focus:outline-none"
+        >
           <motion.div
             key={pathname}
             initial={{ opacity: 0, y: 8 }}
@@ -435,7 +562,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
 
         {/* Global Overlays */}
-        <CommandPalette />
+        <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
         <OnboardingTour />
         <OfflineToast />
       </div>

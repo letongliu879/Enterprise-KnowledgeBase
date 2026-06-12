@@ -57,6 +57,7 @@ import { workbenchApi } from "@/lib/api/client";
 import { isApiError, isBackendGap, getErrorMessage } from "@/lib/api/errors";
 import { BackendGap } from "@/components/backend-gap";
 import type { Finding } from "@/features/workbench/types/finding";
+import { DocumentAnnotations } from "@/features/documents/document-annotations";
 import {
   formatFailureStageLabel,
   formatNextActionLabel,
@@ -573,10 +574,8 @@ export default function DocumentDetailPage() {
             </TabsContent>
 
             <TabsContent value="annotations" className="space-y-4">
-              <EmptyState
-                icon={MessageSquare}
-                title="批注功能即将推出"
-                description="文档批注与协作评论功能正在开发中，敬请期待。"
+              <DocumentAnnotations
+                annotations={[]}
               />
             </TabsContent>
           </Tabs>

@@ -53,6 +53,8 @@ import {
 } from "@/components/ui/tooltip";
 import { BackendGap } from "@/components/backend-gap";
 import { EmptyState } from "@/components/empty-state";
+import { ApiSnippetDialog } from "@/features/retrieval/api-snippet-dialog";
+import { RetrievalPresetsDialog } from "@/features/retrieval/retrieval-presets-dialog";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
 import { toast } from "sonner";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -98,6 +100,18 @@ export default function RetrievalPage() {
   // H2: Comparison mode state
   const [compareMode, setCompareMode] = useState(false);
   const [compareProfileId, setCompareProfileId] = useState("");
+
+  // API snippet dialog
+  const [apiSnippetOpen, setApiSnippetOpen] = useState(false);
+  // Retrieval presets dialog
+  const [presetsOpen, setPresetsOpen] = useState(false);
+
+  const handleLoadPreset = useCallback((preset: { query: string; collectionId: string; retrievalProfileId: string; tokenBudget: number }) => {
+    setQuery(preset.query);
+    if (preset.collectionId) setCurrentCollectionId(preset.collectionId);
+    if (preset.retrievalProfileId) setRetrievalProfileId(preset.retrievalProfileId);
+    setTokenBudget(String(preset.tokenBudget));
+  }, [setCurrentCollectionId]);
 
   // Search timing: frontend-measured latency
   const [frontendLatency, setFrontendLatency] = useState<number | null>(null);
@@ -1278,36 +1292,24 @@ export default function RetrievalPage() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <span className="inline-flex w-full">
-                      <Button variant="outline" size="sm" className="h-9 text-xs w-full" disabled>
-                        <Code className="h-3.5 w-3.5 mr-1.5" />
-                        API 代码片段
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="glass-strong">
-                    <p className="text-xs">即将推出</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <span className="inline-flex w-full">
-                      <Button variant="outline" size="sm" className="h-9 text-xs w-full" disabled>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 text-xs w-full"
+                onClick={() => setApiSnippetOpen(true)}
+              >
+                <Code className="h-3.5 w-3.5 mr-1.5" />
+                API 代码片段
+              </Button>
+              <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 text-xs w-full"
+                        onClick={() => setPresetsOpen(true)}
+                      >
                         <Eye className="h-3.5 w-3.5 mr-1.5" />
                         检索预设
                       </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="glass-strong">
-                    <p className="text-xs">即将推出</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
@@ -1327,6 +1329,24 @@ export default function RetrievalPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      <RetrievalPresetsDialog
+        open={presetsOpen}
+        onClose={() => setPresetsOpen(false)}
+        onLoadPreset={handleLoadPreset}
+        currentQuery={query}
+        currentCollectionId={currentCollectionId || ""}
+        currentRetrievalProfileId={retrievalProfileId}
+        currentTokenBudget={parseInt(tokenBudget, 10) || 2000}
+      />
+      <ApiSnippetDialog
+        open={apiSnippetOpen}
+        onClose={() => setApiSnippetOpen(false)}
+        query={query}
+        collectionId={currentCollectionId || ""}
+        retrievalProfileId={retrievalProfileId}
+        tokenBudget={parseInt(tokenBudget, 10) || 2000}
+      />
     </motion.div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -40,15 +40,66 @@ const staticPages: SearchResult[] = [
   { id: "page-help", type: "page", title: "帮助中心", icon: HelpCircle, href: "/help" },
 ];
 
-export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+interface CommandPaletteProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPaletteProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  // Determine open state: controlled vs uncontrolled
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof value === "function" ? value(open) : value;
+      if (onOpenChange) {
+        onOpenChange(next);
+      } else {
+        setInternalOpen(next);
+      }
+    },
+    [open, onOpenChange]
+  );
+
+  // Save the trigger element when opening, restore focus when closing
+  useEffect(() => {
+    if (open) {
+      triggerRef.current = document.activeElement as HTMLElement;
+    } else if (triggerRef.current && controlledOpen !== undefined) {
+      // Only restore focus when controlled; for uncontrolled it's handled internally
+      triggerRef.current?.focus();
+      triggerRef.current = null;
+    }
+  }, [open, controlledOpen]);
+
+  // Focus input when the palette opens
+  useEffect(() => {
+    if (open) {
+      // Small delay to let the animation start
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   useHotkeys([
-    { key: "k", meta: true, handler: () => setOpen((v) => !v), preventDefault: true },
-    { key: "k", ctrl: true, handler: () => setOpen((v) => !v), preventDefault: true },
+    {
+      key: "k",
+      meta: true,
+      handler: () => setOpen((v) => !v),
+      preventDefault: true,
+    },
+    {
+      key: "k",
+      ctrl: true,
+      handler: () => setOpen((v) => !v),
+      preventDefault: true,
+    },
   ]);
   useEscapeKey(() => setOpen(false), open);
 
@@ -172,6 +223,9 @@ export function CommandPalette() {
             transition={{ duration: 0.15 }}
             className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm"
             onClick={() => setOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="全局搜索"
           >
             <motion.div
               initial={{ opacity: 0, y: -20, scale: 0.96 }}
@@ -181,28 +235,33 @@ export function CommandPalette() {
               className="mx-auto mt-[15vh] w-full max-w-xl px-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-card shadow-2xl"
+              <div
+                className="overflow-hidden rounded-2xl border border-white/[0.06] bg-card shadow-2xl"
+                role="listbox"
+                aria-label="搜索结果"
               >
                 {/* Search Input */}
-                <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3"
-                >
+                <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
                   <Search className="h-5 w-5 text-muted-foreground shrink-0" />
                   <Input
+                    ref={inputRef}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="搜索文档、工单、集合或页面..."
                     className="border-0 bg-transparent shadow-none focus-visible:ring-0 h-auto px-0 text-base"
                     autoFocus
+                    role="searchbox"
+                    aria-label="搜索关键词"
                   />
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0"
-                  >
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                     <kbd className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[10px]">
                       ESC
                     </kbd>
                     <button
                       onClick={() => setOpen(false)}
                       className="ml-1 rounded-md p-1 hover:bg-accent transition-colors"
+                      aria-label="关闭搜索"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -218,8 +277,7 @@ export function CommandPalette() {
                       ))}
                     </div>
                   ) : results.length === 0 ? (
-                    <div className="py-8 text-center text-sm text-muted-foreground"
-                    >
+                    <div className="py-8 text-center text-sm text-muted-foreground">
                       未找到结果
                     </div>
                   ) : (
@@ -235,6 +293,8 @@ export function CommandPalette() {
                               setOpen(false);
                             }}
                             onMouseEnter={() => setSelectedIndex(index)}
+                            role="option"
+                            aria-selected={isSelected}
                             className={cn(
                               "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
                               isSelected
@@ -243,18 +303,13 @@ export function CommandPalette() {
                             )}
                           >
                             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <div className="flex-1 min-w-0"
-                            >
-                              <p className="font-medium truncate"
-                              >{item.title}</p
-                              >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{item.title}</p>
                               {item.subtitle && (
-                                <p className="text-xs text-muted-foreground truncate"
-                                >{item.subtitle}</p>
+                                <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p>
                               )}
                             </div>
-                            <span className="text-[10px] text-muted-foreground/60 shrink-0 capitalize"
-                            >
+                            <span className="text-[10px] text-muted-foreground/60 shrink-0 capitalize">
                               {item.type === "page"
                                 ? "页面"
                                 : item.type === "document"
@@ -271,10 +326,8 @@ export function CommandPalette() {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center gap-4 border-t border-white/[0.06] px-4 py-2 text-[10px] text-muted-foreground/60"
-                >
-                  <div className="flex items-center gap-1"
-                  >
+                <div className="flex items-center gap-4 border-t border-white/[0.06] px-4 py-2 text-[10px] text-muted-foreground/60">
+                  <div className="flex items-center gap-1">
                     <Command className="h-3 w-3" />
                     <span>K 打开</span>
                   </div>

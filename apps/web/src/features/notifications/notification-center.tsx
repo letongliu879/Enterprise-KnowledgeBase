@@ -22,7 +22,7 @@ export function NotificationCenter() {
     queryFn: () => workbenchApi.getUnreadCount(),
   });
 
-  const { data: notificationsData, isLoading, error } = useQuery({
+  const { data: notificationsData, isLoading, error, refetch } = useQuery({
     queryKey: ["notifications", "list"],
     queryFn: () => workbenchApi.getNotifications(),
     enabled: open,
@@ -80,6 +80,8 @@ export function NotificationCenter() {
             exit={{ opacity: 0, y: -8, scale: 0.96 }}
             transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
             className="absolute right-0 mt-2 w-80 rounded-2xl border border-white/[0.06] glass backdrop-blur-sm shadow-lg z-50 overflow-hidden"
+            role="dialog"
+            aria-label="通知面板"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
               <span className="font-medium text-sm">Notifications</span>
@@ -108,6 +110,14 @@ export function NotificationCenter() {
                   <AlertTitle>加载失败</AlertTitle>
                   <AlertDescription>加载通知失败</AlertDescription>
                 </Alert>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 w-full"
+                  onClick={() => refetch()}
+                >
+                  重试
+                </Button>
               </div>
             )}
 
