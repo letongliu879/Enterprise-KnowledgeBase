@@ -20,6 +20,7 @@ vi.mock("@/lib/api/client", () => ({
     me: vi.fn(),
     listCollections: vi.fn(),
     createCollection: vi.fn(),
+    deleteCollection: vi.fn().mockResolvedValue({ status: "deleted" }),
   } as any,
 }));
 
@@ -416,6 +417,61 @@ describe("CollectionsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Network error/)).toBeInTheDocument();
+    });
+  });
+
+  // ── Sort Options ────────────────────────────────────────────────────────
+
+  describe("Sort Options", () => {
+    it("renders SortDropdown in the toolbar", async () => {
+      const Wrapper = createWrapper();
+      render(<CollectionsPage />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("Default Collection")).toBeInTheDocument();
+      });
+
+      // Default sort label "名称" is displayed
+      expect(screen.getByText("名称")).toBeInTheDocument();
+    });
+  });
+
+  // ── Delete Collection ──────────────────────────────────────────────────
+
+  it("opens confirm dialog when delete button is clicked and calls deleteCollection API", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.me).mockResolvedValue(mockMeResponse());
+    vi.mocked(api.listCollections).mockResolvedValue(mockCollectionsResponse());
+    vi.mocked(api.deleteCollection).mockClear();
+
+    const Wrapper = createWrapper();
+    render(<CollectionsPage />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("Default Collection")).toBeInTheDocument();
+    });
+
+    // Find and click the delete button for the first collection card
+    const cards = screen.getAllByText("Default Collection");
+    expect(cards.length).toBeGreaterThan(0);
+
+    // Find Trash2 buttons - they appear after Pencil edit buttons
+    const allButtons = screen.getAllByRole("button");
+    const deleteBtn = allButtons.find(b =>
+      b.querySelector('[class*="trash"]') ||
+      b.classList.toString().includes('red')
+    );
+    expect(deleteBtn).toBeTruthy();
+    await user.click(deleteBtn!);
+
+    await waitFor(() => {
+      expect(screen.getByText("确认删除")).toBeInTheDocument();
+    });
+
+    // Click confirm
+    await user.click(screen.getByText("确认删除"));
+    await waitFor(() => {
+      expect(api.deleteCollection).toHaveBeenCalled();
     });
   });
 });

@@ -13,6 +13,7 @@ import {
   Search,
   ArrowRight,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { workbenchApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/empty-state";
 import { BackendGap } from "@/components/backend-gap";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useAppStore } from "@/lib/store";
 import { isApiError, isBackendGap } from "@/lib/api/errors";
 import { toast } from "sonner";
@@ -46,6 +48,8 @@ import type { AdminCollection } from "@/lib/api/types";
 const SORT_OPTIONS = [
   { value: "name", label: "名称" },
   { value: "created_at", label: "创建时间" },
+  { value: "updated_at", label: "更新时间" },
+  { value: "lifecycle_state", label: "生命周期状态" },
 ];
 
 export default function CollectionsPage() {
@@ -55,6 +59,7 @@ export default function CollectionsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<AdminCollection | null>(null);
   const [editForm, setEditForm] = useState({ name: "", description: "" });
+  const [deleteTarget, setDeleteTarget] = useState<AdminCollection | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -99,6 +104,11 @@ export default function CollectionsPage() {
       } else if (sortBy === "created_at") {
         cmp =
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      } else if (sortBy === "updated_at") {
+        cmp =
+          new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+      } else if (sortBy === "lifecycle_state") {
+        cmp = a.lifecycle_state.localeCompare(b.lifecycle_state);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -149,6 +159,19 @@ export default function CollectionsPage() {
       } else {
         toast.error(isApiError(err) ? err.message : "更新集合失败");
       }
+    },
+  });
+
+  const deleteCollection = useMutation({
+    mutationFn: (collection: AdminCollection) =>
+      workbenchApi.deleteCollection(collection.collection_id),
+    onSuccess: () => {
+      toast.success("集合已删除");
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["workbench-collections"] });
+    },
+    onError: (err) => {
+      toast.error(isApiError(err) ? err.message : "删除集合失败");
     },
   });
 
@@ -316,6 +339,18 @@ export default function CollectionsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="h-8 w-8 p-0 hover:text-red-400"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeleteTarget(c);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-8 w-8 p-0"
                         onClick={(e) => {
                           e.preventDefault();
@@ -469,6 +504,20 @@ export default function CollectionsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="删除集合"
+        description={deleteTarget ? `确定删除集合 "${deleteTarget.name}"？集合内的文档将一并删除。此操作不可恢复。` : ""}
+        variant="destructive"
+        confirmLabel="确认删除"
+        isLoading={deleteCollection.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteCollection.mutate(deleteTarget);
+        }}
+      />
     </motion.div>
   );
 }
