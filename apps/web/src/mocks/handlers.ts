@@ -6,6 +6,7 @@ import type {
   TicketItem,
   TicketDetail,
   TicketDecisionResult,
+  TicketComment,
   AgentReviewView,
   ChunkView,
   ParseSnapshotView,
@@ -15,6 +16,7 @@ import type {
   DocumentLifecycleActionResult,
   BatchDocumentActionResult,
   CollectionListResponse,
+  TrashItem,
 } from "../lib/api/types";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -599,6 +601,127 @@ export function buildDecideTicketBoundaryResponse(): TicketDecisionResult {
     ticket_id: LOREM_600.slice(0, 520),
     status: UNICODE_STR,
     decision: UNICODE_STR,
+  };
+}
+
+// ── Ticket Comments ────────────────────────────────────────────────────
+
+function buildTicketComment(overrides?: Partial<TicketComment>): TicketComment {
+  return {
+    comment_id: "comment-001",
+    ticket_id: "ticket-001",
+    author_id: "user-001",
+    author_name: "Administrator",
+    author_email: "admin@example.com",
+    content: "这条工单需要重点关注 PII 信息。",
+    mentions: null,
+    created_at: "2024-06-10T12:00:00Z",
+    updated_at: "2024-06-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildTicketCommentsResponse(
+  overrides?: Partial<{ items: TicketComment[]; total: number }>
+) {
+  return {
+    items: [
+      buildTicketComment(),
+      buildTicketComment({
+        comment_id: "comment-002",
+        author_id: "user-002",
+        author_name: "Reviewer",
+        author_email: "reviewer@example.com",
+        content: "@user-001 已确认，建议在第 3 页补充说明。",
+        mentions: ["user-001"],
+        created_at: "2024-06-10T13:00:00Z",
+      }),
+    ],
+    total: 2,
+    ...overrides,
+  };
+}
+
+export function buildTicketCommentsEmptyResponse() {
+  return { items: [], total: 0 };
+}
+
+export function buildTicketCommentsBoundaryResponse() {
+  return {
+    items: [
+      buildTicketComment({
+        comment_id: LOREM_600.slice(0, 520),
+        author_name: LOREM_600.slice(0, 520),
+        content: UNICODE_STR,
+      }),
+    ],
+    total: 1,
+  };
+}
+
+export function buildCreateTicketCommentResponse(overrides?: Partial<TicketComment>): TicketComment {
+  return {
+    comment_id: "comment-new",
+    ticket_id: "ticket-001",
+    author_id: "user-001",
+    author_name: "Administrator",
+    author_email: "admin@example.com",
+    content: "New comment",
+    mentions: null,
+    created_at: "2024-06-10T14:00:00Z",
+    updated_at: "2024-06-10T14:00:00Z",
+    ...overrides,
+  };
+}
+
+// ── Trash ──────────────────────────────────────────────────────────────
+
+export function buildTrashItem(overrides?: Partial<TrashItem>): TrashItem {
+  return {
+    doc_id: "doc-002",
+    tenant_id: "tenant-001",
+    collection_id: "coll-001",
+    filename: "trashed-report.docx",
+    source_file_id: "sf-002",
+    deleted_by: "user-001",
+    deleted_at: "2024-06-09T12:00:00Z",
+    auto_purge_at: "2024-07-09T12:00:00Z",
+    ...overrides,
+  };
+}
+
+export function buildTrashListResponse(
+  overrides?: Partial<{ items: TrashItem[]; total: number }>
+) {
+  return {
+    items: [
+      buildTrashItem(),
+      buildTrashItem({
+        doc_id: "doc-003",
+        filename: "old-presentation.pptx",
+        source_file_id: "sf-003",
+        deleted_at: "2024-06-08T12:00:00Z",
+      }),
+    ],
+    total: 2,
+    ...overrides,
+  };
+}
+
+export function buildTrashListEmptyResponse() {
+  return { items: [], total: 0 };
+}
+
+export function buildTrashListBoundaryResponse() {
+  return {
+    items: [
+      buildTrashItem({
+        doc_id: LOREM_600.slice(0, 520),
+        filename: UNICODE_STR,
+        collection_id: LOREM_600.slice(0, 300),
+      }),
+    ],
+    total: 1,
   };
 }
 
@@ -2637,6 +2760,43 @@ export const handlers = [
   http.post("*/api/workbench/tickets/:ticket_id/decide", () =>
     HttpResponse.json(buildDecideTicketResponse())
   ),
+
+  // listTicketComments
+  http.get("*/api/workbench/tickets/:ticket_id/comments", () =>
+    HttpResponse.json(buildTicketCommentsResponse())
+  ),
+
+  // createTicketComment
+  http.post("*/api/workbench/tickets/:ticket_id/comments", async ({ request }) => {
+    const body = (await request.json()) as { content?: string };
+    return HttpResponse.json(
+      buildCreateTicketCommentResponse({ content: body?.content || "New comment" })
+    );
+  }),
+
+  // updateTicketComment
+  http.patch("*/api/workbench/comments/:comment_id", async ({ request }) => {
+    const body = (await request.json()) as { content?: string };
+    return HttpResponse.json(
+      buildCreateTicketCommentResponse({
+        comment_id: "comment-updated",
+        content: body?.content || "Updated comment",
+        updated_at: "2024-06-10T15:00:00Z",
+      })
+    );
+  }),
+
+  // deleteTicketComment
+  http.delete("*/api/workbench/comments/:comment_id", () => new HttpResponse(null, { status: 204 })),
+
+  // listTrashItems
+  http.get("*/api/workbench/trash", () => HttpResponse.json(buildTrashListResponse())),
+
+  // restoreDocument
+  http.post("*/api/workbench/trash/:doc_id/restore", () => HttpResponse.json({ doc_id: "doc-002", restored: true })),
+
+  // permanentlyDeleteDocument
+  http.delete("*/api/workbench/trash/:doc_id", () => new HttpResponse(null, { status: 204 })),
 
   // getChunk
   http.get("*/api/workbench/chunks/:evidence_id", () => HttpResponse.json(buildChunkResponse())),

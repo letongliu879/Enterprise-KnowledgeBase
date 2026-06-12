@@ -97,6 +97,22 @@ export interface ApiKeyUsage {
   }>;
 }
 
+export interface TrashItem {
+  doc_id: string;
+  tenant_id: string;
+  collection_id: string;
+  filename: string | null;
+  source_file_id: string | null;
+  deleted_by: string;
+  deleted_at: string;
+  auto_purge_at: string;
+}
+
+export interface TrashListResponse {
+  items: TrashItem[];
+  total: number;
+}
+
 export interface RetrievalProfileDetail {
   retrieval_profile_id: string;
   name: string;
@@ -235,6 +251,23 @@ export interface TicketDecisionResult {
   ticket_id: string;
   status: string;
   decision: string;
+}
+
+export interface TicketComment {
+  comment_id: string;
+  ticket_id: string;
+  author_id: string;
+  author_name?: string | null;
+  author_email?: string | null;
+  content: string;
+  mentions?: string[] | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface TicketCommentListResponse {
+  items: TicketComment[];
+  total: number;
 }
 
 export interface AgentReviewView {

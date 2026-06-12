@@ -23,6 +23,10 @@ import type {
   AuditLogListResponse,
   ApiKeyItem,
   ApiKeyDetail,
+  TicketComment,
+  TicketCommentListResponse,
+  TrashItem,
+  TrashListResponse,
   ApiKeyUsage,
 } from "./types";
 import { ApiClientError, BackendGapError } from "./errors";
@@ -437,6 +441,55 @@ export const workbenchApi = {
       WORKBENCH_BASE,
       `/workbench/tickets/${ticket_id}/decide`,
       { method: "POST", body: JSON.stringify(payload) }
+    ),
+  listTicketComments: (ticket_id: string) =>
+    request<TicketCommentListResponse>(
+      WORKBENCH_BASE,
+      `/workbench/tickets/${ticket_id}/comments`
+    ),
+  createTicketComment: (ticket_id: string, payload: { content: string }) =>
+    request<TicketComment>(
+      WORKBENCH_BASE,
+      `/workbench/tickets/${ticket_id}/comments`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  updateTicketComment: (comment_id: string, payload: { content: string }) =>
+    request<TicketComment>(
+      WORKBENCH_BASE,
+      `/workbench/comments/${comment_id}`,
+      { method: "PATCH", body: JSON.stringify(payload) }
+    ),
+  deleteTicketComment: (comment_id: string) =>
+    request<void>(
+      WORKBENCH_BASE,
+      `/workbench/comments/${comment_id}`,
+      { method: "DELETE" }
+    ),
+  transferTicket: (ticket_id: string, payload: { assignee_user_id: string; reason?: string }) =>
+    request<TicketDetail>(
+      WORKBENCH_BASE,
+      `/workbench/tickets/${ticket_id}/transfer`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  shareDocument: (doc_id: string, payload: { expires_in_hours?: number; password?: string }) =>
+    request<{ share_url: string; expires_at: string }>(
+      WORKBENCH_BASE,
+      `/workbench/documents/${doc_id}/share`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  listTrashItems: () =>
+    request<TrashListResponse>(WORKBENCH_BASE, "/workbench/trash"),
+  restoreDocument: (doc_id: string) =>
+    request<{ doc_id: string; restored: boolean }>(
+      WORKBENCH_BASE,
+      `/workbench/trash/${doc_id}/restore`,
+      { method: "POST" }
+    ),
+  permanentlyDeleteDocument: (doc_id: string) =>
+    request<void>(
+      WORKBENCH_BASE,
+      `/workbench/trash/${doc_id}`,
+      { method: "DELETE" }
     ),
   getChunk: (evidence_id: string) =>
     request<Record<string, unknown>>(
