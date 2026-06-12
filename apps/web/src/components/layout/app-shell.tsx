@@ -16,6 +16,8 @@ import {
   Shield,
   Library,
   Command,
+  Trash2,
+  HelpCircle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -37,14 +39,21 @@ import { NotificationCenter } from "@/features/notifications/notification-center
 import { Breadcrumb } from "@/components/breadcrumb";
 import { OfflineToast } from "@/components/offline-toast";
 import { CommandPalette } from "@/components/command-palette";
+import { OnboardingTour } from "@/components/onboarding-tour";
 
 const navItems = [
   { href: "/upload", label: "批量入库", icon: Upload },
   { href: "/review", label: "人工复核", icon: Inbox },
   { href: "/documents", label: "文档库", icon: Library },
+  { href: "/trash", label: "回收站", icon: Trash2 },
   { href: "/retrieval", label: "检索验证", icon: Search },
   { href: "/collections", label: "知识库集合", icon: Database },
 ];
+
+function isTrashRoute(pathname: string): boolean {
+  return pathname === "/trash";
+}
+
 
 function HealthDot({ status, title }: { status?: string; title?: string }) {
   const isHealthy =
@@ -224,7 +233,9 @@ function SidebarContent({
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {navItems.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active = item.href === "/trash"
+            ? pathname === "/trash"
+            : pathname.startsWith(item.href);
           return (
             <Link key={item.href} href={item.href} onClick={onNavigate}>
               <div
@@ -383,6 +394,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span>搜索</span>
               <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 font-mono text-[10px]">⌘K</kbd>
             </button>
+            <Link href="/help">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-xl hover:bg-accent transition-colors"
+                aria-label="Open help center"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            </Link>
             <Link href="/settings">
               <Button
                 variant="ghost"
@@ -415,6 +436,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Global Overlays */}
         <CommandPalette />
+        <OnboardingTour />
         <OfflineToast />
       </div>
     </div>
