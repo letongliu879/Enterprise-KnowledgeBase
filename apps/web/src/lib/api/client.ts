@@ -231,6 +231,10 @@ export const workbenchApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  deleteCollection: (collection_id: string) =>
+    request<{ status: string }>(WORKBENCH_BASE, `/workbench/collections/${collection_id}`, {
+      method: "DELETE",
+    }),
   listRetrievalProfiles: (state?: string) =>
     request<{ items: RetrievalProfileDetail[]; total: number }>(
       WORKBENCH_BASE,
@@ -376,6 +380,12 @@ export const workbenchApi = {
     request<WorkbenchUploadSession>(
       WORKBENCH_BASE,
       `/workbench/uploads/${upload_id}`
+    ),
+  cancelTask: (taskId: string) =>
+    request<{ status: string; task_id: string }>(
+      WORKBENCH_BASE,
+      `/workbench/tasks/${taskId}/cancel`,
+      { method: "POST" }
     ),
   listTasks: (opts?: {
     collection_id?: string; status?: string;

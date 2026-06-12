@@ -2722,6 +2722,11 @@ export const handlers = [
   // createCollection
   http.post("*/api/workbench/collections", () => HttpResponse.json(buildCreateCollectionResponse())),
 
+  // deleteCollection
+  http.delete("*/api/workbench/collections/:collection_id", () =>
+    HttpResponse.json({ status: "deleted" })
+  ),
+
   // listRetrievalProfiles
   http.get("*/api/workbench/retrieval-profiles", () => HttpResponse.json(buildRetrievalProfilesResponse())),
 
@@ -2745,6 +2750,11 @@ export const handlers = [
   // getTask
   http.get("*/api/workbench/tasks/:upload_id", () => HttpResponse.json(buildGetTaskResponse())),
 
+  // cancelTask
+  http.post("*/api/workbench/tasks/:upload_id/cancel", () =>
+    HttpResponse.json({ status: "cancelled", task_id: "task-cancelled" })
+  ),
+
   // listTickets
   http.get("*/api/workbench/tickets", () => HttpResponse.json(buildListTicketsResponse())),
 
@@ -2764,6 +2774,11 @@ export const handlers = [
   // listTicketComments
   http.get("*/api/workbench/tickets/:ticket_id/comments", () =>
     HttpResponse.json(buildTicketCommentsResponse())
+  ),
+
+  // transferTicket
+  http.post("*/api/workbench/tickets/:ticket_id/transfer", () =>
+    HttpResponse.json({ status: "updated", assignee_user_id: "user-transferred" })
   ),
 
   // createTicketComment

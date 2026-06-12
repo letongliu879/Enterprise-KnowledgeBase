@@ -144,6 +144,7 @@ export type UploadStatus =
   | "indexing"
   | "archived"
   | "retracted"
+  | "cancelled"
   | "failed";
 
 export interface WorkbenchUploadSession {
