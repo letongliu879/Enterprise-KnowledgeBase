@@ -52,6 +52,7 @@ import {
 import { workbenchApi } from "@/lib/api/client";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
 import type { Finding } from "@/features/workbench/types/finding";
+import { TicketComments } from "@/features/workbench/components/ticket-comments";
 import {
   formatFailureStageLabel,
   formatNextActionLabel,
@@ -904,30 +905,8 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
               </CardContent>
             </Card>
 
-            {/* E1: Ticket comments/discussion placeholder */}
-            <Card className="rounded-[24px]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Comments
-                </CardTitle>
-                <CardDescription>Discussion and notes for this ticket</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="rounded-2xl border bg-muted/10 p-4 text-sm text-muted-foreground">
-                  评论功能即将推出
-                </div>
-                <Textarea
-                  placeholder="Write a comment..."
-                  disabled
-                  className="min-h-[80px] bg-muted/20"
-                />
-                <Button disabled className="w-full">
-                  <Send className="mr-2 h-4 w-4" />
-                  Post comment
-                </Button>
-              </CardContent>
-            </Card>
+            {/* E1: Ticket comments/discussion */}
+            <TicketComments ticketId={ticketId} currentUserId={ticket?.tenant_id} />
 
             {/* E5: Audit report export + templates + similar tickets */}
             <Card className="rounded-[24px]">
