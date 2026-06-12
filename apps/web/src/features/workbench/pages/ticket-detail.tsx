@@ -53,6 +53,9 @@ import { workbenchApi } from "@/lib/api/client";
 import { isBackendGap, isApiError } from "@/lib/api/errors";
 import type { Finding } from "@/features/workbench/types/finding";
 import { TicketComments } from "@/features/workbench/components/ticket-comments";
+import { TicketTransferDialog } from "@/features/workbench/components/ticket-transfer";
+import { ReviewTimer } from "@/components/review-timer";
+import { handleExportReport } from "@/features/workbench/utils/export-report";
 import {
   formatFailureStageLabel,
   formatNextActionLabel,
@@ -345,6 +348,7 @@ function TicketTimeline({
 export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId: string; backHref?: string }) {
   const queryClient = useQueryClient();
   const [decisionReason, setDecisionReason] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("source");
   const [searchText, setSearchText] = useState("");
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
@@ -861,9 +865,14 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                         Return for revision
                       </Button>
                       {/* E2: Ticket transfer button */}
-                      <ComingSoonButton icon={ArrowRightLeft} variant="outline">
+                      <Button
+                        variant="outline"
+                        onClick={() => setTransferOpen(true)}
+                        className="w-full"
+                      >
+                        <ArrowRightLeft className="mr-2 h-4 w-4" />
                         Transfer ticket
-                      </ComingSoonButton>
+                      </Button>
                     </div>
                   </>
                 ) : (
@@ -873,6 +882,11 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                 )}
               </CardContent>
             </Card>
+
+            {/* E4: Review timer */}
+            {ticket?.created_at && (
+              <ReviewTimer createdAt={ticket.created_at} />
+            )}
 
             <Card className="rounded-[24px]">
               <CardHeader className="pb-2">
@@ -914,9 +928,21 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                 <CardTitle className="text-base">Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <ComingSoonButton icon={Download} variant="outline" className="w-full">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    handleExportReport({
+                      ticket,
+                      findings: agentReview?.findings,
+                      document: { filename: ticket?.filename, doc_id: ticket?.doc_id },
+                      decisionLabel: formatReviewDecisionLabel(ticket?.decision),
+                    })
+                  }
+                >
+                  <Download className="mr-2 h-4 w-4" />
                   Export audit report
-                </ComingSoonButton>
+                </Button>
                 <ComingSoonButton icon={Wand2} variant="outline" className="w-full">
                   Apply template
                 </ComingSoonButton>
@@ -977,6 +1003,16 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
           </aside>
         </div>
       </div>
+
+      <TicketTransferDialog
+        ticketId={ticketId}
+        currentAssigneeId={ticket?.assignee_user_id}
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        onTransferred={() => {
+          queryClient.invalidateQueries({ queryKey: ["workspace", ticketId] });
+        }}
+      />
     </TooltipProvider>
   );
 }
