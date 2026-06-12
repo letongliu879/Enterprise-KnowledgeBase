@@ -11,6 +11,8 @@ import {
   LayoutDashboard,
   X,
   Command,
+  HelpCircle,
+  Trash2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { workbenchApi } from "@/lib/api/client";
@@ -32,8 +34,10 @@ const staticPages: SearchResult[] = [
   { id: "page-upload", type: "page", title: "批量入库", icon: LayoutDashboard, href: "/upload" },
   { id: "page-review", type: "page", title: "人工复核", icon: Inbox, href: "/review" },
   { id: "page-documents", type: "page", title: "文档库", icon: FileText, href: "/documents" },
+  { id: "page-trash", type: "page", title: "回收站", icon: Trash2, href: "/trash" },
   { id: "page-retrieval", type: "page", title: "检索验证", icon: Search, href: "/retrieval" },
   { id: "page-collections", type: "page", title: "知识库集合", icon: Database, href: "/collections" },
+  { id: "page-help", type: "page", title: "帮助中心", icon: HelpCircle, href: "/help" },
 ];
 
 export function CommandPalette() {
