@@ -14,13 +14,14 @@ security = HTTPBearer(auto_error=False)
 
 
 class CurrentUser:
-    def __init__(self, user_id: str, email: str, roles: list[str], tenant_id: str = "", allowed_collections: list[str] | None = None, token: str = ""):
+    def __init__(self, user_id: str, email: str, roles: list[str], tenant_id: str = "", allowed_collections: list[str] | None = None, token: str = "", display_name: str | None = None):
         self.user_id = user_id
         self.email = email
         self.roles = roles
         self.tenant_id = tenant_id
         self.allowed_collections = allowed_collections or []
         self.token = token
+        self.display_name = display_name
 
     def has_role(self, role: str) -> bool:
         return role in self.roles
@@ -61,9 +62,10 @@ def require_auth(credentials: HTTPAuthorizationCredentials | None = Depends(secu
         roles: list[str] = payload.get("roles", [])
         tenant_id: str = payload.get("tenant_id", "")
         allowed_collections: list[str] = payload.get("allowed_collections", [])
+        display_name: str | None = payload.get("display_name") or payload.get("name")
         if not user_id:
             raise unauthorized("Invalid token: missing subject")
-        return CurrentUser(user_id=user_id, email=email, roles=roles, tenant_id=tenant_id, allowed_collections=allowed_collections, token=credentials.credentials)
+        return CurrentUser(user_id=user_id, email=email, roles=roles, tenant_id=tenant_id, allowed_collections=allowed_collections, token=credentials.credentials, display_name=display_name)
     except JWTError:
         raise unauthorized("Invalid token")
 

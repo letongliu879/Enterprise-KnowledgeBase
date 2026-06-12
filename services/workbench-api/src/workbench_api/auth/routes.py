@@ -15,4 +15,5 @@ def get_me(user: CurrentUser = Depends(require_auth)) -> dict:
         "roles": user.roles,
         "tenant_id": user.tenant_id,
         "allowed_collections": user.allowed_collections,
+        "display_name": user.display_name,
     }

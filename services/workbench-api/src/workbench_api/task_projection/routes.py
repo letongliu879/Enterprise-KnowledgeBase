@@ -14,7 +14,7 @@ from reality_rag_persistence.database import get_session
 from ..deps import get_db, require_auth, CurrentUser
 from ..downstream_clients import IntakeClient
 from ..downstream_clients.errors import DownstreamError
-from ..errors import not_found
+from ..errors import not_found, conflict
 from ..projections.projector import ProjectionProjector
 from ..projections.repository import TaskProjectionRepository
 
@@ -334,3 +334,51 @@ async def recover_task(
         "previous_status": previous_status,
         "current_status": updated.overall_status if updated else previous_status,
     }
+
+
+@router.post("/{upload_id}/cancel")
+async def cancel_task(
+    upload_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_auth),
+):
+    """Cancel a task that is not in a terminal state.
+
+    Validates the task exists, belongs to the current user,
+    and is still eligible for cancellation.
+    """
+    repo = TaskProjectionRepository(db)
+    proj = repo.get_by_upload_id(upload_id)
+    if proj is None:
+        raise not_found("Task not found")
+    if proj.tenant_id != user.tenant_id or proj.user_id != user.user_id:
+        raise not_found("Task not found")
+
+    terminal_statuses = frozenset({"completed", "cancelled", "failed", "archived", "retracted"})
+    if proj.overall_status in terminal_statuses:
+        raise conflict(f"Task is already in terminal state '{proj.overall_status}'")
+
+    projector = ProjectionProjector(db)
+    event = {
+        "event_id": f"cancel_{upload_id}_{uuid.uuid4().hex[:8]}",
+        "event_type": "TASK_CANCELLED",
+        "tenant_id": proj.tenant_id,
+        "collection_id": proj.collection_id,
+        "aggregate_type": "task",
+        "aggregate_id": upload_id,
+        "aggregate_version": proj.version + 1,
+        "occurred_at": datetime.now(timezone.utc),
+        "payload": {
+            "projection_id": upload_id,
+            "upload_id": upload_id,
+            "user_id": proj.user_id,
+            "tenant_id": proj.tenant_id,
+            "collection_id": proj.collection_id,
+            "overall_status": "cancelled",
+        },
+        "trace_id": upload_id,
+    }
+    projector.record_and_apply(event)
+    db.commit()
+
+    return {"status": "cancelled", "task_id": upload_id}

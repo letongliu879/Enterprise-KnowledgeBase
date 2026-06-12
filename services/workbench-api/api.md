@@ -66,6 +66,15 @@
 | GET | `/workbench/tickets/{ticket_id}/agent-review` | AgentReview 结果 |
 | POST | `/workbench/tickets/{ticket_id}/decide` | Approve / Reject / Return |
 | GET | `/workbench/tickets/{ticket_id}/workspace` | ticket 视角工作台 |
+| POST | `/workbench/tickets/{ticket_id}/transfer` | Transfer ticket to another user |
+| GET | `/workbench/tickets/{ticket_id}/comments` | List ticket comments |
+| POST | `/workbench/tickets/{ticket_id}/comments` | Create comment |
+
+### Comments
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| PATCH | `/workbench/comments/{comment_id}` | Edit own comment |
+| DELETE | `/workbench/comments/{comment_id}` | Delete own comment |
 
 ### Task Projection
 | 方法 | 路径 | 说明 |
@@ -73,6 +82,15 @@
 | GET | `/workbench/tasks` | 上传链路聚合任务列表 |
 | GET | `/workbench/tasks/{upload_id}` | 单任务详情 |
 | POST | `/workbench/tasks/{upload_id}/recover` | 手动恢复 stuck task |
+| POST | `/workbench/tasks/{upload_id}/cancel` | Cancel in-progress upload |
+
+### Notifications
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/workbench/notifications` | List notifications |
+| PATCH | `/workbench/notifications/{id}/read` | Mark one read |
+| POST | `/workbench/notifications/read-all` | Mark all read |
+| GET | `/workbench/notifications/unread-count` | Unread count |
 
 ### Documents
 | 方法 | 路径 | 说明 |
@@ -83,6 +101,7 @@
 | POST | `/workbench/documents/{doc_id}/archive` | 单文档归档 |
 | POST | `/workbench/documents/{doc_id}/retract` | 单文档撤回 |
 | POST | `/workbench/documents/{doc_id}/reindex` | 单文档重建索引 |
+| POST | `/workbench/documents/{doc_id}/share` | Generate share link |
 | POST | `/workbench/documents/batch/archive` | 批量归档 |
 | POST | `/workbench/documents/batch/retract` | 批量撤回 |
 | POST | `/workbench/documents/batch/reindex` | 批量重建索引 |
@@ -153,12 +172,52 @@ order_dir?
 | GET | `/workbench/query-runs` | 检索历史 |
 | GET | `/workbench/query-runs/{query_run_id}` | 单次检索详情 |
 
+### Dashboard
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/workbench/dashboard` | Aggregated dashboard stats |
+
+### Trash
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/workbench/trash` | List trashed documents |
+| POST | `/workbench/trash/{doc_id}/restore` | Restore from trash |
+| DELETE | `/workbench/trash/{doc_id}` | Permanently delete |
+
 ### Collections / Profiles Proxy
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/workbench/collections` | admin collection 列表代理 |
 | POST | `/workbench/collections` | 创建 collection |
-| GET | `/workbench/retrieval-profiles` | retrieval profile 列表代理 |
+| GET | `/workbench/collections/{id}` | collection 详情 |
+| PATCH | `/workbench/collections/{id}` | 更新 collection |
+| DELETE | `/workbench/collections/{id}` | 删除 collection |
+| GET | `/workbench/retrieval-profiles` | retrieval profile 列表 |
+| POST | `/workbench/retrieval-profiles` | 创建 profile |
+| GET | `/workbench/retrieval-profiles/{id}` | profile 详情 |
+| PATCH | `/workbench/retrieval-profiles/{id}` | 更新 profile |
+| DELETE | `/workbench/retrieval-profiles/{id}` | 删除 profile |
+| POST | `/workbench/retrieval-profiles/{id}/publish` | 发布 profile |
+| POST | `/workbench/retrieval-profiles/{id}/clone` | 克隆 profile |
+| GET | `/workbench/parser-profiles` | parser profile 列表 |
+| POST | `/workbench/parser-profiles` | 创建 profile |
+| GET | `/workbench/parser-profiles/{id}` | profile 详情 |
+| PATCH | `/workbench/parser-profiles/{id}` | 更新 profile |
+| DELETE | `/workbench/parser-profiles/{id}` | 删除 profile |
+| POST | `/workbench/parser-profiles/{id}/publish` | 发布 profile |
+| POST | `/workbench/parser-profiles/{id}/clone` | 克隆 profile |
+| GET | `/workbench/api-keys` | API key 列表 |
+| POST | `/workbench/api-keys` | 创建 API key |
+| GET | `/workbench/api-keys/{id}` | API key 详情 |
+| PATCH | `/workbench/api-keys/{id}` | 更新 API key |
+| DELETE | `/workbench/api-keys/{id}` | 删除 API key |
+| GET | `/workbench/api-keys/{id}/usage` | API key 用量 |
+| GET | `/workbench/audit-logs` | 审计日志列表 |
+| POST | `/workbench/audit-logs/export` | 审计日志导出 |
+| GET | `/workbench/dashboard` | 仪表盘 |
+| GET | `/workbench/trash` | 回收站列表 |
+| POST | `/workbench/trash/{id}/restore` | 恢复文档 |
+| DELETE | `/workbench/trash/{id}` | 永久删除 |
 
 ### Events
 | 方法 | 路径 | 说明 |

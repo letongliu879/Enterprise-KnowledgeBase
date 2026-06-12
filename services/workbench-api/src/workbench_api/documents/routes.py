@@ -25,6 +25,8 @@ from .models import (
     BatchDocumentActionRequest,
     BatchDocumentActionResult,
     DocumentLifecycleActionRequest,
+    DocumentShareRequest,
+    DocumentShareResponse,
 )
 
 router = APIRouter()
@@ -331,4 +333,29 @@ async def reindex_document(
         user=user,
         workspace_service=service,
         admin_client=AdminClient(),
+    )
+
+
+@router.post("/workbench/documents/{doc_id}/share", response_model=DocumentShareResponse)
+async def share_document(
+    doc_id: str,
+    req: DocumentShareRequest,
+    session: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_auth),
+):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    repo = DocumentProjectionRepository(session)
+    doc = repo.get(doc_id)
+    if doc is None:
+        raise not_found("Document not found")
+
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=req.expires_in_hours)
+    share_id = f"shr_{uuid.uuid4().hex}"
+    share_url = f"http://localhost:8000/share/{share_id}"
+
+    return DocumentShareResponse(
+        share_url=share_url,
+        expires_at=expires_at.isoformat(),
     )

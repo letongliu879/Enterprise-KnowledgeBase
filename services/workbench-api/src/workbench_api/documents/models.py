@@ -26,6 +26,16 @@ class BatchDocumentActionItemResult(BaseModel):
     error_message: str | None = None
 
 
+class DocumentShareRequest(BaseModel):
+    expires_in_hours: int = 168
+    password: str | None = None
+
+
+class DocumentShareResponse(BaseModel):
+    share_url: str
+    expires_at: str
+
+
 class BatchDocumentActionResult(BaseModel):
     total: int
     succeeded: int

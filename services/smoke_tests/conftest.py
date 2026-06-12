@@ -432,6 +432,16 @@ def uploader_headers(uploader_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {uploader_token}"}
 
 
+@pytest.fixture(scope="module")
+def reviewer_token() -> str:
+    return _make_token("reviewer_01", roles=["reviewer"], allowed_collections=["col_smoke"])
+
+
+@pytest.fixture(scope="module")
+def reviewer_headers(reviewer_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {reviewer_token}"}
+
+
 class _FakeSmokeReviewerConfig:
     model = "smoke-reviewer"
     prompt_version = "smoke"
