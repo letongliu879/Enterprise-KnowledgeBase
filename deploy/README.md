@@ -1,82 +1,93 @@
 # Enterprise KnowledgeBase — Deployment Guide
 
-**Status**: Deployment templates ready. Application container images **NOT YET BUILT**.
-Services are currently verified via `scripts/run_real_runtime_smoke.py`.
+**Status**: Docker Compose is the recommended way to run the full EKB stack (infrastructure + application services).
 
-## Quick Start (Dev / Smoke Test)
-
-The verified path for running all services locally:
+## Quick Start (Compose)
 
 ```bash
-# Prerequisites: PostgreSQL, OpenSearch, Qdrant, Redis already running
-# (e.g., via upstream RAGFlow docker-compose)
-
-# Copy env template and fill in secrets
+# 1. Prepare environment
 cp deploy/.env.example deploy/.env
-# Edit deploy/.env — set Redis password, SiliconFlow API key, DB password
+# Edit deploy/.env — set DATABASE_PASSWORD, REDIS_PASSWORD, SiliconFlow API keys, JWT secrets
 
-# Run normal smoke
-uv run python scripts/run_real_runtime_smoke.py
+# 2. Start infrastructure + application services
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 
-# Run strict live dependency proof
-uv run python scripts/run_real_runtime_smoke.py --require-live-backends
+# 3. Wait for all services to be healthy, then run smoke test
+uv run python scripts/run_real_runtime_smoke.py --use-existing-services
+```
 
-# Run strict Redis cache proof
-REDIS_PASSWORD=<password> \
-  uv run python scripts/run_real_runtime_smoke.py \
-  --require-live-backends \
-  --require-redis-cache
+## Fallback: Local Host Process Mode
+
+For fast local iteration without building images:
+
+```bash
+# Start only infrastructure
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
+
+# Start application services directly on the host
+uv run python scripts/ekb-svc.py start
 ```
 
 ## Infrastructure Ownership
 
-**Status: VERIFIED — project deploy is primary infra owner (2026-05-28).**
-
-Strict smoke 32/32 PASS against project deploy containers. RAGFlow runtime resources are now packaged in `packages/ragflow_runtime/resources/`; original upstream source is kept in `源码/` for reference only.
+**Status: VERIFIED — project deploy is primary infra owner.**
 
 | Infra | Container | Image | Port | Verification |
-|---|---|---|---|
-| PostgreSQL | `deploy-postgres-1` | postgres:16 | :5432 | VERIFIED — smoke 32/32 |
-| OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :19201→9201 | VERIFIED — `_search` hits=1 |
-| Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED — `scroll` points=1 |
-| Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED — purge deleted=3 |
-| MinIO / S3 | `minio/minio:latest` (commented out) | :9000-9001 | **TEMPLATE** — not in MVP path; uncomment when document binary storage is enabled |
+|---|---|---|---|---|
+| PostgreSQL | `deploy-postgres-1` | postgres:16 | :5432 | VERIFIED |
+| OpenSearch | `deploy-opensearch-1` | opensearchproject/opensearch:2.19.1 | :19201→9201 | VERIFIED |
+| Qdrant | `deploy-qdrant-1` | qdrant/qdrant:latest | :6333-6334 | VERIFIED |
+| Redis | `deploy-redis-1` | valkey/valkey:8 | :6379 | VERIFIED |
+| MinIO / S3 | `minio/minio:latest` | :9000-9001 | TEMPLATE — not in MVP path |
 
-To start infrastructure:
+To start infrastructure only:
 
 ```bash
-cp deploy/.env.example deploy/.env   # fill in real secrets
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis
 ```
 
-## Application Services (TEMPLATE — Not Yet Built)
+## Application Services
 
-| Service | Language | Port | Health | Dockerfile |
-|---|---|---|---|---|
-| admin | Python | 18084 | `GET /health` | `Dockerfile.python` |
-| workbench-api | Python | 18083 | `GET /workbench/health` | `Dockerfile.python` |
-| indexing | Python | 18080 | `GET /health` | `Dockerfile.python` |
-| intake-pipeline | Python | 18085 | `GET /health` | `Dockerfile.python` |
-| publishing-worker | Python | 18086 | `GET /health` | `Dockerfile.python` |
-| retrieval | Java | 18082 | `GET /health` | `Dockerfile.java` |
-| access | Java | 18081 | `GET /health` | `Dockerfile.java` |
+| Service | Language | Port | Compose Service | Health | Status |
+|---|---|---|---|---|---|
+| admin | Python | 18084 | `admin` | `GET /health` | ENABLED |
+| workbench-api | Python | 18083 | `workbench` | `GET /workbench/health` | ENABLED |
+| indexing | Python | 18080 | `indexing` | `GET /health` | ENABLED |
+| document-service | Python | 8006 | `document-service` | `GET /health` | ENABLED |
+| publishing-worker | Python | 18086 | `publishing-worker` | `GET /health` | ENABLED |
+| approval-service | Python | 18087 | `approval-service` | `GET /health` | ENABLED |
+| agent-review-worker | Python | 18090 | `agent-review-worker` | `GET /health` | ENABLED |
+| conversion-worker | Python | 18089 | `conversion-worker` | `GET /health` | ENABLED |
+| ingestion-worker | Python | 18088 | `ingestion-worker` | `GET /health` | ENABLED |
+| retrieval | Java | 18082 | `retrieval` | `GET /health` | ENABLED |
+| access | Java | 18081 | `access` | `GET /health` | ENABLED |
+| web (frontend) | Next.js | 3000 | `web` | `GET /` | TEMPLATE — build blocked by pre-existing TS error |
 
-Service blocks in `docker-compose.yml` are commented out. To build and deploy:
+To build and start all services:
 
 ```bash
-# Build Python service image (example: admin)
-docker build -t ekb-admin -f deploy/Dockerfile.python \
-  --build-arg SERVICE_DIR=services/admin .
-
-# Build Java service image (example: retrieval)
-docker build -t ekb-retrieval -f deploy/Dockerfile.java \
-  --build-arg SERVICE_DIR=services/retrieval .
-
-# Uncomment service blocks in docker-compose.yml, then:
-docker compose -f deploy/docker-compose.yml up -d
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 ```
 
-**Note**: Python Dockerfile uses `uv sync` to install workspace members and third-party dependencies. All services are installed into the same image because workspace members cross-import each other. This is the intended uv workspace behavior.
+To start without the frontend (backend only):
+
+```bash
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgres opensearch qdrant redis admin workbench indexing document-service publishing-worker approval-service agent-review-worker conversion-worker ingestion-worker retrieval access
+```
+
+## Building Individual Images
+
+```bash
+# Shared Python image (used by all Python services)
+docker build -t ekb-python:latest -f deploy/Dockerfile.python .
+
+# Java services
+docker build -t ekb-retrieval:latest -f deploy/Dockerfile.java --build-arg SERVICE_DIR=services/retrieval .
+docker build -t ekb-access:latest -f deploy/Dockerfile.java --build-arg SERVICE_DIR=services/access .
+
+# Frontend (requires fixing pre-existing TypeScript error first)
+docker build -t ekb-web:latest --build-arg NEXT_PUBLIC_ADMIN_API_URL=http://localhost:18084 --build-arg NEXT_PUBLIC_WORKBENCH_API_URL=http://localhost:18083 -f apps/web/Dockerfile apps/web
+```
 
 ## Environment Configuration
 
@@ -86,10 +97,11 @@ All configuration is via environment variables. Template: `deploy/.env.example`.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL connection string (SQLAlchemy format) |
+| `DATABASE_JDBC_URL` | PostgreSQL connection string (JDBC format for Java services) |
 | `ADMIN_JWT_SECRET` / `JWT_SECRET` | JWT signing key (smoke mode: `smoke-test-secret`) |
 | `INDEXING_EMBEDDING_API_KEY` | SiliconFlow API key |
-| `REDIS_PASSWORD` | Redis auth password (for strict Redis smoke) |
+| `REDIS_PASSWORD` | Redis auth password |
 
 ### Production JWT (when `AUTH_MODE=production`)
 
@@ -109,8 +121,8 @@ Additionally required:
 
 ## What's Not Done
 
-- Application container images not built/tested
+- Kubernetes / Helm charts not implemented
 - OAuth/IdP SSO not implemented
 - Service-to-service auth (mTLS/SPIFFE) not implemented
 - Load/concurrency testing not done
-- UI/workbench frontend not built
+- Frontend production build currently fails due to a pre-existing TypeScript error in `apps/web/src/app/trash/page.tsx`
