@@ -497,6 +497,25 @@ services:
       retrieval:
         condition: service_healthy
 
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ADMIN_API_URL: ${NEXT_PUBLIC_ADMIN_API_URL}
+        NEXT_PUBLIC_WORKBENCH_API_URL: ${NEXT_PUBLIC_WORKBENCH_API_URL}
+    image: ekb-web:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_ADMIN_API_URL=${NEXT_PUBLIC_ADMIN_API_URL}
+      - NEXT_PUBLIC_WORKBENCH_API_URL=${NEXT_PUBLIC_WORKBENCH_API_URL}
+    depends_on:
+      admin:
+        condition: service_healthy
+      workbench:
+        condition: service_healthy
+
 volumes:
   pg_data:
   os_data:
