@@ -15,7 +15,10 @@ interface HotkeyConfig {
 
 export function useHotkeys(configs: HotkeyConfig[], deps: React.DependencyList = []) {
   const configsRef = useRef(configs);
-  configsRef.current = configs;
+
+  useEffect(() => {
+    configsRef.current = configs;
+  }, [configs]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     for (const config of configsRef.current) {

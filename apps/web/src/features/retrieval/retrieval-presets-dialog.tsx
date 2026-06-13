@@ -1,14 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2, Save, Upload, Plus } from "lucide-react";
+import { Trash2, Save } from "lucide-react";
 import { toast } from "sonner";
 
 const PRESETS_KEY = "ekb-retrieval-presets";
+
+function getStoredPresets(): RetrievalPreset[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(PRESETS_KEY);
+    return raw ? (JSON.parse(raw) as RetrievalPreset[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 interface RetrievalPreset {
   name: string;
@@ -33,16 +43,8 @@ export function RetrievalPresetsDialog({
   open, onClose, onLoadPreset,
   currentQuery, currentCollectionId, currentRetrievalProfileId, currentTokenBudget,
 }: RetrievalPresetsDialogProps) {
-  const [presets, setPresets] = useState<RetrievalPreset[]>([]);
+  const [presets, setPresets] = useState<RetrievalPreset[]>(() => getStoredPresets());
   const [presetName, setPresetName] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    try {
-      const raw = localStorage.getItem(PRESETS_KEY);
-      setPresets(raw ? JSON.parse(raw) : []);
-    } catch { setPresets([]); }
-  }, [open]);
 
   const savePresets = (updated: RetrievalPreset[]) => {
     localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));

@@ -47,17 +47,17 @@ export function useLoadingTimeout({
   }, [clearTimer]);
 
   useEffect(() => {
-    if (isLoading) {
-      // Start the timeout if not already running
-      if (timerRef.current === null) {
-        timerRef.current = setTimeout(() => {
-          setTimedOut(true);
-        }, timeoutMs);
-      }
-    } else {
+    if (!isLoading) {
       // Not loading — clear timeout and reset state
       clearTimer();
-      setTimedOut(false);
+      return;
+    }
+
+    // Start the timeout if not already running
+    if (timerRef.current === null) {
+      timerRef.current = setTimeout(() => {
+        setTimedOut(true);
+      }, timeoutMs);
     }
 
     return clearTimer;
