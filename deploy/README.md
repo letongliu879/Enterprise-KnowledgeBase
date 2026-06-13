@@ -61,7 +61,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgre
 | ingestion-worker | Python | 18088 | `ingestion-worker` | `GET /health` | ENABLED |
 | retrieval | Java | 18082 | `retrieval` | `GET /health` | ENABLED |
 | access | Java | 18081 | `access` | `GET /health` | ENABLED |
-| web (frontend) | Next.js | 3000 | `web` | `GET /` | TEMPLATE — build blocked by pre-existing TS error |
+| web (frontend) | Next.js | 3000 (host `${WEB_PORT:-3000}`) | `web` | `GET /` | ENABLED |
 
 To build and start all services:
 
@@ -85,7 +85,7 @@ docker build -t ekb-python:latest -f deploy/Dockerfile.python .
 docker build -t ekb-retrieval:latest -f deploy/Dockerfile.java --build-arg SERVICE_DIR=services/retrieval .
 docker build -t ekb-access:latest -f deploy/Dockerfile.java --build-arg SERVICE_DIR=services/access .
 
-# Frontend (requires fixing pre-existing TypeScript error first)
+# Frontend
 docker build -t ekb-web:latest --build-arg NEXT_PUBLIC_ADMIN_API_URL=http://localhost:18084 --build-arg NEXT_PUBLIC_WORKBENCH_API_URL=http://localhost:18083 -f apps/web/Dockerfile apps/web
 ```
 
@@ -125,4 +125,3 @@ Additionally required:
 - OAuth/IdP SSO not implemented
 - Service-to-service auth (mTLS/SPIFFE) not implemented
 - Load/concurrency testing not done
-- Frontend production build currently fails due to a pre-existing TypeScript error in `apps/web/src/app/trash/page.tsx`

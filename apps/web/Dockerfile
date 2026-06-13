@@ -28,7 +28,10 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN groupadd -r ekb && useradd -r -m -g ekb ekb
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r ekb && useradd -r -m -g ekb ekb
 
 COPY --from=builder --chown=ekb:ekb /app/.next/standalone ./
 COPY --from=builder --chown=ekb:ekb /app/.next/static ./.next/static

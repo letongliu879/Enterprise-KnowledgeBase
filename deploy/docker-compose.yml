@@ -556,10 +556,15 @@ services:
         NEXT_PUBLIC_WORKBENCH_API_URL: ${NEXT_PUBLIC_WORKBENCH_API_URL}
     image: ekb-web:latest
     ports:
-      - "3001:3000"
+      - "${WEB_PORT:-3000}:3000"
     environment:
       - NEXT_PUBLIC_ADMIN_API_URL=${NEXT_PUBLIC_ADMIN_API_URL}
       - NEXT_PUBLIC_WORKBENCH_API_URL=${NEXT_PUBLIC_WORKBENCH_API_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     depends_on:
       admin:
         condition: service_healthy
