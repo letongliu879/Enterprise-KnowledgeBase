@@ -1,9 +1,10 @@
 "use client";
 
 import type { Finding } from "@/features/workbench/types/finding";
+import type { WorkspaceTicketView } from "@/lib/api/types";
 
 interface ExportData {
-  ticket?: Record<string, unknown> | null;
+  ticket?: WorkspaceTicketView | Record<string, unknown> | null;
   findings?: Finding[];
   document?: {
     filename?: string | null;

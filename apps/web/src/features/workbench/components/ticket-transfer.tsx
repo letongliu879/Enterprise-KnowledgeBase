@@ -86,7 +86,7 @@ export function TicketTransferDialog({
         <div className="space-y-4 py-2">
           <div className="space-y-2">
             <Label>选择审核员</Label>
-            <Select value={assigneeId} onValueChange={setAssigneeId}>
+            <Select value={assigneeId} onValueChange={(value) => value && setAssigneeId(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="请选择审核员" />
               </SelectTrigger>

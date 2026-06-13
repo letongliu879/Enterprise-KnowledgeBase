@@ -934,7 +934,7 @@ export function TicketDetailPage({ ticketId, backHref = "/review" }: { ticketId:
                   onClick={() =>
                     handleExportReport({
                       ticket,
-                      findings: agentReview?.findings,
+                      findings: reviewFindings,
                       document: { filename: ticket?.filename, doc_id: ticket?.doc_id },
                       decisionLabel: formatReviewDecisionLabel(ticket?.decision),
                     })
