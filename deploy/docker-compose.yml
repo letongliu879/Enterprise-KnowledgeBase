@@ -223,6 +223,9 @@ services:
       - INDEXING_CHAT_MODEL=${INDEXING_CHAT_MODEL}
       - INDEXING_REQUIRE_LIVE_BACKENDS=${INDEXING_REQUIRE_LIVE_BACKENDS}
       - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -256,6 +259,9 @@ services:
       - "8006:8006"
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -286,8 +292,11 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REALITY_RAG_SIDECAR_DIR=/data/intake
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
       - ADMIN_BASE_URL=${ADMIN_BASE_URL}
       - INDEXING_BASE_URL=${INDEXING_BASE_URL}
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -323,6 +332,9 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - DOCUMENT_SERVICE_URL=${DOCUMENT_SERVICE_BASE_URL}
       - INDEXING_SERVICE_URL=${INDEXING_BASE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -357,9 +369,12 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REALITY_RAG_SIDECAR_DIR=/data/intake
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL}
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -394,6 +409,9 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - INDEXING_SERVICE_URL=${INDEXING_BASE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -430,6 +448,9 @@ services:
       - PUBLISHING_WORKER_URL=${PUBLISHING_WORKER_BASE_URL}
       - INDEXING_SERVICE_URL=${INDEXING_BASE_URL}
       - REALITY_RAG_INTAKE_RUNTIME_DIR=${REALITY_RAG_INTAKE_RUNTIME_DIR}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
     command:
       - uv
       - run
@@ -552,3 +573,4 @@ volumes:
   qdrant_data:
   redis_data:
   minio_data:
+  intake_staging:
