@@ -150,23 +150,23 @@ SERVICE_CONFIG: dict[str, dict[str, Any]] = {
         "shell": False,
     },
     "access": {
-        "port": 18181,
+        "port": 18081,
         "health_path": "/health",
         "cwd": ROOT / "services" / "access",
         "cmd": [
             "mvn", "spring-boot:run",
-            "-Dspring-boot.run.arguments=--server.port=18181 --spring.profiles.active=smoke --access.retrieval.base-url=http://127.0.0.1:18182",
+            "-Dspring-boot.run.arguments=--server.port=18081 --spring.profiles.active=smoke --access.retrieval.base-url=http://127.0.0.1:18082",
         ],
         "env": {},
         "shell": IS_WINDOWS,
     },
     "retrieval": {
-        "port": 18182,
+        "port": 18082,
         "health_path": "/health",
         "cwd": ROOT / "services" / "retrieval",
         "cmd": [
             "mvn", "spring-boot:run",
-            "-Dspring-boot.run.arguments=--server.port=18182 --spring.profiles.active=smoke",
+            "-Dspring-boot.run.arguments=--server.port=18082 --spring.profiles.active=smoke",
         ],
         "env": {},
         "shell": IS_WINDOWS,
@@ -526,9 +526,9 @@ class SmokeRunner:
             "ADMIN_BASE_URL": "http://127.0.0.1:18084",
             "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
             "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
-            "RETRIEVAL_BASE_URL": "http://127.0.0.1:18182",
-            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18182",
-            "ACCESS_BASE_URL": "http://127.0.0.1:18181",
+            "RETRIEVAL_BASE_URL": "http://127.0.0.1:18082",
+            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18082",
+            "ACCESS_BASE_URL": "http://127.0.0.1:18081",
             "PUBLISHING_WORKER_URL": "http://127.0.0.1:18086",
             "PUBLISHING_WORKER_BASE_URL": "http://127.0.0.1:18086",
             "REALITY_RAG_INDEXING_BASE_URL": "http://127.0.0.1:18080",
@@ -725,7 +725,7 @@ class SmokeRunner:
 
         # Sync retrieval profile to retrieval runtime projection
         if self.retrieval_profile_id and "retrieval" in self.procs:
-            ret_base = "http://127.0.0.1:18182"
+            ret_base = "http://127.0.0.1:18082"
             status, body = _http_post(f"{ret_base}/internal/retrieval-profile-projections/sync", {
                 "command_id": f"sync_ret_{self.retrieval_profile_id}",
                 "trace_id": f"trc_sync_ret_{self.retrieval_profile_id}",
@@ -775,7 +775,7 @@ class SmokeRunner:
 
         # Sync API key to access projection
         if self.api_key_id and "access" in self.procs:
-            access_base = "http://127.0.0.1:18181"
+            access_base = "http://127.0.0.1:18081"
             # Access service looks up projection by the X-API-Key header value,
             # so we must use the plaintext key as the lookup key in the projection table.
             projection_key = self.api_key_plaintext or self.api_key_id
@@ -1000,7 +1000,7 @@ class SmokeRunner:
 
         # Retrieval direct query
         if "retrieval" in self.procs:
-            ret_base = "http://127.0.0.1:18182"
+            ret_base = "http://127.0.0.1:18082"
             status, body = _http_post(f"{ret_base}/internal/retrieve", {
                 "query_id": "qry_smoke_01",
                 "trace_id": "trc_smoke_01",
@@ -1029,7 +1029,7 @@ class SmokeRunner:
 
         # Diagnostic: direct retrieval with access-style principal
         if "retrieval" in self.procs:
-            ret_base = "http://127.0.0.1:18182"
+            ret_base = "http://127.0.0.1:18082"
             status, body = _http_post(f"{ret_base}/internal/retrieve", {
                 "query_id": "qry_access_diag",
                 "trace_id": "trc_access_diag",
@@ -1056,7 +1056,7 @@ class SmokeRunner:
 
         # Access query via API key
         if "access" in self.procs and self.api_key_plaintext:
-            access_base = "http://127.0.0.1:18181"
+            access_base = "http://127.0.0.1:18081"
             status, body = _http_post(f"{access_base}/v1/retrieve", {
                 "query": "smoke test content",
                 "collection_scope": [self.collection_id] if self.collection_id else ["col_smoke"],
@@ -1088,7 +1088,7 @@ class SmokeRunner:
 
     def _redis_cache_proof(self) -> None:
         _log("PHASE", "Redis cache proof")
-        ret_base = "http://127.0.0.1:18182"
+        ret_base = "http://127.0.0.1:18082"
 
         query_payload = {
             "query_id": "qry_cache_proof",
@@ -1203,7 +1203,7 @@ class SmokeRunner:
                         stats[fmt]["indexed"] += 1
 
                     # Retrieve
-                    ret_base = "http://127.0.0.1:18182"
+                    ret_base = "http://127.0.0.1:18082"
                     status3, body3 = _http_post(f"{ret_base}/internal/retrieve", {
                         "query_id": f"qry_ingest_{fmt}_{file_path.stem[:8]}",
                         "trace_id": f"trc_ingest_{fmt}_{file_path.stem[:8]}",
