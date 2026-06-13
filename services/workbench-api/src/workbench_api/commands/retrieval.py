@@ -50,12 +50,8 @@ async def retrieve(
 
     access_payload: dict = {
         "query": req.query,
-        "tenant_id": user.tenant_id,
-        "application_profile_id": req.application_profile_id,
-        "user_id": user.user_id,
-        "max_results": req.max_results,
+        "collection_scope": [req.collection_id],
         "token_budget": req.token_budget,
-        "budget_policy": req.budget_policy,
     }
     if req.retrieval_profile_id:
         access_payload["retrieval_profile_id"] = req.retrieval_profile_id
@@ -72,7 +68,6 @@ async def retrieve(
         "token_budget": req.token_budget,
         "request_json": access_payload,
         "status": "pending",
-        "trace_id": trace_id,
     })
     session.commit()
 
@@ -82,7 +77,7 @@ async def retrieve(
         result = await access_client.retrieve(access_payload)
         latency_ms = int((time.monotonic() - started_at) * 1000)
 
-        knowledge_context = result.get("knowledge_context", {})
+        knowledge_context = result.get("knowledge_context") or result
         repo.update(query_run_id, {
             "access_response_json": result,
             "knowledge_context_json": knowledge_context,
