@@ -1,42 +1,60 @@
 # =============================================================================
-# Enterprise KnowledgeBase — Python Service Dockerfile (TEMPLATE)
+# Enterprise KnowledgeBase — Python Service Dockerfile
 # =============================================================================
-# Usage:
-#   docker build -t ekb-<service> -f deploy/Dockerfile.python \
-#     --build-arg SERVICE_DIR=services/<name> .
+# Build once, run any Python service by overriding CMD in compose.
 #
-# Verified: NOT YET — template only. Services currently run via smoke script.
+# Usage:
+#   docker build -t ekb-python:latest -f deploy/Dockerfile.python .
 # =============================================================================
 
 FROM python:3.12-slim
 
 ARG SERVICE_DIR
 ENV SERVICE_DIR=${SERVICE_DIR}
+ENV PYTHONUNBUFFERED=1
+ENV UV_LINK_MODE=copy
+
+# Install system dependencies that some wheels require.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       libpq-dev \
+       curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install uv
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
-# Copy workspace definition and lock file
+# Copy workspace definition and lock file first for layer caching.
 COPY pyproject.toml uv.lock ./
 
-# Copy packages (shared Python libs)
+# Copy all workspace packages (shared libraries).
 COPY packages/contracts/ ./packages/contracts/
 COPY packages/persistence/ ./packages/persistence/
 COPY packages/documents/ ./packages/documents/
+COPY packages/intake_runtime/ ./packages/intake_runtime/
 COPY packages/ragflow_runtime/ ./packages/ragflow_runtime/
 
-# Copy all Python service source dirs (workspace members)
+# Copy all Python service source dirs (workspace members).
 COPY services/admin/ ./services/admin/
 COPY services/workbench-api/ ./services/workbench-api/
 COPY services/indexing/ ./services/indexing/
 COPY services/intake-pipeline/ ./services/intake-pipeline/
+COPY services/smoke_tests/ ./services/smoke_tests/
 
-# Sync dependencies via uv (installs workspace members + third-party deps)
+# Sync dependencies (workspace members + third-party deps).
 RUN uv sync --no-dev
 
-EXPOSE 18080 18083 18084 18085 18086
+# Create non-root runtime user with a home directory for uv cache.
+RUN groupadd -r ekb && useradd -r -m -g ekb ekb \
+    && chown -R ekb:ekb /app
+USER ekb
+ENV UV_CACHE_DIR=/home/ekb/.cache/uv
 
-# Entry point: derived from SERVICE_DIR arg (caller must provide full command)
-# Example: CMD ["uv", "run", "uvicorn", "admin_service.main:app", "--host", "0.0.0.0", "--port", "18084"]
+# Expose every Python service port used by the workspace.
+EXPOSE 8006 18080 18083 18084 18085 18086 18087 18088 18089 18090
+
+# Default: do nothing. Compose supplies the service-specific CMD.
+CMD ["echo", "Override CMD with the service uvicorn command."]
