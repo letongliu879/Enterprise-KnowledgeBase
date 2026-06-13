@@ -16,9 +16,9 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 uv run python scripts/run_real_runtime_smoke.py --use-existing-services
 ```
 
-## Fallback: Local Host Process Mode
+## Local Dev Helper: Host Process Mode
 
-For fast local iteration without building images:
+For fast local iteration without building images (not the primary deployment path):
 
 ```bash
 # Start only infrastructure
