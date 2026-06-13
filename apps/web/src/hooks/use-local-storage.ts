@@ -1,12 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+
+function getLocalStorage(): Storage | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const storage = window.localStorage;
+    const testKey = "__ekb_ls_test__";
+    storage.setItem(testKey, "1");
+    storage.removeItem(testKey);
+    return storage;
+  } catch {
+    return undefined;
+  }
+}
 
 export function useLocalStorage<T>(key: string, initialValue: T) {
   const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
+    const storage = getLocalStorage();
+    if (!storage) return initialValue;
     try {
-      const item = window.localStorage.getItem(key);
+      const item = storage.getItem(key);
       return item ? (JSON.parse(item) as T) : initialValue;
     } catch {
       return initialValue;
@@ -15,24 +29,28 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
 
   const setValue = useCallback(
     (value: T | ((val: T) => T)) => {
+      const storage = getLocalStorage();
       try {
-        const valueToStore = value instanceof Function ? value(storedValue) : value;
-        setStoredValue(valueToStore);
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(key, JSON.stringify(valueToStore));
-        }
+        setStoredValue((prev) => {
+          const valueToStore = value instanceof Function ? value(prev) : value;
+          if (storage) {
+            storage.setItem(key, JSON.stringify(valueToStore));
+          }
+          return valueToStore;
+        });
       } catch {
         // ignore
       }
     },
-    [key, storedValue]
+    [key]
   );
 
   const removeValue = useCallback(() => {
+    const storage = getLocalStorage();
     try {
       setStoredValue(initialValue);
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(key);
+      if (storage) {
+        storage.removeItem(key);
       }
     } catch {
       // ignore

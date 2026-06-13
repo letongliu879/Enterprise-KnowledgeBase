@@ -1189,25 +1189,19 @@ export default function UploadPage() {
                                 item.status === "indexing" ||
                                 item.status === "queued" ||
                                 item.status === "ready") && (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 rounded-lg hover:bg-red-500/10 hover:text-red-400"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          cancelUpload.mutate(item.id);
-                                        }}
-                                        disabled={cancelUpload.isPending}
-                                      >
-                                        <Square className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>取消任务</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-lg hover:bg-red-500/10 hover:text-red-400"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cancelUpload.mutate(item.id);
+                                  }}
+                                  disabled={cancelUpload.isPending}
+                                  title="取消任务"
+                                >
+                                  <Square className="h-3.5 w-3.5" />
+                                </Button>
                               )}
                               {item.status === "failed" && (
                                 <Button

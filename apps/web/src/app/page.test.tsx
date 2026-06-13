@@ -1,23 +1,40 @@
 import { describe, it, expect, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const mockRedirect = vi.fn();
+const mockPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  redirect: (path: string) => {
-    mockRedirect(path);
-    // Next.js redirect() throws NEXT_REDIRECT in real usage.
-    // For test we just record the call — no throw needed since we
-    // test the side effect synchronously via module initialisation.
+  useRouter: () => ({ push: mockPush }),
+}));
+
+vi.mock("@/lib/api/client", () => ({
+  workbenchApi: {
+    getDashboard: vi.fn(() => new Promise(() => {})),
   },
 }));
 
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+import HomePage from "./page";
+
+function createWrapper() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  };
+}
+
 describe("HomePage", () => {
-  it("SHE-001: redirects to /upload on render", async () => {
-    const mod = await import("./page");
-    // The default export is a component function. Calling it triggers
-    // redirect("/upload") via the mocked next/navigation.
-    mod.default();
-    expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(mockRedirect).toHaveBeenCalledWith("/upload");
+  it("renders the dashboard with 4 stat skeletons while loading", () => {
+    const Wrapper = createWrapper();
+    render(<HomePage />, { wrapper: Wrapper });
+
+    const skeletons = screen.getAllByTestId("stat-skeleton");
+    expect(skeletons).toHaveLength(4);
   });
 });

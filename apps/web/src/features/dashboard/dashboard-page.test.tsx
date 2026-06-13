@@ -250,6 +250,41 @@ describe("DashboardPage", () => {
         expect(screen.getByText("100%")).toBeInTheDocument();
       });
     });
+
+    it("renders 6 quick-action cards and navigates on click", async () => {
+      vi.mocked(workbenchApi.getDashboard).mockResolvedValue(
+        mockDashboardResponse() as any
+      );
+
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<DashboardPage />, { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByText("12")).toBeInTheDocument();
+      });
+
+      const cards = screen.getAllByTestId("quick-action-card");
+      expect(cards).toHaveLength(6);
+
+      const expected: Array<{ label: string; href: string }> = [
+        { label: "上传", href: "/upload" },
+        { label: "复核", href: "/review" },
+        { label: "文档", href: "/documents" },
+        { label: "检索", href: "/retrieval" },
+        { label: "集合", href: "/collections" },
+        { label: "设置", href: "/settings" },
+      ];
+
+      for (const { label, href } of expected) {
+        vi.clearAllMocks();
+        const card = screen.getByText(label).closest("[data-testid='quick-action-card']");
+        expect(card).toBeTruthy();
+        await user.click(card!);
+        expect(mockPush).toHaveBeenCalledTimes(1);
+        expect(mockPush).toHaveBeenCalledWith(href);
+      }
+    });
   });
 
   // ── Action -> Effect Chain ─────────────────────────────────────────────

@@ -1034,6 +1034,14 @@ describe("UploadPage", () => {
 
   describe("C4 - Cancel upload task", () => {
     it("shows cancel button for uploading files", async () => {
+      // Keep the file in "uploading" state so the cancel button is rendered.
+      vi.mocked(api.uploadFileContent).mockImplementation(() => new Promise(() => {}));
+      vi.mocked(api.listTasks).mockResolvedValue(
+        mockListTasksResponse({
+          items: [mockTask({ upload_id: "upload-001", status: "uploading" })],
+        })
+      );
+
       const user = userEvent.setup();
       const Wrapper = createWrapper();
       render(<UploadPage />, { wrapper: Wrapper });

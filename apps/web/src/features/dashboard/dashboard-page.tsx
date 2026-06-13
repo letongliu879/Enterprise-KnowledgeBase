@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Upload, Clock, FileText, AlertTriangle } from "lucide-react";
+import { Upload, Clock, FileText, AlertTriangle, Search, ClipboardCheck, FolderOpen, Settings } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -150,6 +150,49 @@ function TicketList({ tickets }: { tickets: DashboardResponse["recent_tickets"] 
   );
 }
 
+const quickActions = [
+  { label: "上传", href: "/upload", icon: Upload },
+  { label: "复核", href: "/review", icon: ClipboardCheck },
+  { label: "文档", href: "/documents", icon: FileText },
+  { label: "检索", href: "/retrieval", icon: Search },
+  { label: "集合", href: "/collections", icon: FolderOpen },
+  { label: "设置", href: "/settings", icon: Settings },
+];
+
+function QuickActions() {
+  const router = useRouter();
+
+  return (
+    <motion.div
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+      variants={staggerContainer}
+      initial="hidden"
+      animate="show"
+    >
+      {quickActions.map((action) => {
+        const Icon = action.icon;
+        return (
+          <motion.div key={action.href} variants={fadeInUp}>
+            <Card
+              interactive
+              className="glass cursor-pointer"
+              data-testid="quick-action-card"
+              onClick={() => router.push(action.href)}
+            >
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="p-2 rounded-md bg-primary/10">
+                  <Icon className="h-5 w-5 text-primary" />
+                </div>
+                <span className="font-medium text-sm">{action.label}</span>
+              </CardContent>
+            </Card>
+          </motion.div>
+        );
+      })}
+    </motion.div>
+  );
+}
+
 export function DashboardPage() {
   const { data, isLoading, isError, error } = useQuery<DashboardResponse>({
     queryKey: ["dashboard"],
@@ -199,7 +242,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6 p-6">
       <StatCards stats={data.stats} />
-
+      <QuickActions />
       <div>
         <h2 className="text-lg font-semibold mb-4">最近工单</h2>
         <TicketList tickets={data.recent_tickets} />
