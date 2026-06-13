@@ -665,7 +665,7 @@ export default function DocumentDetailPage() {
             <div className="grid grid-cols-2 gap-2">
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <Button variant="outline" size="sm" disabled>
                       <FileDown className="mr-1.5 h-3.5 w-3.5" />
                       PDF
@@ -678,7 +678,7 @@ export default function DocumentDetailPage() {
               </TooltipProvider>
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <Button variant="outline" size="sm" disabled>
                       <FileType className="mr-1.5 h-3.5 w-3.5" />
                       Word
@@ -768,7 +768,7 @@ export default function DocumentDetailPage() {
                   <div className="flex items-center gap-1 ml-2 shrink-0">
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger>
+                        <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
                             <RotateCcw className="h-3.5 w-3.5" />
                           </Button>
@@ -780,7 +780,7 @@ export default function DocumentDetailPage() {
                     </TooltipProvider>
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger>
+                        <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
                             <FileSearch className="h-3.5 w-3.5" />
                           </Button>
@@ -1014,7 +1014,7 @@ export default function DocumentDetailPage() {
             <Separator />
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <Button className="w-full" disabled>
                     <Link2 className="mr-2 h-4 w-4" />
                     生成链接

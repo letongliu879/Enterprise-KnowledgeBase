@@ -161,7 +161,7 @@ function ComingSoonButton({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger>
+      <TooltipTrigger asChild>
         <Button variant={variant} className={className} disabled>
           {Icon ? <Icon className="mr-2 h-4 w-4" /> : null}
           {children}

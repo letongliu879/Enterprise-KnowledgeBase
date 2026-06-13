@@ -90,7 +90,7 @@ function ActionButton({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger>
+      <TooltipTrigger asChild>
         <Button variant="outline" size="sm" disabled className="h-8 gap-1.5 text-xs opacity-60">
           <Icon className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">{label}</span>

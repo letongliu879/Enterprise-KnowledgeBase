@@ -111,12 +111,15 @@ const KNOWN_UPLOAD_STATUSES = new Set<FileStatus>([
   "reviewing",
   "approved",
   "published",
+  "publishing",
   "indexing",
   "archived",
   "retracted",
   "rejected",
   "cancelled",
   "failed",
+  "completed",
+  "unknown",
 ]);
 
 interface FileItem {
@@ -297,6 +300,32 @@ function getStatusConfig(status: FileStatus) {
         bgColor: "bg-red-500/10",
         borderColor: "border-red-500/20",
         label: "处理失败",
+      };
+    case "completed":
+      return {
+        icon: CheckCircle2,
+        color: "text-emerald-400",
+        bgColor: "bg-emerald-500/10",
+        borderColor: "border-emerald-500/20",
+        label: "已完成",
+      };
+    case "publishing":
+      return {
+        icon: Loader2,
+        color: "text-blue-400",
+        bgColor: "bg-blue-500/10",
+        borderColor: "border-blue-500/20",
+        label: "正在发布",
+        animate: true,
+      };
+    case "unknown":
+    default:
+      return {
+        icon: AlertCircle,
+        color: "text-muted-foreground",
+        bgColor: "bg-muted",
+        borderColor: "border-border",
+        label: "未知状态",
       };
   }
 }
@@ -921,7 +950,7 @@ export default function UploadPage() {
           >
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
@@ -937,7 +966,7 @@ export default function UploadPage() {
             </TooltipProvider>
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
                     <Bookmark className="h-3.5 w-3.5" />
                     断点续传
@@ -948,7 +977,7 @@ export default function UploadPage() {
             </TooltipProvider>
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
                     <History className="h-3.5 w-3.5" />
                     上传历史
@@ -1380,13 +1409,17 @@ function getStatusLabel(status: FileStatus): string {
     reviewing: "正在等待复核",
     approved: "已批准",
     published: "已发布",
+    publishing: "正在发布",
     indexing: "正在构建索引",
     archived: "已归档",
     retracted: "已撤回",
     rejected: "已驳回",
+    cancelled: "已取消",
     failed: "处理失败",
+    completed: "已完成",
+    unknown: "未知状态",
   };
-  return labels[status];
+  return labels[status] ?? "未知状态";
 }
 
 // C5: Upload speed / ETA helpers

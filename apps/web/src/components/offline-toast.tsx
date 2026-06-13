@@ -1,11 +1,20 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { WifiOff, Wifi } from "lucide-react";
+import { WifiOff } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 
 export function OfflineToast() {
   const isOnline = useNetworkStatus();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Avoid SSR/client mismatch: only render after mount.
+  if (!mounted) return null;
 
   return (
     <AnimatePresence>

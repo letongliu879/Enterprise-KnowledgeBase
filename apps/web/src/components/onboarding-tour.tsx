@@ -65,6 +65,7 @@ export function OnboardingTour() {
   };
 
   const handleSkip = () => {
+    setHasCompleted(true);
     setDismissed(true);
   };
 

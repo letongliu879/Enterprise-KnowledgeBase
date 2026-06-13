@@ -338,7 +338,7 @@ function DocumentActionMenu({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
           <MoreHorizontal className="h-4 w-4 text-muted-foreground/50" />
         </Button>

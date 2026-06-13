@@ -508,7 +508,7 @@ export default function RetrievalPage() {
                   </Label>
                   <TooltipProvider>
                     <Tooltip>
-                      <TooltipTrigger>
+                      <TooltipTrigger asChild>
                         <span className="cursor-help">
                           <Info className="h-3 w-3 text-muted-foreground/40" />
                         </span>
@@ -547,7 +547,7 @@ export default function RetrievalPage() {
                 {/* H2: Compare mode toggle */}
                 <TooltipProvider>
                   <Tooltip>
-                    <TooltipTrigger>
+                    <TooltipTrigger asChild>
                       <Button
                         variant={compareMode ? "default" : "outline"}
                         size="sm"
@@ -570,7 +570,7 @@ export default function RetrievalPage() {
                 {/* H8: Advanced mode toggle */}
                 <TooltipProvider>
                   <Tooltip>
-                    <TooltipTrigger>
+                    <TooltipTrigger asChild>
                       <Button
                         variant={advancedMode ? "default" : "outline"}
                         size="sm"
@@ -860,7 +860,7 @@ export default function RetrievalPage() {
               {/* H4: Export buttons */}
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <span className="inline-flex">
                       <Button
                         variant="ghost"
@@ -880,7 +880,7 @@ export default function RetrievalPage() {
               </TooltipProvider>
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <span className="inline-flex">
                       <Button
                         variant="ghost"
@@ -994,7 +994,7 @@ export default function RetrievalPage() {
                             {/* H3: Feedback buttons */}
                             <TooltipProvider>
                               <Tooltip>
-                                <TooltipTrigger>
+                                <TooltipTrigger asChild>
                                   <span className="inline-flex">
                                     <Button
                                       variant="ghost"
@@ -1016,7 +1016,7 @@ export default function RetrievalPage() {
                             </TooltipProvider>
                             <TooltipProvider>
                               <Tooltip>
-                                <TooltipTrigger>
+                                <TooltipTrigger asChild>
                                   <span className="inline-flex">
                                     <Button
                                       variant="ghost"
@@ -1279,7 +1279,7 @@ export default function RetrievalPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <span className="inline-flex w-full">
                       <Button variant="outline" size="sm" className="h-9 text-xs w-full" disabled>
                         <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
@@ -1312,7 +1312,7 @@ export default function RetrievalPage() {
                       </Button>
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <span className="inline-flex w-full">
                       <Button variant="outline" size="sm" className="h-9 text-xs w-full" disabled>
                         <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />

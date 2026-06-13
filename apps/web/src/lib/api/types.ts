@@ -145,7 +145,10 @@ export type UploadStatus =
   | "archived"
   | "retracted"
   | "cancelled"
-  | "failed";
+  | "failed"
+  | "completed"
+  | "publishing"
+  | "unknown";
 
 export interface WorkbenchUploadSession {
   upload_id: string;
