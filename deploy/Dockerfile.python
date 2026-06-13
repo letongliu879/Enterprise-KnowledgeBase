@@ -49,7 +49,8 @@ RUN uv sync --no-dev
 
 # Create non-root runtime user with a home directory for uv cache.
 RUN groupadd -r ekb && useradd -r -m -g ekb ekb \
-    && chown -R ekb:ekb /app
+    && chown -R ekb:ekb /app \
+    && mkdir -p /data/intake-staging && chown -R ekb:ekb /data/intake-staging
 USER ekb
 ENV UV_CACHE_DIR=/home/ekb/.cache/uv
 
