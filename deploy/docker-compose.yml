@@ -58,11 +58,8 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
+    # Qdrant image does not include curl/wget; rely on service_started dependency.
+    # If you need a readiness probe, add a small sidecar or use an external health checker.
 
   redis:
     image: valkey/valkey:8
@@ -99,6 +96,27 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
+
+  # ---------------------------------------------------------------------------
+  # Database Migrations
+  # ---------------------------------------------------------------------------
+
+  migrate:
+    image: ekb-python:latest
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    command:
+      - uv
+      - run
+      - --no-dev
+      - alembic
+      - -c
+      - packages/persistence/migrations/alembic.ini
+      - upgrade
+      - head
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # ---------------------------------------------------------------------------
   # Application Services
@@ -140,7 +158,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   workbench:
     build:
       context: ..
@@ -182,7 +201,8 @@ services:
         condition: service_healthy
       indexing:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   indexing:
     build:
       context: ..
@@ -224,8 +244,9 @@ services:
       opensearch:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
-
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
   document-service:
     build:
       context: ..
@@ -253,7 +274,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   publishing-worker:
     build:
       context: ..
@@ -288,7 +310,8 @@ services:
         condition: service_healthy
       indexing:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   approval-service:
     build:
       context: ..
@@ -322,7 +345,8 @@ services:
         condition: service_healthy
       indexing:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   agent-review-worker:
     build:
       context: ..
@@ -358,7 +382,8 @@ services:
         condition: service_healthy
       indexing:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   conversion-worker:
     build:
       context: ..
@@ -389,7 +414,8 @@ services:
         condition: service_healthy
       indexing:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   ingestion-worker:
     build:
       context: ..
@@ -430,7 +456,8 @@ services:
         condition: service_healthy
       publishing-worker:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   retrieval:
     build:
       context: ..
@@ -468,10 +495,11 @@ services:
       opensearch:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   access:
     build:
       context: ..
@@ -496,7 +524,8 @@ services:
         condition: service_healthy
       retrieval:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
   web:
     build:
       context: ../apps/web
@@ -515,7 +544,8 @@ services:
         condition: service_healthy
       workbench:
         condition: service_healthy
-
+      migrate:
+        condition: service_completed_successfully
 volumes:
   pg_data:
   os_data:
