@@ -556,7 +556,7 @@ services:
         NEXT_PUBLIC_WORKBENCH_API_URL: ${NEXT_PUBLIC_WORKBENCH_API_URL}
     image: ekb-web:latest
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - NEXT_PUBLIC_ADMIN_API_URL=${NEXT_PUBLIC_ADMIN_API_URL}
       - NEXT_PUBLIC_WORKBENCH_API_URL=${NEXT_PUBLIC_WORKBENCH_API_URL}
