@@ -1,0 +1,14 @@
+# Overrides for access running inside Docker Compose.
+# Activate with: SPRING_PROFILES_ACTIVE=smoke,container
+server:
+  port: 18081
+
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/rag_flow}
+    username: ${DATABASE_USERNAME:rag_flow}
+    password: ${DATABASE_PASSWORD:rag_flow}
+
+access:
+  retrieval:
+    base-url: http://retrieval:18082
