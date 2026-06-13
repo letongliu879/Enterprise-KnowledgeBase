@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Real Runtime Smoke Test for Enterprise KnowledgeBase MVP.
 
@@ -150,23 +150,23 @@ SERVICE_CONFIG: dict[str, dict[str, Any]] = {
         "shell": False,
     },
     "access": {
-        "port": 18181,
+        "port": 18081,
         "health_path": "/health",
         "cwd": ROOT / "services" / "access",
         "cmd": [
             "mvn", "spring-boot:run",
-            "-Dspring-boot.run.arguments=--server.port=18181 --spring.profiles.active=smoke --access.retrieval.base-url=http://127.0.0.1:18182",
+            "-Dspring-boot.run.arguments=--server.port=18081 --spring.profiles.active=smoke --access.retrieval.base-url=http://127.0.0.1:18082",
         ],
         "env": {},
         "shell": IS_WINDOWS,
     },
     "retrieval": {
-        "port": 18182,
+        "port": 18082,
         "health_path": "/health",
         "cwd": ROOT / "services" / "retrieval",
         "cmd": [
             "mvn", "spring-boot:run",
-            "-Dspring-boot.run.arguments=--server.port=18182 --spring.profiles.active=smoke",
+            "-Dspring-boot.run.arguments=--server.port=18082 --spring.profiles.active=smoke",
         ],
         "env": {},
         "shell": IS_WINDOWS,
@@ -460,8 +460,76 @@ class SmokeRunner:
         marker = "PASS" if status == "PASS" else "FAIL"
         _log(marker, f"[{step}] {service} {endpoint} -> {status}: {detail}")
 
+    def _resolve_smoke_database_url(self) -> str:
+        """Return a host-side DATABASE_URL for the smoke harness to connect to PostgreSQL.
+
+        When services run in Docker Compose, DATABASE_URL uses the 'postgres' hostname.
+        The smoke harness runs on the host, so it needs to connect via localhost (5432).
+        """
+        url = os.environ.get("DATABASE_URL", "")
+        if not url:
+            env_path = ROOT / "deploy" / ".env"
+            if env_path.exists():
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("DATABASE_URL="):
+                        url = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        if not url:
+            url = "postgresql://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow"
+
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname or "127.0.0.1"
+        if host in ("postgres",):
+            host = "127.0.0.1"
+        port = parsed.port or 5432
+        user = parsed.username or "rag_flow"
+        password = parsed.password or os.environ.get("DATABASE_PASSWORD", "")
+        if not password:
+            password = "infini_rag_flow"
+        dbname = parsed.path.lstrip("/") or "rag_flow"
+        netloc = f"{user}:{urllib.parse.quote(password)}@{host}:{port}"
+        return urllib.parse.urlunparse(parsed._replace(netloc=netloc))
+
+    def _preseed_postgres(self) -> None:
+        """Pre-seed PostgreSQL with the default tenant and clean up old workbench sessions.
+
+        This must run even when services are already started (e.g. Docker Compose),
+        otherwise foreign-key constraints on collections/api_key_registry fail.
+        """
+        try:
+            import psycopg2
+            dsn = self._resolve_smoke_database_url()
+            conn = psycopg2.connect(dsn, connect_timeout=5)
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS tenants (tenant_id VARCHAR(64) PRIMARY KEY, name VARCHAR(255) NOT NULL)")
+            cur.execute("INSERT INTO tenants (tenant_id, name) VALUES ('default', 'Default Tenant') ON CONFLICT (tenant_id) DO NOTHING")
+            # Clean up ALL workbench upload sessions from prior runs to keep task projection fast.
+            # Table may not exist on a fresh database -- ignore.
+            try:
+                cur.execute("DELETE FROM workbench_upload_sessions")
+                deleted = cur.rowcount
+            except Exception:
+                deleted = 0
+            conn.commit()
+            cur.close()
+            conn.close()
+            _log("SEED", f"default tenant ready in PostgreSQL; cleaned {deleted} old upload sessions")
+        except Exception as e:
+            _log("WARN", f"pre-seed default tenant failed: {e}")
+
+    def _service_started(self, name: str) -> bool:
+        """Return True when the named service is available for testing.
+
+        A service is available if the harness started it, or if the harness is
+        told to use already-running services (e.g. Docker Compose).
+        """
+        return name in self.procs or self.args.use_existing_services
+
     def run(self) -> int:
         try:
+            self._preseed_postgres()
+
             if not self.args.use_existing_services:
                 self._start_services()
 
@@ -490,32 +558,7 @@ class SmokeRunner:
 
         # Prepare shared env for Python services
         # Use real PostgreSQL (Docker container: docker-postgres-1)
-        db_url = os.environ.get("DATABASE_URL", "postgresql://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow")
-
-        # Pre-seed PostgreSQL with default tenant so foreign-key constraints pass
-        # Also clean up old workbench upload sessions to prevent task projection timeouts
-        try:
-            import psycopg2
-            conn = psycopg2.connect(
-                host="127.0.0.1", port=5432, user="rag_flow",
-                password="infini_rag_flow", dbname="rag_flow", connect_timeout=5
-            )
-            cur = conn.cursor()
-            cur.execute("CREATE TABLE IF NOT EXISTS tenants (tenant_id VARCHAR(64) PRIMARY KEY, name VARCHAR(255) NOT NULL)")
-            cur.execute("INSERT INTO tenants (tenant_id, name) VALUES ('default', 'Default Tenant') ON CONFLICT (tenant_id) DO NOTHING")
-            # Clean up ALL workbench upload sessions from prior runs to keep task projection fast.
-            # Table may not exist on a fresh database 鈥?ignore.
-            try:
-                cur.execute("DELETE FROM workbench_upload_sessions")
-                deleted = cur.rowcount
-            except Exception:
-                deleted = 0
-            conn.commit()
-            cur.close()
-            conn.close()
-            _log("SEED", f"default tenant ready in PostgreSQL; cleaned {deleted} old upload sessions")
-        except Exception as e:
-            _log("WARN", f"pre-seed default tenant failed: {e}")
+        db_url = self._resolve_smoke_database_url()
 
         shared_python_env = {
             "DATABASE_URL": db_url,
@@ -526,9 +569,9 @@ class SmokeRunner:
             "ADMIN_BASE_URL": "http://127.0.0.1:18084",
             "DOCUMENT_SERVICE_URL": "http://127.0.0.1:8006",
             "APPROVAL_SERVICE_URL": "http://127.0.0.1:18087",
-            "RETRIEVAL_BASE_URL": "http://127.0.0.1:18182",
-            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18182",
-            "ACCESS_BASE_URL": "http://127.0.0.1:18181",
+            "RETRIEVAL_BASE_URL": "http://127.0.0.1:18082",
+            "RETRIEVAL_SERVICE_URL": "http://127.0.0.1:18082",
+            "ACCESS_BASE_URL": "http://127.0.0.1:18081",
             "PUBLISHING_WORKER_URL": "http://127.0.0.1:18086",
             "PUBLISHING_WORKER_BASE_URL": "http://127.0.0.1:18086",
             "REALITY_RAG_INDEXING_BASE_URL": "http://127.0.0.1:18080",
@@ -724,8 +767,8 @@ class SmokeRunner:
             self._record("admin_publish_retrieval", "admin", "/admin/retrieval-profiles/.../publish", "SKIP", "no retrieval profile id")
 
         # Sync retrieval profile to retrieval runtime projection
-        if self.retrieval_profile_id and "retrieval" in self.procs:
-            ret_base = "http://127.0.0.1:18182"
+        if self.retrieval_profile_id and self._service_started("retrieval"):
+            ret_base = "http://127.0.0.1:18082"
             status, body = _http_post(f"{ret_base}/internal/retrieval-profile-projections/sync", {
                 "command_id": f"sync_ret_{self.retrieval_profile_id}",
                 "trace_id": f"trc_sync_ret_{self.retrieval_profile_id}",
@@ -774,8 +817,8 @@ class SmokeRunner:
         self._record("admin_create_api_key", "admin", "/admin/api-keys", "PASS" if status in (200, 201) else "FAIL", f"status={status} id={self.api_key_id}")
 
         # Sync API key to access projection
-        if self.api_key_id and "access" in self.procs:
-            access_base = "http://127.0.0.1:18181"
+        if self.api_key_id and self._service_started("access"):
+            access_base = "http://127.0.0.1:18081"
             # Access service looks up projection by the X-API-Key header value,
             # so we must use the plaintext key as the lookup key in the projection table.
             projection_key = self.api_key_plaintext or self.api_key_id
@@ -999,8 +1042,8 @@ class SmokeRunner:
         _log("PHASE", "Retrieval / access flow")
 
         # Retrieval direct query
-        if "retrieval" in self.procs:
-            ret_base = "http://127.0.0.1:18182"
+        if self._service_started("retrieval"):
+            ret_base = "http://127.0.0.1:18082"
             status, body = _http_post(f"{ret_base}/internal/retrieve", {
                 "query_id": "qry_smoke_01",
                 "trace_id": "trc_smoke_01",
@@ -1028,8 +1071,8 @@ class SmokeRunner:
             self._record("retrieval_query", "retrieval", "/internal/retrieve", "SKIP", "retrieval not running")
 
         # Diagnostic: direct retrieval with access-style principal
-        if "retrieval" in self.procs:
-            ret_base = "http://127.0.0.1:18182"
+        if self._service_started("retrieval"):
+            ret_base = "http://127.0.0.1:18082"
             status, body = _http_post(f"{ret_base}/internal/retrieve", {
                 "query_id": "qry_access_diag",
                 "trace_id": "trc_access_diag",
@@ -1055,8 +1098,8 @@ class SmokeRunner:
                 _log("DIAG", f"direct retrieval with access principal failed: status={status} body={str(body)[:200]}")
 
         # Access query via API key
-        if "access" in self.procs and self.api_key_plaintext:
-            access_base = "http://127.0.0.1:18181"
+        if self._service_started("access") and self.api_key_plaintext:
+            access_base = "http://127.0.0.1:18081"
             status, body = _http_post(f"{access_base}/v1/retrieve", {
                 "query": "smoke test content",
                 "collection_scope": [self.collection_id] if self.collection_id else ["col_smoke"],
@@ -1088,7 +1131,7 @@ class SmokeRunner:
 
     def _redis_cache_proof(self) -> None:
         _log("PHASE", "Redis cache proof")
-        ret_base = "http://127.0.0.1:18182"
+        ret_base = "http://127.0.0.1:18082"
 
         query_payload = {
             "query_id": "qry_cache_proof",
@@ -1203,7 +1246,7 @@ class SmokeRunner:
                         stats[fmt]["indexed"] += 1
 
                     # Retrieve
-                    ret_base = "http://127.0.0.1:18182"
+                    ret_base = "http://127.0.0.1:18082"
                     status3, body3 = _http_post(f"{ret_base}/internal/retrieve", {
                         "query_id": f"qry_ingest_{fmt}_{file_path.stem[:8]}",
                         "trace_id": f"trc_ingest_{fmt}_{file_path.stem[:8]}",
@@ -1254,7 +1297,7 @@ class SmokeRunner:
         return mapping.get(file_path.suffix.lower(), "application/octet-stream")
 
     def _lookup_active_index_version(self, collection_id: str) -> str:
-        db_url = _psycopg_dsn(os.environ.get("DATABASE_URL", "postgresql://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow"))
+        db_url = _psycopg_dsn(self._resolve_smoke_database_url())
         try:
             import psycopg2
             conn = psycopg2.connect(db_url, connect_timeout=5)
@@ -1276,7 +1319,7 @@ class SmokeRunner:
 
     def _await_real_chain_terminal(self, source_file_id: str, *, timeout: float = 120.0) -> dict[str, str]:
         approval_base = "http://127.0.0.1:18087"
-        db_url = _psycopg_dsn(os.environ.get("DATABASE_URL", "postgresql://rag_flow:infini_rag_flow@127.0.0.1:5432/rag_flow"))
+        db_url = _psycopg_dsn(self._resolve_smoke_database_url())
         deadline = time.time() + timeout
         approved_ticket_ids: set[str] = set()
 

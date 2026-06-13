@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-EKB Service Manager — 生产级本地开发服务守护进程。
+EKB Service Manager — Local development helper only.
+
+For deployment, use Docker Compose:
+    docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
+
+This script starts services directly on the host for fast local iteration.
+It is NOT a production-grade process manager.
 
 Usage:
     uv run python scripts/ekb-svc.py start [--all] [--java] [--python] [--build] [--watch]

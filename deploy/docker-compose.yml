@@ -2,19 +2,18 @@
 # Enterprise KnowledgeBase — Deployment Compose
 # =============================================================================
 # Infrastructure deps: VERIFIED (strict smoke 28/28 against project deploy).
-# MinIO/Object Storage: NOT IN MVP PATH (no service uses it).
-# Application services: TEMPLATE (Dockerfiles not yet built/tested).
+# Application services: ENABLED — build images on first `docker compose up`.
 #
 # Quick start:
 #   1. cp deploy/.env.example deploy/.env   (fill in real secrets)
-#   2. docker compose -f deploy/docker-compose.yml up -d
+#   2. docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 #   3. smoke test:
-#      py -3.14 scripts/run_real_runtime_smoke.py --use-existing-services
+#      uv run python scripts/run_real_runtime_smoke.py --use-existing-services
 # =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
-  # Infrastructure (VERIFIED — currently running via upstream docker-compose)
+  # Infrastructure (VERIFIED)
   # ---------------------------------------------------------------------------
 
   postgres:
@@ -59,11 +58,8 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
+    # Qdrant image does not include curl/wget; rely on service_started dependency.
+    # If you need a readiness probe, add a small sidecar or use an external health checker.
 
   redis:
     image: valkey/valkey:8
@@ -102,242 +98,484 @@ services:
       retries: 30
 
   # ---------------------------------------------------------------------------
-  # Application Services (TEMPLATE — Dockerfiles not yet built)
-  # ---------------------------------------------------------------------------
-  #
-  # To build a service image:
-  #   docker build -t ekb-admin -f deploy/Dockerfile.python services/admin
-  #
-  # Or run locally via smoke script (currently the verified path):
-  #   py -3.14 scripts/run_real_runtime_smoke.py
-  #
-  # Once images are built, uncomment the service blocks below.
+  # Database Migrations
   # ---------------------------------------------------------------------------
 
-  # admin:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.python
-  #     args:
-  #       SERVICE_DIR: services/admin
-  #   image: ekb-admin:latest
-  #   ports:
-  #     - "18084:18084"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
-  #     - ADMIN_JWT_ISSUER=${ADMIN_JWT_ISSUER}
-  #     - ADMIN_JWT_AUDIENCE=${ADMIN_JWT_AUDIENCE}
-  #     - AUTH_MODE=${AUTH_MODE}
-  #     - INDEXING_BASE_URL=${INDEXING_BASE_URL}
-  #     - RETRIEVAL_BASE_URL=${RETRIEVAL_BASE_URL}
-  #     - ACCESS_BASE_URL=${ACCESS_BASE_URL}
-  #     - PUBLISHING_WORKER_BASE_URL=${PUBLISHING_WORKER_BASE_URL}
-  #     - INTAKE_BASE_URL=${INTAKE_BASE_URL}
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18084/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
+  migrate:
+    image: ekb-python:latest
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    command:
+      - uv
+      - run
+      - --no-dev
+      - alembic
+      - -c
+      - packages/persistence/migrations/alembic.ini
+      - upgrade
+      - head
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-  # workbench:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.python
-  #     args:
-  #       SERVICE_DIR: services/workbench-api
-  #   image: ekb-workbench:latest
-  #   ports:
-  #     - "18083:18083"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - JWT_SECRET=${JWT_SECRET}
-  #     - JWT_ISSUER=${JWT_ISSUER}
-  #     - JWT_AUDIENCE=${JWT_AUDIENCE}
-  #     - AUTH_MODE=${AUTH_MODE}
-  #     - ADMIN_BASE_URL=${ADMIN_BASE_URL}
-  #     - INDEXING_BASE_URL=${INDEXING_BASE_URL}
-  #     - INTAKE_BASE_URL=${INTAKE_BASE_URL}
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18083/workbench/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
+  # ---------------------------------------------------------------------------
+  # Application Services
+  # ---------------------------------------------------------------------------
 
-  # indexing:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.python
-  #     args:
-  #       SERVICE_DIR: services/indexing
-  #   image: ekb-indexing:latest
-  #   ports:
-  #     - "18080:18080"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - INDEXING_BACKEND_MODE=${INDEXING_BACKEND_MODE}
-  #     - INDEXING_OPENSEARCH_URL=${INDEXING_OPENSEARCH_URL}
-  #     - INDEXING_QDRANT_URL=${INDEXING_QDRANT_URL}
-  #     - INDEXING_EMBEDDING_API_KEY=${INDEXING_EMBEDDING_API_KEY}
-  #     - INDEXING_EMBEDDING_BASE_URL=${INDEXING_EMBEDDING_BASE_URL}
-  #     - INDEXING_EMBEDDING_MODEL=${INDEXING_EMBEDDING_MODEL}
-  #     - INDEXING_CHAT_API_KEY=${INDEXING_CHAT_API_KEY}
-  #     - INDEXING_CHAT_BASE_URL=${INDEXING_CHAT_BASE_URL}
-  #     - INDEXING_CHAT_MODEL=${INDEXING_CHAT_MODEL}
-  #     - INDEXING_REQUIRE_LIVE_BACKENDS=${INDEXING_REQUIRE_LIVE_BACKENDS}
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18080/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     opensearch:
-  #       condition: service_healthy
-  #     qdrant:
-  #       condition: service_healthy
-
-  # intake:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.python
-  #     args:
-  #       SERVICE_DIR: services/intake-pipeline
-  #   image: ekb-intake:latest
-  #   ports:
-  #     - "18085:18085"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - REALITY_RAG_INDEXING_BASE_URL=${INDEXING_BASE_URL}
-  #     - REALITY_RAG_INTAKE_RUNTIME_DIR=${REALITY_RAG_INTAKE_RUNTIME_DIR}
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18085/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     indexing:
-  #       condition: service_healthy
-
-  # document-service:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.python
-  #     args:
-  #       SERVICE_DIR: services/intake-pipeline/document-service
-  #   image: ekb-document-service:latest
-  #   ports:
-  #     - "8006:8006"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:8006/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-
-  # publishing:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.python
-  #     args:
-  #       SERVICE_DIR: services/intake-pipeline/publishing-worker
-  #   image: ekb-publishing:latest
-  #   ports:
-  #     - "18086:18086"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18086/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-
-  # retrieval:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.java
-  #     args:
-  #       SERVICE_DIR: services/retrieval
-  #   image: ekb-retrieval:latest
-  #   ports:
-  #     - "18182:18182"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - DATABASE_USERNAME=${DATABASE_USERNAME}
-  #     - DATABASE_PASSWORD=${DATABASE_PASSWORD}
-  #     - OPENSEARCH_BASE_URL=${OPENSEARCH_BASE_URL}
-  #     - QDRANT_BASE_URL=${QDRANT_BASE_URL}
-  #     - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
-  #     - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
-  #     - EMBEDDING_MODEL=${EMBEDDING_MODEL}
-  #     - RERANKER_API_KEY=${RERANKER_API_KEY}
-  #     - RERANKER_BASE_URL=${RERANKER_BASE_URL}
-  #     - RERANKER_MODEL=${RERANKER_MODEL}
-  #     - REDIS_URL=${REDIS_URL}
-  #     - RETRIEVAL_CACHE_PROVIDER=${RETRIEVAL_CACHE_PROVIDER}
-  #     - REQUIRE_LIVE_BACKENDS=${REQUIRE_LIVE_BACKENDS}
-  #     - REQUIRE_REDIS_CACHE=${REQUIRE_REDIS_CACHE}
-  #     - SPRING_PROFILES_ACTIVE=smoke
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18182/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     opensearch:
-  #       condition: service_healthy
-  #     qdrant:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-
-  # access:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/Dockerfile.java
-  #     args:
-  #       SERVICE_DIR: services/access
-  #   image: ekb-access:latest
-  #   ports:
-  #     - "18181:18181"
-  #   environment:
-  #     - DATABASE_URL=${DATABASE_URL}
-  #     - DATABASE_USERNAME=${DATABASE_USERNAME}
-  #     - DATABASE_PASSWORD=${DATABASE_PASSWORD}
-  #     - RETRIEVAL_BASE_URL=http://retrieval:18182
-  #     - SPRING_PROFILES_ACTIVE=smoke
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-s", "http://localhost:18181/health"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     retrieval:
-  #       condition: service_healthy
-
+  admin:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18084:18084"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
+      - ADMIN_JWT_ISSUER=${ADMIN_JWT_ISSUER}
+      - ADMIN_JWT_AUDIENCE=${ADMIN_JWT_AUDIENCE}
+      - AUTH_MODE=${AUTH_MODE}
+      - INDEXING_BASE_URL=${INDEXING_BASE_URL}
+      - RETRIEVAL_BASE_URL=${RETRIEVAL_BASE_URL}
+      - ACCESS_BASE_URL=${ACCESS_BASE_URL}
+      - PUBLISHING_WORKER_BASE_URL=${PUBLISHING_WORKER_BASE_URL}
+      - INTAKE_BASE_URL=${INTAKE_BASE_URL}
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - admin_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18084"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  workbench:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18083:18083"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ISSUER=${JWT_ISSUER}
+      - JWT_AUDIENCE=${JWT_AUDIENCE}
+      - AUTH_MODE=${AUTH_MODE}
+      - ADMIN_BASE_URL=${ADMIN_BASE_URL}
+      - INDEXING_BASE_URL=${INDEXING_BASE_URL}
+      - INTAKE_BASE_URL=${INTAKE_BASE_URL}
+      - DOCUMENT_SERVICE_BASE_URL=${DOCUMENT_SERVICE_BASE_URL}
+      - PUBLISHING_WORKER_BASE_URL=${PUBLISHING_WORKER_BASE_URL}
+      - INGESTION_WORKER_URL=${INGESTION_WORKER_BASE_URL}
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - workbench_api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18083"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18083/workbench/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+      indexing:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  indexing:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18080:18080"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - INDEXING_BACKEND_MODE=${INDEXING_BACKEND_MODE}
+      - INDEXING_OPENSEARCH_URL=${INDEXING_OPENSEARCH_URL}
+      - INDEXING_QDRANT_URL=${INDEXING_QDRANT_URL}
+      - INDEXING_EMBEDDING_API_KEY=${INDEXING_EMBEDDING_API_KEY}
+      - INDEXING_EMBEDDING_BASE_URL=${INDEXING_EMBEDDING_BASE_URL}
+      - INDEXING_EMBEDDING_MODEL=${INDEXING_EMBEDDING_MODEL}
+      - INDEXING_CHAT_API_KEY=${INDEXING_CHAT_API_KEY}
+      - INDEXING_CHAT_BASE_URL=${INDEXING_CHAT_BASE_URL}
+      - INDEXING_CHAT_MODEL=${INDEXING_CHAT_MODEL}
+      - INDEXING_REQUIRE_LIVE_BACKENDS=${INDEXING_REQUIRE_LIVE_BACKENDS}
+      - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - indexing_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+  document-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "8006:8006"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - document_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8006"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  publishing-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18086:18086"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REALITY_RAG_SIDECAR_DIR=/data/intake
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+      - ADMIN_BASE_URL=${ADMIN_BASE_URL}
+      - INDEXING_BASE_URL=${INDEXING_BASE_URL}
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - publishing_worker.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18086"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+      indexing:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  approval-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18087:18087"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DOCUMENT_SERVICE_URL=${DOCUMENT_SERVICE_BASE_URL}
+      - INDEXING_SERVICE_URL=${INDEXING_BASE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - approval_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18087"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18087/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+      indexing:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  agent-review-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18090:18090"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REALITY_RAG_SIDECAR_DIR=/data/intake
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL}
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - agent_review_worker.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18090"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+      indexing:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  conversion-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18089:18089"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - INDEXING_SERVICE_URL=${INDEXING_BASE_URL}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - conversion_worker.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18089"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18089/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      indexing:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  ingestion-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.python
+    image: ekb-python:latest
+    ports:
+      - "18088:18088"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DOCUMENT_SERVICE_URL=${DOCUMENT_SERVICE_BASE_URL}
+      - APPROVAL_SERVICE_URL=${APPROVAL_SERVICE_BASE_URL}
+      - PUBLISHING_WORKER_URL=${PUBLISHING_WORKER_BASE_URL}
+      - INDEXING_SERVICE_URL=${INDEXING_BASE_URL}
+      - REALITY_RAG_INTAKE_RUNTIME_DIR=${REALITY_RAG_INTAKE_RUNTIME_DIR}
+      - DOCUMENT_STAGING_DIR=/data/intake-staging
+    volumes:
+      - intake_staging:/data/intake-staging
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - ingestion_worker.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18088"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18088/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      document-service:
+        condition: service_healthy
+      indexing:
+        condition: service_healthy
+      approval-service:
+        condition: service_healthy
+      publishing-worker:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  retrieval:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.java
+      args:
+        SERVICE_DIR: services/retrieval
+    image: ekb-retrieval:latest
+    ports:
+      - "18082:18082"
+    environment:
+      - DATABASE_URL=${DATABASE_JDBC_URL}
+      - DATABASE_USERNAME=${DATABASE_USERNAME}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - OPENSEARCH_BASE_URL=${OPENSEARCH_BASE_URL}
+      - QDRANT_BASE_URL=${QDRANT_BASE_URL}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - RERANKER_API_KEY=${RERANKER_API_KEY}
+      - RERANKER_BASE_URL=${RERANKER_BASE_URL}
+      - RERANKER_MODEL=${RERANKER_MODEL}
+      - REDIS_URL=${REDIS_URL}
+      - RETRIEVAL_CACHE_PROVIDER=${RETRIEVAL_CACHE_PROVIDER}
+      - REQUIRE_LIVE_BACKENDS=${REQUIRE_LIVE_BACKENDS}
+      - REQUIRE_REDIS_CACHE=${REQUIRE_REDIS_CACHE}
+      - SPRING_PROFILES_ACTIVE=smoke,container
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  access:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.java
+      args:
+        SERVICE_DIR: services/access
+    image: ekb-access:latest
+    ports:
+      - "18081:18081"
+    environment:
+      - DATABASE_URL=${DATABASE_JDBC_URL}
+      - DATABASE_USERNAME=${DATABASE_USERNAME}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - SPRING_PROFILES_ACTIVE=smoke,container
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      retrieval:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ADMIN_API_URL: ${NEXT_PUBLIC_ADMIN_API_URL}
+        NEXT_PUBLIC_WORKBENCH_API_URL: ${NEXT_PUBLIC_WORKBENCH_API_URL}
+    image: ekb-web:latest
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_ADMIN_API_URL=${NEXT_PUBLIC_ADMIN_API_URL}
+      - NEXT_PUBLIC_WORKBENCH_API_URL=${NEXT_PUBLIC_WORKBENCH_API_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      admin:
+        condition: service_healthy
+      workbench:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 volumes:
   pg_data:
   os_data:
   qdrant_data:
   redis_data:
   minio_data:
+  intake_staging:

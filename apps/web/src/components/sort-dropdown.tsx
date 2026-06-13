@@ -18,10 +18,11 @@ interface SortDropdownProps {
   value: string;
   direction: "asc" | "desc";
   onChange: (value: string, direction: "asc" | "desc") => void;
+  onDirectionChange?: (direction: "asc" | "desc") => void;
   className?: string;
 }
 
-export function SortDropdown({ options, value, direction, onChange, className }: SortDropdownProps) {
+export function SortDropdown({ options, value, direction, onChange, onDirectionChange, className }: SortDropdownProps) {
   const currentLabel = options.find((o) => o.value === value)?.label || "排序";
 
   return (
@@ -54,11 +55,11 @@ export function SortDropdown({ options, value, direction, onChange, className }:
               <button
                 key={option.value}
                 onClick={() => {
-                  if (isActive) {
-                    onChange(option.value, direction === "asc" ? "desc" : "asc");
-                  } else {
-                    onChange(option.value, "desc");
-                  }
+                  const newDirection = isActive
+                    ? direction === "asc" ? "desc" : "asc"
+                    : "desc";
+                  onChange(option.value, newDirection);
+                  onDirectionChange?.(newDirection);
                 }}
                 className={cn(
                   "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors",

@@ -4,7 +4,7 @@
 
 | 脚本 | 用途 |
 |------|------|
-| `ekb-svc.py` | 服务管理器：启动/停止/重启/状态/日志 所有微服务 |
+| `ekb-svc.py` | **本地开发辅助**：直接启动所有微服务，用于快速迭代和调试。生产/标准部署请使用 `deploy/docker-compose.yml`。 |
 | `ekb_smoke_test.py` | 独立全链路 smoke 测试 |
 | `ekb_e2e_test.py` | 完整 E2E 测试 |
 | `ekb_e2e_full.py` | 完整数据集 E2E 测试 |
@@ -29,6 +29,14 @@ uv run python scripts/ekb-svc.py status         # 查看全部状态
 uv run python scripts/ekb-svc.py logs <name>    # 查看某服务日志
 uv run python scripts/ekb-svc.py restart <name> # 重启某服务
 uv run python scripts/ekb-svc.py build          # 构建 Java 服务
+```
+
+### 部署说明
+
+`ekb-svc.py` 仅作为本地开发便利工具保留。运行完整栈的标准方式是：
+
+```bash
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 ```
 
 ### 启动顺序

@@ -8,6 +8,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -151,7 +153,17 @@ public class AccessRequestContextFilter extends OncePerRequestFilter {
     }
 
     private boolean isAllowedInternalAddress(String remoteAddr) {
-        return ALLOWED_INTERNAL_ADDRESSES.contains(remoteAddr);
+        if (ALLOWED_INTERNAL_ADDRESSES.contains(remoteAddr)) {
+            return true;
+        }
+        try {
+            InetAddress addr = InetAddress.getByName(remoteAddr);
+            // Allow loopback and RFC1918 private addresses so containerized
+            // smoke tests and inter-service calls on Docker networks succeed.
+            return addr.isLoopbackAddress() || addr.isSiteLocalAddress();
+        } catch (UnknownHostException e) {
+            return false;
+        }
     }
 
     private void writeError(HttpServletResponse response, AccessException error) throws IOException {
