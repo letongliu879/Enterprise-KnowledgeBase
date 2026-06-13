@@ -68,3 +68,5 @@ review_diff.txt
 apps/web/docs/
 admin.db
 --help/
+
+.worktrees/
